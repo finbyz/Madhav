@@ -137,13 +137,11 @@ app_license = "gpl-3.0"
 # ---------------
 # Hook on document methods and events
 
-# doc_events = {
-# 	"*": {
-# 		"on_update": "method",
-# 		"on_cancel": "method",
-# 		"on_trash": "method"
-# 	}
-# }
+doc_events = {
+	"Stock Ledger Entry": {
+        "after_insert": "madhav.doc_events.stock_ledger_entry.after_insert",
+	}
+}
 
 # Scheduled Tasks
 # ---------------

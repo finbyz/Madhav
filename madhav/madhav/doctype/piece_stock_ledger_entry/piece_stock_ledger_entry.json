@@ -1,6 +1,7 @@
 {
  "actions": [],
  "allow_rename": 1,
+ "autoname": "MAT-PSLE-.YYYY.-.#####",
  "creation": "2025-04-09 14:35:06.971696",
  "doctype": "DocType",
  "engine": "InnoDB",
@@ -16,7 +17,8 @@
   "actual_qty",
   "company",
   "column_break_kxqb",
-  "unit_of_measure"
+  "unit_of_measure",
+  "is_cancelled"
  ],
  "fields": [
   {
@@ -107,28 +109,43 @@
    "label": "Unit of Measure",
    "options": "UOM",
    "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "is_cancelled",
+   "fieldtype": "Check",
+   "label": "Is Cancelled",
+   "report_hide": 1
   }
  ],
  "grid_page_length": 50,
+ "in_create": 1,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-04-09 14:49:42.929383",
+ "modified": "2025-04-09 17:36:18.068083",
  "modified_by": "Administrator",
  "module": "Madhav",
  "name": "Piece Stock Ledger Entry",
+ "naming_rule": "Expression (old style)",
  "owner": "Administrator",
  "permissions": [
   {
-   "create": 1,
-   "delete": 1,
    "email": 1,
    "export": 1,
    "print": 1,
    "read": 1,
    "report": 1,
-   "role": "System Manager",
-   "share": 1,
-   "write": 1
+   "role": "Stock User",
+   "share": 1
+  },
+  {
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Accounts Manager",
+   "share": 1
   }
  ],
  "sort_field": "modified",
