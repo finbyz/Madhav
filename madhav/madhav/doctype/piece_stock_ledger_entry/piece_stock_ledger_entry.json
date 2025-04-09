@@ -1,6 +1,6 @@
 {
  "actions": [],
- "allow_rename": 1,
+ "allow_copy": 1,
  "autoname": "MAT-PSLE-.YYYY.-.#####",
  "creation": "2025-04-09 14:35:06.971696",
  "doctype": "DocType",
@@ -115,14 +115,16 @@
    "fieldname": "is_cancelled",
    "fieldtype": "Check",
    "label": "Is Cancelled",
+   "read_only": 1,
    "report_hide": 1
   }
  ],
  "grid_page_length": 50,
+ "hide_toolbar": 1,
  "in_create": 1,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-04-09 17:36:18.068083",
+ "modified": "2025-04-09 18:14:44.426128",
  "modified_by": "Administrator",
  "module": "Madhav",
  "name": "Piece Stock Ledger Entry",
