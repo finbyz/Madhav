@@ -4,7 +4,8 @@ from frappe.utils import now
 
 
 def after_insert(self, method):
-    if not self.stock_uom == "Piece":
+    required_stock_in_pieces = frappe.db.get_value("Item", self.item_code, "required_stock_in_pieces")
+    if not required_stock_in_pieces:
         return
     psle = frappe.get_doc({
         "doctype" : "Piece Stock Ledger Entry",
