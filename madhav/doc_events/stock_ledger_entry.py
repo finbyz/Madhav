@@ -3,6 +3,27 @@ from frappe.utils import now
 
 
 
+
+def convert_item_quantity(item_code, from_uom, to_uom, qty):
+    item = frappe.get_doc("Item", item_code)
+    from_factor = None
+    to_factor = None
+
+    for row in item.uoms:
+        if row.uom == from_uom:
+            from_factor = row.conversion_factor
+        if row.uom == to_uom:
+            to_factor = row.conversion_factor
+
+    if from_factor is None:
+        frappe.throw(f"UOM '{from_uom}' not found for item {item_code}")
+    if to_factor is None:
+        frappe.throw(f"UOM '{to_uom}' not found for item {item_code}")
+
+    converted_qty = to_factor * qty / from_factor
+
+    return converted_qty
+
 def after_insert(self, method):
     required_stock_in_pieces = frappe.db.get_value("Item", self.item_code, "required_stock_in_pieces")
     if not required_stock_in_pieces:
@@ -15,9 +36,9 @@ def after_insert(self, method):
         "posting_time": self.posting_time,
         "voucher_type": self.voucher_type,
         "voucher_no": self.voucher_no,
-        "actual_qty": self.actual_qty,
+        "actual_qty": convert_item_quantity(self.item_code, self.stock_uom, "Piece", self.actual_qty),
         "company": self.company,
-        "unit_of_measure": self.stock_uom,
+        "unit_of_measure": "Piece",
         "stock_ledger_entry": self.name,
         "is_cancelled" : self.is_cancelled
     }) 
@@ -30,3 +51,12 @@ def after_insert(self, method):
             where voucher_type=%s and voucher_no=%s and is_cancelled = 0""",
             (now(), frappe.session.user, self.voucher_type, self.voucher_no),
         )
+
+"""
+from_uom = to_uom
+qty = ?
+? = to_uom * qty / from_uom
+1 = 15
+10 = ?
+
+"""
