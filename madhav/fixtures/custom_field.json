@@ -140,7 +140,7 @@
   "in_list_view": 0,
   "in_preview": 0,
   "in_standard_filter": 0,
-  "insert_after": "allow_negative_stock",
+  "insert_after": "has_serial_no",
   "is_system_generated": 0,
   "is_virtual": 0,
   "label": "Required Stock in Pieces",
