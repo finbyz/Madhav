@@ -39,8 +39,8 @@ def after_insert(self, method):
         "actual_qty": convert_item_quantity(self.item_code, self.stock_uom, "Piece", self.actual_qty),
         "company": self.company,
         "unit_of_measure": "Piece",
-        "stock_ledger_entry": self.name,
-        "is_cancelled" : self.is_cancelled
+        "is_cancelled" : self.is_cancelled,
+        "docstatus" : self.docstatus
     }) 
     psle.save()
     
@@ -51,12 +51,3 @@ def after_insert(self, method):
             where voucher_type=%s and voucher_no=%s and is_cancelled = 0""",
             (now(), frappe.session.user, self.voucher_type, self.voucher_no),
         )
-
-"""
-from_uom = to_uom
-qty = ?
-? = to_uom * qty / from_uom
-1 = 15
-10 = ?
-
-"""
