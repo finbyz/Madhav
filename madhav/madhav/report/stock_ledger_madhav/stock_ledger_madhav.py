@@ -248,6 +248,13 @@ def get_columns(filters):
 				"convertible": "qty",
 			},
 			{
+				"label": _("Balance Qty"),
+				"fieldname": "qty_after_transaction",
+				"fieldtype": "Float",
+				"width": 100,
+				"convertible": "qty",
+			},
+			{
 				"label": _("In Qty (per pieces)"),
 				"fieldname": "in_qty_pieces",
 				"fieldtype": "Float",
@@ -259,13 +266,6 @@ def get_columns(filters):
 				"fieldname": "out_qty_pieces",
 				"fieldtype": "Float",
 				"width": 80,
-				"convertible": "qty",
-			},
-			{
-				"label": _("Balance Qty"),
-				"fieldname": "qty_after_transaction",
-				"fieldtype": "Float",
-				"width": 100,
 				"convertible": "qty",
 			},
 			{
