@@ -18,6 +18,7 @@ from erpnext.stock.utils import (
 	is_reposting_item_valuation_in_progress,
 	update_included_uom_in_report,
 )
+from frappe.query_builder import Case
 
 
 def execute(filters=None):
@@ -247,6 +248,20 @@ def get_columns(filters):
 				"convertible": "qty",
 			},
 			{
+				"label": _("In Qty (per pieces)"),
+				"fieldname": "in_qty_pieces",
+				"fieldtype": "Float",
+				"width": 80,
+				"convertible": "qty",
+			},
+			{
+				"label": _("Out Qty (per pieces)"),
+				"fieldname": "out_qty_pieces",
+				"fieldtype": "Float",
+				"width": 80,
+				"convertible": "qty",
+			},
+			{
 				"label": _("Balance Qty"),
 				"fieldname": "qty_after_transaction",
 				"fieldtype": "Float",
@@ -254,8 +269,8 @@ def get_columns(filters):
 				"convertible": "qty",
 			},
 			{
-				"label": _("Balance Qty (in pieces)"),
-				"fieldname": "qty_pieces",
+				"label": _("Balance Qty (per pieces)"),
+				"fieldname": "qty_in_pieces",
 				"fieldtype": "Float",
 				"width": 100,
 				"convertible": "qty",
@@ -378,8 +393,17 @@ def get_stock_ledger_entries(filters, items):
 	to_date = get_datetime(filters.to_date + " 23:59:59")
 
 	sle = frappe.qb.DocType("Stock Ledger Entry")
+	psle = frappe.qb.DocType("Piece Stock Ledger Entry")
 	query = (
 		frappe.qb.from_(sle)
+		.left_join(psle)
+		.on(
+			(psle.item_code == sle.item_code) & 
+			(psle.warehouse == sle.warehouse) & 
+			(psle.voucher_type == sle.voucher_type) & 
+			(psle.voucher_no == sle.voucher_no) &
+			(psle.posting_date == sle.posting_date)
+		)
 		.select(
 			sle.item_code,
 			sle.posting_datetime.as_("date"),
@@ -399,8 +423,9 @@ def get_stock_ledger_entries(filters, items):
 			sle.batch_no,
 			sle.serial_no,
 			sle.project,
+			Case().when(psle.actual_qty.isnull(), 0).else_(psle.actual_qty).as_("qty_in_pieces"),
 		)
-		.where((sle.docstatus < 2) & (sle.is_cancelled == 0) & (sle.posting_datetime[from_date:to_date]))
+		.where((sle.docstatus < 2) & (sle.is_cancelled == 0) & (sle.posting_datetime >= from_date) & (sle.posting_datetime <= to_date))
 		.orderby(sle.posting_datetime)
 		.orderby(sle.creation)
 	)
@@ -550,20 +575,36 @@ def get_opening_balance_from_batch(filters, columns, sl_entries):
 		fields=["sum(actual_qty) as qty_after_transaction", "sum(stock_value_difference) as stock_value"],
 		filters=query_filters,
 	)[0]
+	opening_data_from_psle = frappe.get_all(
+		"Piece Stock Ledger Entry",
+		fields=["sum(actual_qty) as qty_in_pieces"],
+		filters=query_filters,
+	)[0]
+	opening_data["qty_in_pieces"] = opening_data_from_psle.get("qty_in_pieces", 0.0) or 0.0
 
-	for field in ["qty_after_transaction", "stock_value", "valuation_rate"]:
+	for field in ["qty_after_transaction", "stock_value", "valuation_rate", "qty_in_pieces"]:
 		if opening_data.get(field) is None:
 			opening_data[field] = 0.0
-
+	
 	table = frappe.qb.DocType("Stock Ledger Entry")
 	sabb_table = frappe.qb.DocType("Serial and Batch Entry")
+	psle = frappe.qb.DocType("Piece Stock Ledger Entry")
 	query = (
 		frappe.qb.from_(table)
 		.inner_join(sabb_table)
 		.on(table.serial_and_batch_bundle == sabb_table.parent)
+		.left_join(psle)
+		.on(
+			(psle.item_code == table.item_code) & 
+			(psle.warehouse == table.warehouse) & 
+			(psle.voucher_type == table.voucher_type) & 
+			(psle.voucher_no == table.voucher_no) &
+			(psle.posting_date == table.posting_date)
+		)
 		.select(
 			Sum(sabb_table.qty).as_("qty"),
 			Sum(sabb_table.stock_value_difference).as_("stock_value"),
+			Sum(psle.actual_qty).as_("qty_in_pieces")
 		)
 		.where(
 			(sabb_table.batch_no == filters.batch_no)
@@ -582,6 +623,7 @@ def get_opening_balance_from_batch(filters, columns, sl_entries):
 	if bundle_data:
 		opening_data.qty_after_transaction += flt(bundle_data[0].qty)
 		opening_data.stock_value += flt(bundle_data[0].stock_value)
+		opening_data.qty_in_pieces += flt(bundle_data[0].qty_in_pieces or 0.0)
 		if opening_data.qty_after_transaction:
 			opening_data.valuation_rate = flt(opening_data.stock_value) / flt(
 				opening_data.qty_after_transaction
@@ -592,6 +634,7 @@ def get_opening_balance_from_batch(filters, columns, sl_entries):
 		"qty_after_transaction": opening_data.qty_after_transaction,
 		"valuation_rate": opening_data.valuation_rate,
 		"stock_value": opening_data.stock_value,
+		"qty_in_pieces": opening_data.qty_in_pieces or 0.0,
 	}
 
 
@@ -625,6 +668,7 @@ def get_opening_balance(filters, columns, sl_entries):
 		"qty_after_transaction": last_entry.get("qty_after_transaction", 0),
 		"valuation_rate": last_entry.get("valuation_rate", 0),
 		"stock_value": last_entry.get("stock_value", 0),
+		"qty_in_pieces": last_entry.get("qty_in_pieces", 0) or 10,
 	}
 
 	return row
