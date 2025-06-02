@@ -44,9 +44,16 @@ app_license = "gpl-3.0"
 
 # include js in doctype views
 # doctype_js = {"doctype" : "public/js/doctype.js"}
+doctype_js = {
+    "Attendance" : "public/js/attendance.js"
+}
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
+doctype_list_js = {
+    "Attendance" : "public/js/attendance_list.js"
+}
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
 # doctype_calendar_js = {"doctype" : "public/js/doctype_calendar.js"}
+doctype_calendar_js = {"Shift Assignment":"public/js/shift_assignment_calendar.js"}
 
 # Svg Icons
 # ------------------
@@ -133,6 +140,10 @@ app_license = "gpl-3.0"
 # 	"ToDo": "custom_app.overrides.CustomToDo"
 # }
 
+override_doctype_class = {
+    "Attendance":"madhav.madhav.override.attendance.Attendance"
+}
+
 # Document Events
 # ---------------
 # Hook on document methods and events
@@ -140,7 +151,12 @@ app_license = "gpl-3.0"
 doc_events = {
 	"Stock Ledger Entry": {
         "after_insert": "madhav.doc_events.stock_ledger_entry.after_insert",
-	}
+	},
+    "Attendance":{
+      "validate":"madhav.doc_events.attendance.set_status",
+      "after_insert":"madhav.doc_events.attendance.set_short_leave_count",
+      "on_update_after_submit": "madhav.doc_events.attendance.set_short_leave_count"     
+  }
 }
 
 # Scheduled Tasks
@@ -240,10 +256,17 @@ doc_events = {
 # 	"Logging DocType Name": 30  # days to retain logs
 # }
 
+from erpnext.controllers import item_variant
+from madhav.api import custom_make_variant_item_code
+item_variant.make_variant_item_code = custom_make_variant_item_code
 
 fixtures = [
     {
         "dt": "Custom Field",
+        "filters": {"module": ["in", ["Madhav"]]},
+    },
+    {
+        "dt": "Property Setter",
         "filters": {"module": ["in", ["Madhav"]]},
     }
 ]
