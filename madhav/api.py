@@ -144,14 +144,15 @@ def custom_make_variant_item_code(template_item_code, template_item_name, varian
     # variant.item_code = make_autoname(item_series)
     
     # Extract prefix and numeric part from template_item_code
-    match = re.match(r"^([A-Z]+)(\d{6})$", template_item_code)
+    match = re.match(r"^([A-Z]+)(\d{5,6})$", template_item_code)
+    
     if not match:
         frappe.throw("Template Item Code must be in the format PREFIX000001 (e.g., RM000001)")
 
     prefix, base_number = match.groups()
     base_number = int(base_number)
 
-    # Get all items starting
+    # Get all items starting with this prefix
     existing_codes = frappe.get_all(
         "Item",
         filters={"item_code": ["like", f"{prefix}%"]},
