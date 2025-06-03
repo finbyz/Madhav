@@ -135,7 +135,7 @@ def custom_make_variant_item_code(template_item_code, template_item_name, varian
  
     if abbreviations:
         # variant.item_code = "{}-{}".format(template_item_code, "-".join(abbreviations))
-        variant.item_name = "{}-{}".format(template_item_name, "-".join(abbreviations))
+        variant.item_name = "{} {}".format(template_item_name, " ".join(abbreviations))
     
     # Use the same series used by standard items
     # item_series = frappe.get_meta("Item").get_field("naming_series").options.split("\n")[0]
