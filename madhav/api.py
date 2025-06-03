@@ -105,6 +105,7 @@ def get_offday_status(employee, attendance_date,attendance):
 def custom_make_variant_item_code(template_item_code, template_item_name, variant):
     
     from frappe.utils import cstr
+    import re
     
     """Uses template's item code and abbreviations to make variant's item code"""
     if variant.item_code:
@@ -142,30 +143,30 @@ def custom_make_variant_item_code(template_item_code, template_item_name, varian
     # from frappe.model.naming import make_autoname
     # variant.item_code = make_autoname(item_series)
     
-    # Split template_item_code to get prefix and numeric part
-    parts = template_item_code.rsplit("-", 1)
-    if len(parts) != 2 or not parts[1].isdigit():
-      frappe.throw("Template Item Code must end with a numeric value)")
- 
-    prefix = parts[0]
-    base_number = int(parts[1])
- 
-    # Fetch existing variant codes starting with the same prefix
+    # Extract prefix and numeric part from template_item_code
+    match = re.match(r"^([A-Z]+)(\d{6})$", template_item_code)
+    if not match:
+        frappe.throw("Template Item Code must be in the format PREFIX000001 (e.g., RM000001)")
+
+    prefix, base_number = match.groups()
+    base_number = int(base_number)
+
+    # Get all items starting
     existing_codes = frappe.get_all(
         "Item",
-        filters={"item_code": ["like", f"{prefix}-%"]},
+        filters={"item_code": ["like", f"{prefix}%"]},
         pluck="item_code"
     )
- 
-    # Extract and collect numeric parts from existing codes
+
+    # Extract numeric parts of matching codes
     suffixes = []
     for code in existing_codes:
-      code_parts = code.rsplit("-", 1)
-      if len(code_parts) == 2 and code_parts[1].isdigit():
-          suffixes.append(int(code_parts[1]))
+        m = re.match(rf"^{prefix}(\d{{6}})$", code)
+        if m:
+            suffixes.append(int(m.group(1)))
 
     next_number = max(suffixes or [base_number]) + 1
-    suffix_str = f"{next_number:05d}"  # Pad to 5 digits (e.g., 00003)
- 
+    suffix_str = f"{next_number:06d}"  # Pad to 6 digits like 000002
+
     # Set new item_code
-    variant.item_code = f"{prefix}-{suffix_str}"
+    variant.item_code = f"{prefix}{suffix_str}"

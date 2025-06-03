@@ -256,9 +256,9 @@ doc_events = {
 # 	"Logging DocType Name": 30  # days to retain logs
 # }
 
-# from erpnext.controllers import item_variant
-# from madhav.api import custom_make_variant_item_code
-# item_variant.make_variant_item_code = custom_make_variant_item_code
+from erpnext.controllers import item_variant
+from madhav.api import custom_make_variant_item_code
+item_variant.make_variant_item_code = custom_make_variant_item_code
 
 fixtures = [
     {
