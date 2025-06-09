@@ -13,12 +13,14 @@
   "column_break_mdnc",
   "voucher_type",
   "voucher_no",
+  "serial_and_batch_bundle",
   "section_break_ivdd",
   "actual_qty",
   "company",
   "column_break_kxqb",
   "unit_of_measure",
-  "is_cancelled"
+  "is_cancelled",
+  "batch_no"
  ],
  "fields": [
   {
@@ -117,6 +119,18 @@
    "label": "Is Cancelled",
    "read_only": 1,
    "report_hide": 1
+  },
+  {
+   "fieldname": "serial_and_batch_bundle",
+   "fieldtype": "Link",
+   "label": "Serial and Batch Bundle",
+   "options": "Serial and Batch Bundle"
+  },
+  {
+   "fieldname": "batch_no",
+   "fieldtype": "Data",
+   "label": "Batch No",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
@@ -124,7 +138,7 @@
  "in_create": 1,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-04-09 18:14:44.426128",
+ "modified": "2025-06-05 16:54:53.425552",
  "modified_by": "Administrator",
  "module": "Madhav",
  "name": "Piece Stock Ledger Entry",
@@ -150,6 +164,7 @@
    "share": 1
   }
  ],
+ "row_format": "Dynamic",
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": []

@@ -159,6 +159,39 @@ doc_events = {
   }
 }
 
+from erpnext.stock.serial_batch_bundle import SerialBatchCreation
+from madhav.madhav.monkey_patch.serial_batch_bundle import create_batch
+SerialBatchCreation.create_batch = create_batch
+
+from erpnext.controllers.buying_controller import BuyingController
+from madhav.madhav.monkey_patch.buying_controller import update_stock_ledger
+BuyingController.update_stock_ledger = update_stock_ledger
+
+from erpnext.controllers.selling_controller import SellingController
+from madhav.madhav.monkey_patch.selling_controller import update_stock_ledger
+SellingController.update_stock_ledger = update_stock_ledger
+
+from erpnext.controllers.selling_controller import SellingController
+from madhav.madhav.monkey_patch.selling_controller import get_sle_for_source_warehouse
+SellingController.get_sle_for_source_warehouse = get_sle_for_source_warehouse
+
+from erpnext.controllers.selling_controller import SellingController
+from madhav.madhav.monkey_patch.selling_controller import get_sle_for_target_warehouse
+SellingController.get_sle_for_target_warehouse = get_sle_for_target_warehouse
+
+from erpnext.controllers.selling_controller import SellingController
+from madhav.madhav.monkey_patch.selling_controller import get_item_list
+SellingController.get_item_list = get_item_list
+
+from erpnext.controllers.stock_controller import StockController
+from madhav.madhav.monkey_patch.stock_controller import get_sl_entries
+StockController.get_sl_entries = get_sl_entries
+
+
+from erpnext.controllers import item_variant
+from madhav.api import custom_make_variant_item_code
+item_variant.make_variant_item_code = custom_make_variant_item_code
+
 # Scheduled Tasks
 # ---------------
 
@@ -255,10 +288,6 @@ doc_events = {
 # default_log_clearing_doctypes = {
 # 	"Logging DocType Name": 30  # days to retain logs
 # }
-
-from erpnext.controllers import item_variant
-from madhav.api import custom_make_variant_item_code
-item_variant.make_variant_item_code = custom_make_variant_item_code
 
 fixtures = [
     {
