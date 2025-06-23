@@ -66,6 +66,13 @@ frappe.query_reports["Stock Ledger Madhav"] = {
 			},
 		},
 		{
+			"fieldname": "batch_group",
+			"label": __("Batch Group"),
+			"fieldtype": "Link",
+			"options": "Batch Group", // Replace with your actual Batch Group doctype name
+			
+		},
+		{
 			fieldname: "brand",
 			label: __("Brand"),
 			fieldtype: "Link",
@@ -109,10 +116,14 @@ frappe.query_reports["Stock Ledger Madhav"] = {
 			value = "<span style='color:red'>" + value + "</span>";
 		} else if (column.fieldname == "in_qty" && data && data.in_qty > 0) {
 			value = "<span style='color:green'>" + value + "</span>";
+		}else if (column.fieldname == "out_qty_pieces" && data && data.out_qty_pieces < 0) {
+			value = "<span style='color:red'>" + value + "</span>";
+		}else if (column.fieldname == "in_qty_pieces" && data && data.in_qty_pieces > 0) {
+			value = "<span style='color:green'>" + value + "</span>";
 		}
 
 		return value;
 	},
 };
 
-erpnext.utils.add_inventory_dimensions("Stock Ledger", 10);
+erpnext.utils.add_inventory_dimensions("Stock Stock Ledger Madhav", 10);

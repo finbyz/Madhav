@@ -128,6 +128,10 @@ frappe.query_reports["Stock Balance Madhav"] = {
 			value = "<span style='color:red'>" + value + "</span>";
 		} else if (column.fieldname == "in_qty" && data && data.in_qty > 0) {
 			value = "<span style='color:green'>" + value + "</span>";
+		}else if (column.fieldname == "out_qty_pieces" && data && data.out_qty_pieces > 0) {
+			value = "<span style='color:red'>" + value + "</span>";
+		} else if (column.fieldname == "in_qty_pieces" && data && data.in_qty_pieces > 0) {
+			value = "<span style='color:green'>" + value + "</span>";
 		}
 
 		return value;

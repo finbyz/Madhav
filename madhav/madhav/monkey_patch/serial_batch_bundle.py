@@ -11,11 +11,12 @@ def create_batch(self):
 			data = frappe.get_doc("Stock Entry Detail", self.voucher_detail_no)
 		else:
 			data = frappe.get_doc(f"{self.voucher_type} Item", self.voucher_detail_no)
-		
+			
 		dct.update({
 			"pieces": data.get("pieces"),
+			"weight_received": data.get("weight_received"),
 			"average_length":data.get("average_length"),
-			"length_weight_in_kg": data.get("length_weight_in_kg"),
+			# "length_weight_in_kg": data.get("length_weight_in_kg"),
 			"section_weight": data.get("section_weight"),
 			# "no_of_packages": data.get("no_of_packages"),
 			# "batch_yield": data.get("batch_yield"),

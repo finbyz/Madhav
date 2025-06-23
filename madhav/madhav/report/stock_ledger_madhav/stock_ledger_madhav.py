@@ -28,11 +28,15 @@ def execute(filters=None):
 	items = get_items(filters)
 	sl_entries = get_stock_ledger_entries(filters, items)
 	item_details = get_item_details(items, sl_entries, include_uom)
-	if filters.get("batch_no"):
+
+	# Handle opening balance for batch group or individual batch
+	if filters.get("batch_group"):
+		opening_row = get_opening_balance_from_batch_group(filters, columns, sl_entries)
+	elif filters.get("batch_no"):
 		opening_row = get_opening_balance_from_batch(filters, columns, sl_entries)
 	else:
 		opening_row = get_opening_balance(filters, columns, sl_entries)
-
+	
 	precision = cint(frappe.db.get_single_value("System Settings", "float_precision"))
 	bundle_details = {}
 
@@ -46,51 +50,102 @@ def execute(filters=None):
 		conversion_factors.append(0)
 
 	actual_qty = stock_value = 0
+	item_warehouse_piece_balances  = {}  #Track piece balance per item-warehouse combination
+	
 	if opening_row:
 		actual_qty = opening_row.get("qty_after_transaction")
 		stock_value = opening_row.get("stock_value")
+	
+	if opening_row and filters.get("warehouse") and filters.get("item_code"):
+		key = (filters.get("item_code"), filters.get("warehouse"))
+		item_warehouse_piece_balances[key] = opening_row.get("qty_in_pieces", 0)
 
 	available_serial_nos = {}
 	inventory_dimension_filters_applied = check_inventory_dimension_filters_applied(filters)
 
 	batch_balance_dict = frappe._dict({})
-	if actual_qty and filters.get("batch_no"):
-		batch_balance_dict[filters.batch_no] = [actual_qty, stock_value]
-
+	batch_piece_balance_dict = frappe._dict({})  # ADDED: Track piece balance per batch
+	
+	# if actual_qty and filters.get("batch_no"):
+	# 	batch_balance_dict[filters.batch_no] = [actual_qty, stock_value]
+	# 	batch_piece_balance_dict[filters.batch_no] = piece_balance  # ADDED
+	
 	for sle in sl_entries:
 		item_detail = item_details[sle.item_code]
 
 		sle.update(item_detail)
+		# Create item-warehouse key for piece balance trackings
+		item_warehouse_key = (sle.item_code, sle.warehouse)
+		if item_warehouse_key not in item_warehouse_piece_balances:
+			item_warehouse_piece_balances[item_warehouse_key] = 0
+
 		if bundle_info := bundle_details.get(sle.serial_and_batch_bundle):
-			data.extend(get_segregated_bundle_entries(sle, bundle_info, batch_balance_dict, filters))
+			data.extend(get_segregated_bundle_entries(sle, bundle_info, batch_balance_dict, batch_piece_balance_dict, filters,item_warehouse_piece_balances))
 			continue
+
+		# FIXED: Calculate in_qty_pieces and out_qty_pieces first based on actual transaction
+		current_piece_qty = flt(sle.qty_in_pieces or 0, precision)
+		
+		# Set in/out piece quantities based on the transaction direction
+		in_qty_pieces = max(current_piece_qty, 0) if sle.actual_qty > 0 else 0
+		out_qty_pieces = min(current_piece_qty, 0) if sle.actual_qty < 0 else 0
 
 		if filters.get("batch_no") or inventory_dimension_filters_applied:
 			actual_qty += flt(sle.actual_qty, precision)
 			stock_value += sle.stock_value_difference
+			item_warehouse_piece_balances[item_warehouse_key] += current_piece_qty
+			
+			# FIXED: Add current transaction's piece quantity to running balance
+			# piece_balance += current_piece_qty
+			
 			if sle.batch_no:
 				if not batch_balance_dict.get(sle.batch_no):
 					batch_balance_dict[sle.batch_no] = [0, 0]
+					batch_piece_balance_dict[sle.batch_no] = 0
 
 				batch_balance_dict[sle.batch_no][0] += sle.actual_qty
+				batch_piece_balance_dict[sle.batch_no] += current_piece_qty
+
+			# if filters.get("segregate_serial_batch_bundle"):
+			# 	actual_qty = batch_balance_dict[sle.batch_no][0]
+			# 	piece_balance = batch_piece_balance_dict[sle.batch_no]
 
 			if filters.get("segregate_serial_batch_bundle"):
 				actual_qty = batch_balance_dict[sle.batch_no][0]
+				piece_balance = batch_piece_balance_dict[sle.batch_no]
+			else:
+				piece_balance = item_warehouse_piece_balances[item_warehouse_key]
 
 			if sle.voucher_type == "Stock Reconciliation" and not sle.actual_qty:
 				actual_qty = sle.qty_after_transaction
 				stock_value = sle.stock_value
+				# For stock reconciliation, set the piece balance to the reconciled value
+				if hasattr(sle, 'qty_in_pieces') and sle.qty_in_pieces is not None:
+					item_warehouse_piece_balances[item_warehouse_key] = flt(sle.qty_in_pieces, precision)
 
-			sle.update({"qty_after_transaction": actual_qty, "stock_value": stock_value})
+			sle.update({
+				"qty_after_transaction": actual_qty,
+				"stock_value": stock_value,
+				"qty_in_pieces": item_warehouse_piece_balances[item_warehouse_key]  # Running piece balance
+			})
+		else:
+			# FIXED: For non-batch cases, accumulate piece balance properly
+			item_warehouse_piece_balances[item_warehouse_key] += current_piece_qty
+			sle["qty_in_pieces"] = item_warehouse_piece_balances[item_warehouse_key]
 
-		sle.update({"in_qty": max(sle.actual_qty, 0), "out_qty": min(sle.actual_qty, 0)})
+		# FIXED: Set the in/out piece quantities based on calculated values
+		sle.update({
+			"in_qty": max(sle.actual_qty, 0),
+			"out_qty": min(sle.actual_qty, 0),
+			"in_qty_pieces": in_qty_pieces,
+			"out_qty_pieces": out_qty_pieces,
+		})
 
 		if sle.serial_no:
 			update_available_serial_nos(available_serial_nos, sle)
 
 		if sle.actual_qty:
 			sle["in_out_rate"] = flt(sle.stock_value_difference / sle.actual_qty, precision)
-
 		elif sle.voucher_type == "Stock Reconciliation":
 			sle["in_out_rate"] = sle.valuation_rate
 
@@ -103,49 +158,70 @@ def execute(filters=None):
 	return columns, data
 
 
-def get_segregated_bundle_entries(sle, bundle_details, batch_balance_dict, filters):
-	segregated_entries = []
-	qty_before_transaction = sle.qty_after_transaction - sle.actual_qty
-	stock_value_before_transaction = sle.stock_value - sle.stock_value_difference
+def get_segregated_bundle_entries(sle, bundle_details, batch_balance_dict, batch_piece_balance_dict, filters, item_warehouse_piece_balances):
+    segregated_entries = []
+    item_warehouse_key = (sle.item_code, sle.warehouse)
 
-	for row in bundle_details:
-		new_sle = copy.deepcopy(sle)
-		new_sle.update(row)
-		new_sle.update(
-			{
-				"in_out_rate": flt(new_sle.stock_value_difference / row.qty) if row.qty else 0,
-				"in_qty": row.qty if row.qty > 0 else 0,
-				"out_qty": row.qty if row.qty < 0 else 0,
-				"qty_after_transaction": qty_before_transaction + row.qty,
-				"stock_value": stock_value_before_transaction + new_sle.stock_value_difference,
-				"incoming_rate": row.incoming_rate if row.qty > 0 else 0,
-			}
-		)
+    qty_before_transaction = sle.qty_after_transaction - sle.actual_qty
+    stock_value_before_transaction = sle.stock_value - sle.stock_value_difference
+    
+    # FIXED: Calculate piece balance before this transaction bundle
+    total_bundle_piece_qty = sum(flt(row.get('qty_in_pieces', 0)) for row in bundle_details)
+    piece_balance_before =item_warehouse_piece_balances[item_warehouse_key] - total_bundle_piece_qty
 
-		if filters.get("batch_no") and row.batch_no:
-			if not batch_balance_dict.get(row.batch_no):
-				batch_balance_dict[row.batch_no] = [0, 0]
+    for row in bundle_details:
+        new_sle = copy.deepcopy(sle)
+        new_sle.update(row)
+        
+        # FIXED: Calculate running piece balance
+        current_row_piece_qty = flt(row.get('qty_in_pieces', 0))
+        piece_balance_before += current_row_piece_qty
+        
+        # Calculate in/out piece quantities for this row
+        in_qty_pieces = max(current_row_piece_qty, 0) if row.qty > 0 else 0
+        out_qty_pieces = min(current_row_piece_qty, 0) if row.qty < 0 else 0
+        
+        new_sle.update(
+            {
+                "in_out_rate": flt(new_sle.stock_value_difference / row.qty) if row.qty else 0,
+                "in_qty": row.qty if row.qty > 0 else 0,
+                "out_qty": row.qty if row.qty < 0 else 0,
+                "qty_after_transaction": qty_before_transaction + row.qty,
+                "stock_value": stock_value_before_transaction + new_sle.stock_value_difference,
+                "incoming_rate": row.incoming_rate if row.qty > 0 else 0,
+                "in_qty_pieces": in_qty_pieces,
+                "out_qty_pieces": out_qty_pieces,
+                "qty_in_pieces": piece_balance_before,  # Running piece balance
+            }
+        )
 
-			batch_balance_dict[row.batch_no][0] += row.qty
-			batch_balance_dict[row.batch_no][1] += row.stock_value_difference
+        if filters.get("batch_no") and row.batch_no:
+            if not batch_balance_dict.get(row.batch_no):
+                batch_balance_dict[row.batch_no] = [0, 0]
+                batch_piece_balance_dict[row.batch_no] = 0
 
-			new_sle.update(
-				{
-					"qty_after_transaction": batch_balance_dict[row.batch_no][0],
-					"stock_value": batch_balance_dict[row.batch_no][1],
-				}
-			)
+            batch_balance_dict[row.batch_no][0] += row.qty
+            batch_balance_dict[row.batch_no][1] += row.stock_value_difference
+            batch_piece_balance_dict[row.batch_no] += current_row_piece_qty
 
-		qty_before_transaction += row.qty
-		stock_value_before_transaction += new_sle.stock_value_difference
+            new_sle.update(
+                {
+                    "qty_after_transaction": batch_balance_dict[row.batch_no][0],
+                    "stock_value": batch_balance_dict[row.batch_no][1],
+                    "qty_in_pieces": batch_piece_balance_dict[row.batch_no],
+                }
+            )
 
-		new_sle.valuation_rate = (
-			stock_value_before_transaction / qty_before_transaction if qty_before_transaction else 0
-		)
+        qty_before_transaction += row.qty
+        stock_value_before_transaction += new_sle.stock_value_difference
 
-		segregated_entries.append(new_sle)
+        new_sle.valuation_rate = (
+            stock_value_before_transaction / qty_before_transaction if qty_before_transaction else 0
+        )
 
-	return segregated_entries
+        segregated_entries.append(new_sle)
+
+    return segregated_entries
 
 
 def get_serial_batch_bundle_details(sl_entries, filters=None):
@@ -255,24 +331,24 @@ def get_columns(filters):
 				"convertible": "qty",
 			},
 			{
-				"label": _("In Qty (per pieces)"),
+				"label": _("In Qty(per pieces)"),
 				"fieldname": "in_qty_pieces",
 				"fieldtype": "Float",
-				"width": 80,
+				"width": 150,
 				"convertible": "qty",
 			},
 			{
-				"label": _("Out Qty (per pieces)"),
+				"label": _("Out Qty(per pieces)"),
 				"fieldname": "out_qty_pieces",
 				"fieldtype": "Float",
-				"width": 80,
+				"width": 150,
 				"convertible": "qty",
 			},
 			{
-				"label": _("Balance Qty (per pieces)"),
+				"label": _("Balance Qty(per pieces)"),
 				"fieldname": "qty_in_pieces",
 				"fieldtype": "Float",
-				"width": 100,
+				"width": 200,
 				"convertible": "qty",
 			},
 			{
@@ -394,6 +470,7 @@ def get_stock_ledger_entries(filters, items):
 
 	sle = frappe.qb.DocType("Stock Ledger Entry")
 	psle = frappe.qb.DocType("Piece Stock Ledger Entry")
+	
 	query = (
 		frappe.qb.from_(sle)
 		.left_join(psle)
@@ -402,9 +479,11 @@ def get_stock_ledger_entries(filters, items):
 			(psle.warehouse == sle.warehouse) & 
 			(psle.voucher_type == sle.voucher_type) & 
 			(psle.voucher_no == sle.voucher_no) &
-			(psle.posting_date == sle.posting_date)
+			(psle.posting_date == sle.posting_date) &
+        	(psle.serial_and_batch_bundle == sle.serial_and_batch_bundle)	
 		)
 		.select(
+			sle.name,
 			sle.item_code,
 			sle.posting_datetime.as_("date"),
 			sle.warehouse,
@@ -426,10 +505,11 @@ def get_stock_ledger_entries(filters, items):
 			Case().when(psle.actual_qty.isnull(), 0).else_(psle.actual_qty).as_("qty_in_pieces"),
 		)
 		.where((sle.docstatus < 2) & (sle.is_cancelled == 0) & (sle.posting_datetime >= from_date) & (sle.posting_datetime <= to_date))
+		.distinct()
 		.orderby(sle.posting_datetime)
 		.orderby(sle.creation)
 	)
-
+	
 	inventory_dimension_fields = get_inventory_dimension_fields()
 	if inventory_dimension_fields:
 		for fieldname in inventory_dimension_fields:
@@ -444,7 +524,25 @@ def get_stock_ledger_entries(filters, items):
 		if filters.get(field) and field not in inventory_dimension_fields:
 			query = query.where(sle[field] == filters.get(field))
 
-	if filters.get("batch_no"):
+	if filters.get("batch_group"):
+		batch_group_batches = get_batches_from_batch_group(filters.get("batch_group"))
+		if batch_group_batches:
+			# Get bundles for batches in the batch group
+			bundles = get_serial_and_batch_bundles_for_batch_group(batch_group_batches)
+			
+			if bundles:
+				query = query.where(
+					(sle.serial_and_batch_bundle.isin(bundles)) | 
+					(sle.batch_no.isin(batch_group_batches))
+				)
+			else:
+				query = query.where(sle.batch_no.isin(batch_group_batches))
+		else:
+			# If no batches found in batch group, return empty result
+			query = query.where(sle.batch_no.isin([]))
+	
+	# Handle individual Batch filter (keep existing functionality)
+	elif filters.get("batch_no"):
 		bundles = get_serial_and_batch_bundles(filters)
 
 		if bundles:
@@ -455,7 +553,7 @@ def get_stock_ledger_entries(filters, items):
 			query = query.where(sle.batch_no == filters.batch_no)
 
 	query = apply_warehouse_filter(query, sle, filters)
-
+	
 	return query.run(as_dict=True)
 
 
@@ -475,9 +573,31 @@ def get_serial_and_batch_bundles(filters):
 			& (SBE.batch_no == filters.batch_no)
 		)
 	)
-
+	
 	return query.run(pluck=SBE.parent)
 
+def get_serial_and_batch_bundles_for_batch_group(batch_list):
+	"""Get serial and batch bundles for multiple batches"""
+	if not batch_list:
+		return []
+	
+	SBB = frappe.qb.DocType("Serial and Batch Bundle")
+	SBE = frappe.qb.DocType("Serial and Batch Entry")
+
+	query = (
+		frappe.qb.from_(SBE)
+		.inner_join(SBB)
+		.on(SBE.parent == SBB.name)
+		.select(SBE.parent)
+		.where(
+			(SBB.docstatus == 1)
+			& (SBB.has_batch_no == 1)
+			& (SBB.voucher_no.notnull())
+			& (SBE.batch_no.isin(batch_list))
+		)
+	)
+	
+	return query.run(pluck=SBE.parent)
 
 def get_inventory_dimension_fields():
 	return [dimension.fieldname for dimension in get_inventory_dimensions()]
@@ -637,6 +757,112 @@ def get_opening_balance_from_batch(filters, columns, sl_entries):
 		"qty_in_pieces": opening_data.qty_in_pieces or 0.0,
 	}
 
+def get_opening_balance_from_batch_group(filters, columns, sl_entries):
+	"""Get opening balance for batch group"""
+	if not filters.get("batch_group"):
+		return None
+	
+	batch_group_batches = get_batches_from_batch_group(filters.get("batch_group"))
+
+	if not batch_group_batches:
+		return None
+	
+	query_filters = {
+		"batch_no": ("in", batch_group_batches),
+		"docstatus": 1,
+		"is_cancelled": 0,
+		"posting_date": ("<", filters.from_date),
+		"company": filters.company,
+	}
+
+	for fields in ["item_code", "warehouse"]:
+		if filters.get(fields):
+			query_filters[fields] = filters.get(fields)
+
+	opening_data = frappe.get_all(
+		"Stock Ledger Entry",
+		fields=["sum(actual_qty) as qty_after_transaction", "sum(stock_value_difference) as stock_value"],
+		filters=query_filters,
+	)[0]
+	
+	opening_data_from_psle = frappe.get_all(
+		"Piece Stock Ledger Entry",
+		fields=["sum(actual_qty) as qty_in_pieces"],
+		filters=query_filters,
+	)[0]
+	
+	opening_data["qty_in_pieces"] = opening_data_from_psle.get("qty_in_pieces", 0.0) or 0.0
+
+	for field in ["qty_after_transaction", "stock_value", "valuation_rate", "qty_in_pieces"]:
+		if opening_data.get(field) is None:
+			opening_data[field] = 0.0
+	
+	# Handle bundle data for batch group
+	table = frappe.qb.DocType("Stock Ledger Entry")
+	sabb_table = frappe.qb.DocType("Serial and Batch Entry")
+	psle = frappe.qb.DocType("Piece Stock Ledger Entry")
+	
+	query = (
+		frappe.qb.from_(table)
+		.inner_join(sabb_table)
+		.on(table.serial_and_batch_bundle == sabb_table.parent)
+		.left_join(psle)
+		.on(
+			(psle.item_code == table.item_code) & 
+			(psle.warehouse == table.warehouse) & 
+			(psle.voucher_type == table.voucher_type) & 
+			(psle.voucher_no == table.voucher_no) &
+			(psle.posting_date == table.posting_date)
+		)
+		.select(
+			Sum(sabb_table.qty).as_("qty"),
+			Sum(sabb_table.stock_value_difference).as_("stock_value"),
+			Sum(psle.actual_qty).as_("qty_in_pieces")
+		)
+		.where(
+			(sabb_table.batch_no.isin(batch_group_batches))
+			& (sabb_table.docstatus == 1)
+			& (table.posting_date < filters.from_date)
+			& (table.is_cancelled == 0)
+		)
+	)
+
+	for field in ["item_code", "warehouse", "company"]:
+		if filters.get(field):
+			query = query.where(table[field] == filters.get(field))
+
+	bundle_data = query.run(as_dict=True)
+
+	if bundle_data:
+		opening_data.qty_after_transaction += flt(bundle_data[0].qty)
+		opening_data.stock_value += flt(bundle_data[0].stock_value)
+		opening_data.qty_in_pieces += flt(bundle_data[0].qty_in_pieces or 0.0)
+		if opening_data.qty_after_transaction:
+			opening_data.valuation_rate = flt(opening_data.stock_value) / flt(
+				opening_data.qty_after_transaction
+			)
+
+	return {
+		"item_code": _("'Opening'"),
+		"qty_after_transaction": opening_data.qty_after_transaction,
+		"valuation_rate": opening_data.valuation_rate,
+		"stock_value": opening_data.stock_value,
+		"qty_in_pieces": opening_data.qty_in_pieces or 0.0,
+	}
+
+def get_batches_from_batch_group(batch_group):
+	"""Get all batch numbers from a Batch Group's child table"""
+	if not batch_group:
+		return []
+	
+	batches = frappe.get_all(
+		"Batch Group Detail",
+		filters={"parent": batch_group},
+		fields=["batch"],
+		pluck="batch"
+	)
+
+	return batches
 
 def get_opening_balance(filters, columns, sl_entries):
 	if not (filters.item_code and filters.warehouse and filters.from_date):
@@ -668,7 +894,7 @@ def get_opening_balance(filters, columns, sl_entries):
 		"qty_after_transaction": last_entry.get("qty_after_transaction", 0),
 		"valuation_rate": last_entry.get("valuation_rate", 0),
 		"stock_value": last_entry.get("stock_value", 0),
-		"qty_in_pieces": last_entry.get("qty_in_pieces", 0) or 10,
+		"qty_in_pieces": last_entry.get("qty_in_pieces", 0) or 0,
 	}
 
 	return row

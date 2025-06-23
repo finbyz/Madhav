@@ -150,8 +150,15 @@ override_doctype_class = {
 
 doc_events = {
 	"Stock Ledger Entry": {
-        "after_insert": "madhav.doc_events.stock_ledger_entry.after_insert",
+        "on_submit": "madhav.doc_events.stock_ledger_entry.create_piece_stock_ledger_entry",
 	},
+    "Stock Entry":{
+        "on_submit": "madhav.doc_events.stock_entry.after_submit",
+    },
+    "Purchase Receipt":{
+        "validate": "madhav.doc_events.purchase_receipt.calculate_weight_demand",
+        "on_submit": "madhav.doc_events.purchase_receipt.after_submit"
+    },
     "Attendance":{
       "validate":"madhav.doc_events.attendance.set_status",
       "after_insert":"madhav.doc_events.attendance.set_short_leave_count",

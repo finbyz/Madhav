@@ -1,0 +1,68 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2025-06-18 15:28:01.924429",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "batch",
+  "lengthpieces",
+  "weight_received",
+  "length_size",
+  "length_weight_in_kg",
+  "section_weight"
+ ],
+ "fields": [
+  {
+   "fieldname": "batch",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Batch",
+   "options": "Batch"
+  },
+  {
+   "fieldname": "lengthpieces",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Length/Pieces"
+  },
+  {
+   "fieldname": "weight_received",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Weight Received"
+  },
+  {
+   "fieldname": "length_size",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Length Size"
+  },
+  {
+   "fieldname": "length_weight_in_kg",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Length Weight In Kg"
+  },
+  {
+   "fieldname": "section_weight",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Section Weight"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2025-06-18 16:07:15.970951",
+ "modified_by": "Administrator",
+ "module": "Madhav",
+ "name": "Batch Group Detail",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

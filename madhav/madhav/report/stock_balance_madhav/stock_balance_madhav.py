@@ -222,6 +222,11 @@ class StockBalanceReport:
 			else:
 				qty_dict.out_qty += abs(qty_diff)
 
+			if flt(piece_diff, self.float_precision) >= 0:
+				qty_dict.in_qty_pieces += piece_diff
+			else:
+				qty_dict.out_qty_pieces += abs(piece_diff)
+
 			if flt(value_diff, self.float_precision) >= 0:
 				qty_dict.in_val += value_diff
 			else:
@@ -258,6 +263,8 @@ class StockBalanceReport:
 				"bal_qty": opening_data.get("bal_qty") or 0.0,
 				"bal_val": opening_data.get("bal_val") or 0.0,
 				"qty_piece": opening_data.get("qty_piece") or 0.0,
+				"in_qty_pieces": 0.0,
+				"out_qty_pieces": 0.0,
 				"val_rate": 0.0,
 			}
 		)
@@ -456,10 +463,10 @@ class StockBalanceReport:
 					"convertible": "qty",
 				},
 				{
-					"label": _("Balance Qty (in pieces)"),
+					"label": _("Balance Qty(in pieces)"),
 					"fieldname": "qty_piece",
 					"fieldtype": "Float",
-					"width": 100,
+					"width": 200,
 					"convertible": "qty",
 				},
 				{
@@ -499,6 +506,20 @@ class StockBalanceReport:
 					"convertible": "qty",
 				},
 				{"label": _("Out Value"), "fieldname": "out_val", "fieldtype": "Float", "width": 80},
+				{
+				"label": _("In Qty(per pieces)"),
+				"fieldname": "in_qty_pieces",
+				"fieldtype": "Float",
+				"width": 150,
+				"convertible": "qty",
+				},
+				{
+				"label": _("Out Qty(per pieces)"),
+				"fieldname": "out_qty_pieces",
+				"fieldtype": "Float",
+				"width": 150,
+				"convertible": "qty",
+				},
 				{
 					"label": _("Valuation Rate"),
 					"fieldname": "val_rate",
