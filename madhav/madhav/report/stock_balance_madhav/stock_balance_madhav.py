@@ -198,34 +198,28 @@ class StockBalanceReport:
 		for field in self.inventory_dimensions:
 			qty_dict[field] = entry.get(field)
 
+		# Normal quantity diff (as per stock ledger)
 		if entry.voucher_type == "Stock Reconciliation" and (not entry.batch_no or entry.serial_no):
 			qty_diff = flt(entry.qty_after_transaction) - flt(qty_dict.bal_qty)
-			piece_diff = flt(entry.piece_qty or 0)
 		else:
 			qty_diff = flt(entry.actual_qty)
-			piece_diff = flt(entry.piece_qty or 0)
+
+		# Additional: piece-based qty diff
+		piece_qty_diff = flt(entry.piece_qty)
 
 		value_diff = flt(entry.stock_value_difference)
 
-		if entry.posting_date < self.from_date or entry.voucher_no in self.opening_vouchers.get(
-			entry.voucher_type, []
-		):
+		if entry.posting_date < self.from_date or entry.voucher_no in self.opening_vouchers.get(entry.voucher_type, []):
 			qty_dict.opening_qty += qty_diff
 			qty_dict.opening_val += value_diff
-			if not hasattr(qty_dict, "opening_qty_piece"):
-				qty_dict.opening_qty_piece = 0
-			qty_dict.opening_qty_piece += piece_diff
-
-		elif entry.posting_date >= self.from_date and entry.posting_date <= self.to_date:
+			qty_dict.opening_qty_piece += piece_qty_diff
+		elif self.from_date <= entry.posting_date <= self.to_date:
 			if flt(qty_diff, self.float_precision) >= 0:
 				qty_dict.in_qty += qty_diff
+				qty_dict.in_qty_pieces += piece_qty_diff
 			else:
 				qty_dict.out_qty += abs(qty_diff)
-
-			if flt(piece_diff, self.float_precision) >= 0:
-				qty_dict.in_qty_pieces += piece_diff
-			else:
-				qty_dict.out_qty_pieces += abs(piece_diff)
+				qty_dict.out_qty_pieces += abs(piece_qty_diff)
 
 			if flt(value_diff, self.float_precision) >= 0:
 				qty_dict.in_val += value_diff
@@ -235,10 +229,8 @@ class StockBalanceReport:
 		qty_dict.val_rate = entry.valuation_rate
 		qty_dict.bal_qty += qty_diff
 		qty_dict.bal_val += value_diff
-		
-		if not hasattr(qty_dict, "qty_piece"):
-			qty_dict.qty_piece = 0
-		qty_dict.qty_piece += piece_diff
+		qty_dict.qty_piece += piece_qty_diff
+
 
 	def initialize_data(self, item_warehouse_map, group_by_key, entry):
 		opening_data = self.opening_data.get(group_by_key, {})
@@ -254,7 +246,7 @@ class StockBalanceReport:
 				"item_name": entry.item_name,
 				"opening_qty": opening_data.get("bal_qty") or 0.0,
 				"opening_val": opening_data.get("bal_val") or 0.0,
-				"opening_qty_piece": opening_data.get("qty_piece") or 0.0,
+    			"opening_qty_piece": opening_data.get("qty_piece") or 0.0,
 				"opening_fifo_queue": opening_data.get("fifo_queue") or [],
 				"in_qty": 0.0,
 				"in_val": 0.0,
@@ -262,7 +254,7 @@ class StockBalanceReport:
 				"out_val": 0.0,
 				"bal_qty": opening_data.get("bal_qty") or 0.0,
 				"bal_val": opening_data.get("bal_val") or 0.0,
-				"qty_piece": opening_data.get("qty_piece") or 0.0,
+    			"qty_piece": opening_data.get("qty_piece") or 0.0,
 				"in_qty_pieces": 0.0,
 				"out_qty_pieces": 0.0,
 				"val_rate": 0.0,
@@ -317,11 +309,12 @@ class StockBalanceReport:
 			.on(sle.item_code == item_table.name)
 			.left_join(psle)
 			.on(
-				(psle.item_code == sle.item_code) & 
-				(psle.warehouse == sle.warehouse) & 
-				(psle.voucher_type == sle.voucher_type) & 
-				(psle.voucher_no == sle.voucher_no) &
-				(psle.posting_date == sle.posting_date)
+			(psle.item_code == sle.item_code) & 
+			(psle.warehouse == sle.warehouse) & 
+			(psle.voucher_type == sle.voucher_type) & 
+			(psle.voucher_no == sle.voucher_no) &
+			(psle.posting_date == sle.posting_date) &
+   			(psle.serial_and_batch_bundle == sle.serial_and_batch_bundle)
 			)
 			.select(
 				sle.item_code,
@@ -463,18 +456,18 @@ class StockBalanceReport:
 					"convertible": "qty",
 				},
 				{
-					"label": _("Balance Qty(in pieces)"),
-					"fieldname": "qty_piece",
-					"fieldtype": "Float",
-					"width": 200,
-					"convertible": "qty",
-				},
-				{
 					"label": _("Balance Value"),
 					"fieldname": "bal_val",
 					"fieldtype": "Currency",
 					"width": 100,
 					"options": "Company:company:default_currency",
+				},
+    {
+					"label": _("Balance Qty(in pieces)"),
+					"fieldname": "qty_piece",
+					"fieldtype": "Float",
+					"width": 200,
+					"convertible": "qty",
 				},
 				{
 					"label": _("Opening Qty"),
