@@ -153,11 +153,14 @@ doc_events = {
         "on_submit": "madhav.doc_events.stock_ledger_entry.create_piece_stock_ledger_entry",
 	},
     "Stock Entry":{
+        "before_validate": "madhav.doc_events.stock_entry.auto_calculation",
         "on_submit": "madhav.doc_events.stock_entry.after_submit",
+        "before_submit": "madhav.doc_events.stock_entry.validation_section_weight",
     },
     "Purchase Receipt":{
-        "validate": "madhav.doc_events.purchase_receipt.calculate_weight_demand",
-        "on_submit": "madhav.doc_events.purchase_receipt.after_submit"
+        "before_validate": "madhav.doc_events.purchase_receipt.auto_calculation",
+        "on_submit": "madhav.doc_events.purchase_receipt.after_submit",
+        "before_submit": "madhav.doc_events.purchase_receipt.validation_section_weight",
     },
     "Attendance":{
       "validate":"madhav.doc_events.attendance.set_status",

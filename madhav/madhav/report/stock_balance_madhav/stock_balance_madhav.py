@@ -465,7 +465,7 @@ class StockBalanceReport:
     {
 					"label": _("Balance Qty(in pieces)"),
 					"fieldname": "qty_piece",
-					"fieldtype": "Float",
+					"fieldtype": "Int",
 					"width": 200,
 					"convertible": "qty",
 				},
@@ -502,14 +502,14 @@ class StockBalanceReport:
 				{
 				"label": _("In Qty(per pieces)"),
 				"fieldname": "in_qty_pieces",
-				"fieldtype": "Float",
+				"fieldtype": "Int",
 				"width": 150,
 				"convertible": "qty",
 				},
 				{
 				"label": _("Out Qty(per pieces)"),
 				"fieldname": "out_qty_pieces",
-				"fieldtype": "Float",
+				"fieldtype": "Int",
 				"width": 150,
 				"convertible": "qty",
 				},

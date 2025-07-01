@@ -22,7 +22,7 @@
   },
   {
    "fieldname": "lengthpieces",
-   "fieldtype": "Float",
+   "fieldtype": "Int",
    "in_list_view": 1,
    "label": "Length/Pieces"
   },
@@ -30,7 +30,7 @@
    "fieldname": "weight_received",
    "fieldtype": "Float",
    "in_list_view": 1,
-   "label": "Weight Received"
+   "label": "Accepted Quantity"
   },
   {
    "fieldname": "length_size",
@@ -55,7 +55,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2025-06-18 16:07:15.970951",
+ "modified": "2025-06-28 14:09:06.807868",
  "modified_by": "Administrator",
  "module": "Madhav",
  "name": "Batch Group Detail",

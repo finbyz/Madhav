@@ -126,4 +126,21 @@ frappe.query_reports["Stock Ledger Madhav"] = {
 	},
 };
 
+function view_batchwise_report(item_code, filter_company, from_date, to_date, batch_no) {
+	let fiscal_year = erpnext.utils.get_fiscal_year(frappe.datetime.get_today());
+
+	frappe.db.get_value("Fiscal Year", { "name": fiscal_year }, "year_start_date", function (value) {
+		const base_url = window.location.origin;
+		const query_string = 
+			`company=${encodeURIComponent(filter_company)}` +
+			`&from_date=${value.year_start_date}` +
+			`&to_date=${to_date}` +
+			`&item_code=${encodeURIComponent(item_code)}` +
+			`&batch_no=${encodeURIComponent(batch_no)}`;
+
+		const url = `${base_url}/app/query-report/Batch Wise Stock Balance?${query_string}`;
+		window.open(url, "_blank");
+	});
+}
+
 erpnext.utils.add_inventory_dimensions("Stock Stock Ledger Madhav", 10);

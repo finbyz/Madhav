@@ -9,6 +9,10 @@
   "reference_doctype",
   "reference_document_name",
   "batch_details",
+  "section_break_pyds",
+  "total_length_in_meter",
+  "column_break_ypfq",
+  "section_weight",
   "naming_series"
  ],
  "fields": [
@@ -33,12 +37,30 @@
    "fieldtype": "Data",
    "label": "naming_series",
    "options": "BGP-.YYYY.-.#####"
+  },
+  {
+   "fieldname": "total_length_in_meter",
+   "fieldtype": "Float",
+   "label": "Total Length In Meter"
+  },
+  {
+   "fieldname": "column_break_ypfq",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "section_weight",
+   "fieldtype": "Float",
+   "label": "Section Weight"
+  },
+  {
+   "fieldname": "section_break_pyds",
+   "fieldtype": "Section Break"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-06-21 11:12:44.469310",
+ "modified": "2025-06-25 12:30:00.102680",
  "modified_by": "Administrator",
  "module": "Madhav",
  "name": "Batch Group",

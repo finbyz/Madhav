@@ -41,11 +41,19 @@ def execute(filters=None):
 	bundle_details = {}
 
 	if filters.get("segregate_serial_batch_bundle"):
+    	# Get bundle details if segregation is enabled 
 		bundle_details = get_serial_batch_bundle_details(sl_entries, filters)
 
 	data = []
 	conversion_factors = []
 	if opening_row:
+		opening_row["view_stock_ledger_button"] = create_stock_ledger_button(
+			opening_row.get("item_code", ""),
+			filters.get("company", ""),
+			filters.get("from_date", ""),
+			filters.get("to_date", ""),
+			""  # No batch for opening row
+		)
 		data.append(opening_row)
 		conversion_factors.append(0)
 
@@ -80,7 +88,21 @@ def execute(filters=None):
 			item_warehouse_piece_balances[item_warehouse_key] = 0
 
 		if bundle_info := bundle_details.get(sle.serial_and_batch_bundle):
-			data.extend(get_segregated_bundle_entries(sle, bundle_info, batch_balance_dict, batch_piece_balance_dict, filters,item_warehouse_piece_balances))
+			
+			total_bundle_piece_qty = sum(flt(row.get('qty_in_pieces', 0)) for row in bundle_info)
+			item_warehouse_piece_balances[item_warehouse_key] += total_bundle_piece_qty
+
+			bundle_entries = get_segregated_bundle_entries(sle, bundle_info, batch_balance_dict, batch_piece_balance_dict, filters,item_warehouse_piece_balances)
+			# Add button to each bundle entry
+			for entry in bundle_entries:
+				entry["view_stock_ledger_button"] = create_stock_ledger_button(
+					entry.get("item_code", ""),
+					filters.get("company", ""),
+					filters.get("from_date", ""),
+					filters.get("to_date", ""),
+				entry.get("batch_no", "")
+				)
+			data.extend(bundle_entries)
 			continue
 
 		# FIXED: Calculate in_qty_pieces and out_qty_pieces first based on actual transaction
@@ -88,6 +110,7 @@ def execute(filters=None):
 		
 		# Set in/out piece quantities based on the transaction direction
 		in_qty_pieces = max(current_piece_qty, 0) if sle.actual_qty > 0 else 0
+
 		out_qty_pieces = min(current_piece_qty, 0) if sle.actual_qty < 0 else 0
 
 		if filters.get("batch_no") or inventory_dimension_filters_applied:
@@ -148,6 +171,14 @@ def execute(filters=None):
 			sle["in_out_rate"] = flt(sle.stock_value_difference / sle.actual_qty, precision)
 		elif sle.voucher_type == "Stock Reconciliation":
 			sle["in_out_rate"] = sle.valuation_rate
+   
+		sle["view_stock_ledger_button"] = create_stock_ledger_button(
+			sle.get("item_code", ""),
+			filters.get("company", ""),
+			filters.get("from_date", ""),
+			filters.get("to_date", ""),
+			sle.get("batch_no", "")
+		)
 
 		data.append(sle)
 
@@ -159,11 +190,15 @@ def execute(filters=None):
 
 
 def get_segregated_bundle_entries(sle, bundle_details, batch_balance_dict, batch_piece_balance_dict, filters, item_warehouse_piece_balances):
+    # frappe.throw(str(sle))
     segregated_entries = []
     item_warehouse_key = (sle.item_code, sle.warehouse)
 
     qty_before_transaction = sle.qty_after_transaction - sle.actual_qty
     stock_value_before_transaction = sle.stock_value - sle.stock_value_difference
+    
+    # FIXED: Get the current piece balance BEFORE processing this bundle
+    current_piece_balance = item_warehouse_piece_balances[item_warehouse_key]
     
     # FIXED: Calculate piece balance before this transaction bundle
     total_bundle_piece_qty = sum(flt(row.get('qty_in_pieces', 0)) for row in bundle_details)
@@ -177,9 +212,9 @@ def get_segregated_bundle_entries(sle, bundle_details, batch_balance_dict, batch
         current_row_piece_qty = flt(row.get('qty_in_pieces', 0))
         piece_balance_before += current_row_piece_qty
         
-        # Calculate in/out piece quantities for this row
-        in_qty_pieces = max(current_row_piece_qty, 0) if row.qty > 0 else 0
-        out_qty_pieces = min(current_row_piece_qty, 0) if row.qty < 0 else 0
+       # FIXED: Calculate in/out piece quantities based on transaction direction
+        in_qty_pieces = current_row_piece_qty if current_row_piece_qty > 0 else 0
+        out_qty_pieces = current_row_piece_qty if current_row_piece_qty < 0 else 0
         
         new_sle.update(
             {
@@ -238,13 +273,24 @@ def get_serial_batch_bundle_details(sl_entries, filters=None):
 		query_filers["batch_no"] = filters.batch_no
 
 	_bundle_details = frappe._dict({})
+ 
+	fields = ["parent", "qty", "incoming_rate", "stock_value_difference", "batch_no", "serial_no"]
+	
+	# Check if qty_in_pieces field exists in Serial and Batch Entry
+	if frappe.db.has_column("Serial and Batch Entry", "qty_in_pieces"):
+		fields.append("qty_in_pieces")
+
 	batch_entries = frappe.get_all(
 		"Serial and Batch Entry",
 		filters=query_filers,
-		fields=["parent", "qty", "incoming_rate", "stock_value_difference", "batch_no", "serial_no"],
+		fields= fields,
 		order_by="parent, idx",
 	)
 	for entry in batch_entries:
+		# If qty_in_pieces is not available in bundle entry, calculate it from qty
+		if "qty_in_pieces" not in entry or entry.get("qty_in_pieces") is None:
+			entry["qty_in_pieces"] = entry.get("qty", 0)
+   
 		_bundle_details.setdefault(entry.parent, []).append(entry)
 
 	return _bundle_details
@@ -333,21 +379,21 @@ def get_columns(filters):
 			{
 				"label": _("In Qty(per pieces)"),
 				"fieldname": "in_qty_pieces",
-				"fieldtype": "Float",
+				"fieldtype": "Int",
 				"width": 150,
 				"convertible": "qty",
 			},
 			{
 				"label": _("Out Qty(per pieces)"),
 				"fieldname": "out_qty_pieces",
-				"fieldtype": "Float",
+				"fieldtype": "Int",
 				"width": 150,
 				"convertible": "qty",
 			},
 			{
 				"label": _("Balance Qty(per pieces)"),
 				"fieldname": "qty_in_pieces",
-				"fieldtype": "Float",
+				"fieldtype": "Int",
 				"width": 200,
 				"convertible": "qty",
 			},
@@ -457,6 +503,12 @@ def get_columns(filters):
 				"fieldtype": "Link",
 				"options": "Company",
 				"width": 110,
+			},
+   			{
+				"label": _("Actions"),
+				"fieldname": "view_stock_ledger_button",
+				"fieldtype": "Data",
+				"width": 200,
 			},
 		]
 	)
@@ -934,3 +986,19 @@ def check_inventory_dimension_filters_applied(filters) -> bool:
 			return True
 
 	return False
+
+def create_stock_ledger_button(item_code, company, from_date, to_date, batch_no):
+	"""Create HTML button for Stock Ledger view"""
+	return f"""
+		<button style='margin-left:5px;border:none;color:#fff; background-color:#1581e1; padding:3px 5px; border-radius:5px;'
+			target="_blank" item_code='{item_code}' filter_company='{company}'
+			from_date='{from_date}' to_date='{to_date}' batch_no='{batch_no}'
+			onClick="view_batchwise_report(
+				this.getAttribute('item_code'),
+				this.getAttribute('filter_company'),
+				this.getAttribute('from_date'),
+				this.getAttribute('to_date'),
+				this.getAttribute('batch_no'))">
+			View Batch Wise Stock Balance Report
+		</button>
+	"""
