@@ -102,5 +102,5 @@ def validation_section_weight(doc, method):
     if float(standard_section_weight) < lower_bound or float(standard_section_weight) > upper_bound:
         frappe.throw(_(
             "Standard section weight for item {0} is outside ±1.5% of received section weight ({1}).\n"
-            "This Purchase Receipt is subject to approval and cannot be submitted."
+            "This Stock Entry is subject to approval and cannot be submitted."
         ).format(item_code, received_section_weight))    

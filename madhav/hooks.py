@@ -162,6 +162,9 @@ doc_events = {
         "on_submit": "madhav.doc_events.purchase_receipt.after_submit",
         "before_submit": "madhav.doc_events.purchase_receipt.validation_section_weight",
     },
+    "Batch Group":{
+        "autoname":"madhav.doc_events.batch_group.autoname"
+    },
     "Attendance":{
       "validate":"madhav.doc_events.attendance.set_status",
       "after_insert":"madhav.doc_events.attendance.set_short_leave_count",

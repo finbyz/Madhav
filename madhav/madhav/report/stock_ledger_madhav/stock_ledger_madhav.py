@@ -289,7 +289,8 @@ def get_serial_batch_bundle_details(sl_entries, filters=None):
 	for entry in batch_entries:
 		# If qty_in_pieces is not available in bundle entry, calculate it from qty
 		if "qty_in_pieces" not in entry or entry.get("qty_in_pieces") is None:
-			entry["qty_in_pieces"] = entry.get("qty", 0)
+			# entry["qty_in_pieces"] = entry.get("qty", 0)
+			entry["qty_in_pieces"] = frappe.db.get_value("Piece Stock Ledger Entry",{"serial_and_batch_bundle":entry["parent"]},f"actual_qty")
    
 		_bundle_details.setdefault(entry.parent, []).append(entry)
 
