@@ -48,6 +48,10 @@ def create_batch_group(doc):
     frappe.msgprint(f"✅ Batch Group <a href='/app/batch-group/{batch_group.name}' target='_blank'><b>{batch_group.name}</b></a> created with {len(batch_list)} batches.")
     
 def auto_calculation(doc, method):
+    
+    if doc.stock_entry_type != "Material Receipt":
+        return
+        
     total_length_qty = 0
     
     for item in doc.items:
@@ -80,6 +84,9 @@ def auto_calculation(doc, method):
         doc.weight_demand = 0
 
 def validation_section_weight(doc, method):
+    if doc.stock_entry_type != "Material Receipt":
+        return
+    
     if not doc.items or not doc.weight_received or not doc.total_length_in_meter:
         return
 

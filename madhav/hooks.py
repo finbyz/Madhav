@@ -165,6 +165,9 @@ doc_events = {
     "Batch Group":{
         "autoname":"madhav.doc_events.batch_group.autoname"
     },
+    "Batch":{
+        "autoname":"madhav.doc_events.batch.autoname"
+    },
     "Attendance":{
       "validate":"madhav.doc_events.attendance.set_status",
       "after_insert":"madhav.doc_events.attendance.set_short_leave_count",
