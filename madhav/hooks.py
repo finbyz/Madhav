@@ -45,7 +45,9 @@ app_license = "gpl-3.0"
 # include js in doctype views
 # doctype_js = {"doctype" : "public/js/doctype.js"}
 doctype_js = {
-    "Attendance" : "public/js/attendance.js"
+    "Attendance" : "public/js/attendance.js",
+    "Stock Entry": "public/js/stock_entry.js",
+    "Purchase Receipt": "public/js/purchase_receipt.js"
 }
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
 doctype_list_js = {
@@ -157,10 +159,13 @@ doc_events = {
         "on_submit": "madhav.doc_events.stock_entry.after_submit",
         "before_submit": "madhav.doc_events.stock_entry.validation_section_weight",
     },
-    "Purchase Receipt":{
-        "before_validate": "madhav.doc_events.purchase_receipt.auto_calculation",
-        "on_submit": "madhav.doc_events.purchase_receipt.after_submit",
+    "Purchase Receipt": {
+        "before_validate": [
+            "madhav.doc_events.purchase_receipt.auto_calculation",
+            "madhav.doc_events.purchase_receipt.create_qi"
+            ],
         "before_submit": "madhav.doc_events.purchase_receipt.validation_section_weight",
+        "on_submit": "madhav.doc_events.purchase_receipt.after_submit"
     },
     "Batch Group":{
         "autoname":"madhav.doc_events.batch_group.autoname"

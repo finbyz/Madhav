@@ -171,3 +171,49 @@ def custom_make_variant_item_code(template_item_code, template_item_name, varian
 
     # Set new item_code
     variant.item_code = f"{prefix}{suffix_str}"
+    
+import frappe
+from frappe.utils import flt
+
+@frappe.whitelist()
+def get_filtered_batches(doctype, txt, searchfield, start, page_len, filters):
+    from frappe.utils import cint
+    min_avg_length = flt(filters.get("average_length") or 0)
+    item_code = filters.get("item_code")
+    warehouse = filters.get("warehouse")
+    include_expired = cint(filters.get("include_expired") or 0)
+    
+    conditions = ["average_length >= %(min_avg_length)s"]
+    
+    if item_code:
+        conditions.append("item = %(item_code)s")
+
+    # if warehouse:
+    #     conditions.append("warehouse = %(warehouse)s")
+
+    if not include_expired:
+        conditions.append("(expiry_date IS NULL OR expiry_date >= CURDATE())")
+
+    return frappe.db.sql(f"""
+        SELECT
+            name,
+            CONCAT(
+                '<b>P:</b> ', CAST(IFNULL(pieces, 0) AS CHAR), ', ',
+                '<b>L:</b> ', CAST(ROUND(IFNULL(average_length, 0), 2) AS CHAR), ', ',
+                '<b>SW:</b> ', CAST(ROUND(IFNULL(section_weight, 0), 2) AS CHAR), ', ',
+                CAST(ROUND(IFNULL(batch_qty, 0), 2) AS CHAR), ', ',
+                IFNULL(batch_group_reference, 'N/A')
+            ) AS custom_label
+        FROM `tabBatch`
+        WHERE
+            {" AND ".join(conditions)} AND
+            name LIKE %(txt)s
+        ORDER BY name
+        LIMIT %(page_len)s OFFSET %(start)s
+    """, {
+        "min_avg_length": min_avg_length,
+        "txt": f"%{txt}%",
+        "start": start,
+        "page_len": page_len,
+        "item_code": item_code
+    })

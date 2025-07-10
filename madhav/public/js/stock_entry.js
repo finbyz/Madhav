@@ -1,0 +1,211 @@
+frappe.ui.form.on('Stock Entry', {
+    company: function(frm) {
+        if (frm.is_new()) {  // Only set if new
+            if (frm.doc.company === "MADHAV UDYOG PRIVATE LIMITED") {
+                frm.set_value("naming_series", "MUST.YY.-");
+            } else if (frm.doc.company === "MADHAV STELCO PRIVATE LIMITED") {
+                frm.set_value("naming_series", "MSST.YY.-");
+            }
+        }
+    },
+
+    onload: function(frm) {
+        // Trigger company logic only if new
+        if (frm.is_new() && frm.doc.company) {
+            frm.trigger('company');
+        }
+
+        // Set filter for Reference Material Issue Entry
+        frm.set_query('reference_material_issue_entry', function() {
+            if (frm.doc.stock_entry_type === "Material Issue Return") {
+                return {
+                    filters: {
+                        stock_entry_type: "Material Issue",
+                        docstatus: 1,
+                        company: frm.doc.company
+                    }
+                };
+            }
+        });
+    },
+    
+    weight_received: function(frm) {
+        update_totals(frm);
+    },
+    reference_material_issue_entry: function(frm) {
+        if (!frm.doc.reference_material_issue_entry) return;
+
+        frappe.call({
+            method: "frappe.client.get",
+            args: {
+                doctype: "Stock Entry",
+                name: frm.doc.reference_material_issue_entry
+            },
+            callback: function(r) {
+                if (r.message && r.message.items) {
+                    frm.clear_table("items");
+
+                    r.message.items.forEach(function(item) {
+                        const new_row = frm.add_child("items", {
+                            item_code: item.item_code,
+                            required_stock_in_pieces: item.required_stock_in_pieces,
+                            qty: item.qty,
+                            uom: item.uom,
+                            stock_uom: item.stock_uom,
+                            s_warehouse: item.s_warehouse,
+                            t_warehouse: item.t_warehouse,                            
+                            average_length: item.average_length,
+                            section_weight: item.section_weight,
+                            basic_rate: item.basic_rate,
+                            conversion_factor: item.conversion_factor,
+                            stock_qty: item.stock_qty,
+                            use_serial_batch_fields: 1
+                        });
+                    });
+
+                    frm.refresh_field("items");
+                }
+            }
+        });
+    },
+
+    stock_entry_type: function(frm) {
+        if (frm.doc.stock_entry_type === "Material Issue Return") {
+            frappe.msgprint({
+                title: "Mandatory Reference",
+                message: "For 'Material Issue Return' type stock entry, it is mandatory to select the Reference Material Issue Entry.",
+                indicator: "orange"
+            });
+        }
+    }
+});
+
+frappe.ui.form.on('Stock Entry Detail', {
+    item_code: function(frm, cdt, cdn) {
+        
+        if (frm.doc.stock_entry_type === "Material Transfer for Manufacture" || frm.doc.stock_entry_type === "Material Transfer") {
+            // Small delay to ensure item_code is properly set
+            setTimeout(() => {
+                set_batch_filter(frm, cdt, cdn);
+            }, 100);
+        }
+    },
+    pieces: function (frm, cdt, cdn) { 
+        console.log("222222222222")
+        update_totals(frm);
+    },
+    average_length: function (frm, cdt, cdn) {
+        console.log("333333333333")
+        const child = locals[cdt][cdn];
+
+        if (
+            (frm.doc.stock_entry_type === "Material Transfer for Manufacture" ||
+            frm.doc.stock_entry_type === "Material Transfer") &&
+            child.average_length
+        ) {
+            set_batch_filter(frm, cdt, cdn);
+        }
+
+        update_totals(frm);
+    },
+    items_remove: function (frm, cdt, cdn) {
+        update_totals(frm);
+    },
+    batch_no: function(frm, cdt, cdn) {
+        
+        const child = locals[cdt][cdn];
+        const grid_row = frm.fields_dict["items"].grid.grid_rows_by_docname[cdn];
+
+        if (grid_row) {
+            // Make average_length read-only if batch_no is selected
+            grid_row.toggle_editable("average_length", !child.batch_no);
+        }
+    }
+});
+
+function set_batch_filter(frm, cdt, cdn) {
+    // Set the query filter for batch_no field
+    frm.set_query('batch_no', 'items', function(doc, cdt, cdn) {
+        const child = locals[cdt][cdn];
+        
+        return {
+            query: "madhav.api.get_filtered_batches",
+            filters: {
+                average_length: child.average_length,
+                item_code: child.item_code,
+                warehouse: child.s_warehouse,
+                include_expired: 1
+            }
+        };
+    });
+}
+
+function update_totals(frm) {
+    
+    if(frm.doc.stock_entry_type === "Material Receipt"){
+        console.log("55555555555555")
+        
+        let total_length = 0;
+
+    // Step 1: Calculate total_length_in_meter
+    frm.doc.items.forEach(item => {
+        let pieces = flt(item.pieces);
+        let avg_len = flt(item.average_length);
+
+        if (pieces && avg_len) {
+            total_length += pieces * avg_len;
+        }
+    });
+
+    frm.set_value("total_length_in_meter", total_length.toFixed(2));
+
+    // Step 2: Calculate section_weight from weight_received (in tonnes → kg)
+    let weight_received = flt(frm.doc.weight_received);  // in tonnes
+    let weight_received_kg = weight_received * 1000;
+
+    let section_weight = total_length > 0 ? weight_received_kg / total_length : 0;
+
+    // Step 3: Update each row
+    frm.doc.items.forEach(item => {
+        let pieces = flt(item.pieces);
+        let avg_len = flt(item.average_length);
+
+        // Calculate accepted_qty and set values
+        item.section_weight = section_weight.toFixed(2);
+
+        let accepted_qty_kg = pieces * avg_len * section_weight;
+        item.qty = (accepted_qty_kg / 1000).toFixed(4); // in tonnes
+
+    });
+
+        frm.refresh_field("items");
+    }
+    
+    else if (frm.doc.stock_entry_type === "Material Transfer for Manufacture" || frm.doc.stock_entry_type === "Material Transfer") {
+             
+        frm.doc.items.forEach(item => {
+            let pieces = flt(item.pieces);
+            let avg_len = flt(item.average_length);
+            let section_weight = flt(item.section_weight);
+
+            let accepted_qty_kg = pieces * avg_len * section_weight;
+            let qty = (accepted_qty_kg / 1000).toFixed(4);  // in tonnes
+
+            frappe.model.set_value(item.doctype, item.name, "qty", qty);
+            frappe.model.set_value(item.doctype, item.name, "pieces", pieces);
+        });
+    }
+
+    else if (frm.doc.stock_entry_type === "Material Issue Return") {
+        frm.doc.items.forEach(item => {
+            let pieces = flt(item.pieces);
+            let avg_len = flt(item.average_length);
+            let section_weight = flt(item.section_weight);
+
+            let accepted_qty_kg = pieces * avg_len * section_weight;
+            let qty = (accepted_qty_kg / 1000).toFixed(4);
+
+            frappe.model.set_value(item.doctype, item.name, "qty", qty);
+        });
+    }
+}
