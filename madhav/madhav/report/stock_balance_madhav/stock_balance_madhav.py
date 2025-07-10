@@ -137,6 +137,26 @@ class StockBalanceReport:
 			report_data.update(
 				{"reserved_stock": sre_details.get((report_data.item_code, report_data.warehouse), 0.0)}
 			)
+			# Add the button to each row
+			report_data.update({
+				"view_batchwise_report_button": create_batchwise_button(
+					item_code=report_data.item_code,
+					company=report_data.company,
+					from_date=str(self.from_date),
+					to_date=str(self.to_date),
+					batch_no=report_data.get('batch_no', '')  # Use batch_no if available
+				)
+			})
+
+			report_data.update({
+				"view_stock_ledger_button": create_stock_ledger_button(
+					item_code=report_data.item_code,
+					company=report_data.company,
+					from_date=str(self.from_date),
+					to_date=str(self.to_date),
+					batch_no=report_data.get('batch_no', '')  # Use batch_no if available
+				)
+			})
 
 			if (
 				not self.filters.get("include_zero_stock_items")
@@ -537,6 +557,18 @@ class StockBalanceReport:
 					"options": "Company",
 					"width": 100,
 				},
+				{
+				"label": _("Batch Wise"),
+				"fieldname": "view_batchwise_report_button",
+				"fieldtype": "Data",
+				"width": 200,
+				},
+    			{
+				"label": _("Stock Ledger"),
+				"fieldname": "view_stock_ledger_button",
+				"fieldtype": "Data",
+				"width": 200,
+				},
 			]
 		)
 
@@ -694,3 +726,35 @@ def filter_items_with_no_transactions(
 def get_variants_attributes() -> list[str]:
 	"""Return all item variant attributes."""
 	return frappe.get_all("Item Attribute", pluck="name")
+
+def create_batchwise_button(item_code, company, from_date, to_date, batch_no):
+	"""Create HTML button for Stock Ledger view"""
+	return f"""
+		<button style='margin-left:5px;border:none;color:#fff; background-color:#1581e1; padding:3px 5px; border-radius:5px;'
+			target="_blank" item_code='{item_code}' filter_company='{company}'
+			from_date='{from_date}' to_date='{to_date}' batch_no='{batch_no}'
+			onClick="view_batchwise_report(
+				this.getAttribute('item_code'),
+				this.getAttribute('filter_company'),
+				this.getAttribute('from_date'),
+				this.getAttribute('to_date'),
+				this.getAttribute('batch_no'))">
+			View Batch Wise Stock Balance Report
+		</button>
+	"""
+ 
+def create_stock_ledger_button(item_code, company, from_date, to_date, batch_no):
+	"""Create HTML button for Stock Ledger view"""
+	return f"""
+		<button style='margin-left:5px;border:none;color:#fff; background-color:#1581e1; padding:3px 5px; border-radius:5px;'
+			target="_blank" item_code='{item_code}' filter_company='{company}'
+			from_date='{from_date}' to_date='{to_date}' batch_no='{batch_no}'
+			onClick="view_stock_ledger_report(
+				this.getAttribute('item_code'),
+				this.getAttribute('filter_company'),
+				this.getAttribute('from_date'),
+				this.getAttribute('to_date'),
+				this.getAttribute('batch_no'))">
+			View Stock Ledger Report
+		</button>
+	"""
