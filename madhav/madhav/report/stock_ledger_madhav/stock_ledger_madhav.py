@@ -456,7 +456,7 @@ def get_columns(filters):
 				"options": "Company:company:default_currency",
 			},
 			{
-				"label": _("Value Change"),
+				"label": _("Issued Value"),
 				"fieldname": "stock_value_difference",
 				"fieldtype": "Currency",
 				"width": 110,
