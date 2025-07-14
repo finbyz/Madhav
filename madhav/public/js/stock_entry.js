@@ -1,6 +1,6 @@
 frappe.ui.form.on('Stock Entry', {
     company: function(frm) {
-        if (frm.is_new()) {  // Only set if new
+        if (frm.is_new()) { 
             if (frm.doc.company === "MADHAV UDYOG PRIVATE LIMITED") {
                 frm.set_value("naming_series", "MUST.YY.-");
             } else if (frm.doc.company === "MADHAV STELCO PRIVATE LIMITED") {
@@ -10,7 +10,7 @@ frappe.ui.form.on('Stock Entry', {
     },
 
     onload: function(frm) {
-        // Trigger company logic only if new
+        
         if (frm.is_new() && frm.doc.company) {
             frm.trigger('company');
         }
@@ -91,11 +91,11 @@ frappe.ui.form.on('Stock Entry Detail', {
         }
     },
     pieces: function (frm, cdt, cdn) { 
-        console.log("222222222222")
+        
         update_totals(frm);
     },
     average_length: function (frm, cdt, cdn) {
-        console.log("333333333333")
+        
         const child = locals[cdt][cdn];
 
         if (
@@ -143,8 +143,7 @@ function set_batch_filter(frm, cdt, cdn) {
 function update_totals(frm) {
     
     if(frm.doc.stock_entry_type === "Material Receipt"){
-        console.log("55555555555555")
-        
+                
         let total_length = 0;
 
     // Step 1: Calculate total_length_in_meter

@@ -176,44 +176,95 @@ import frappe
 from frappe.utils import flt
 
 @frappe.whitelist()
+# def get_filtered_batches(doctype, txt, searchfield, start, page_len, filters):
+#     from frappe.utils import cint
+#     min_avg_length = flt(filters.get("average_length") or 0)
+#     item_code = filters.get("item_code")
+#     warehouse = filters.get("warehouse")
+#     include_expired = cint(filters.get("include_expired") or 0)
+    
+#     conditions = ["average_length >= %(min_avg_length)s"]
+    
+#     if item_code:
+#         conditions.append("item = %(item_code)s")
+
+#     if warehouse:
+#         conditions.append("warehouse = %(warehouse)s")
+
+#     if not include_expired:
+#         conditions.append("(expiry_date IS NULL OR expiry_date >= CURDATE())")
+
+#     return frappe.db.sql(f"""
+#         SELECT
+#             name,
+#             CONCAT(
+#                 '<b>P:</b> ', CAST(IFNULL(pieces, 0) AS CHAR), ', ',
+#                 '<b>L:</b> ', CAST(ROUND(IFNULL(average_length, 0), 2) AS CHAR), ', ',
+#                 '<b>SW:</b> ', CAST(ROUND(IFNULL(section_weight, 0), 2) AS CHAR), ', ',
+#                 CAST(ROUND(IFNULL(batch_qty, 0), 2) AS CHAR), ', ',
+#                 IFNULL(batch_group_reference, 'N/A')
+#             ) AS custom_label
+#         FROM `tabBatch`
+#         WHERE
+#             {" AND ".join(conditions)} AND
+#             name LIKE %(txt)s
+#         ORDER BY name
+#         LIMIT %(page_len)s OFFSET %(start)s
+#     """, {
+#         "min_avg_length": min_avg_length,
+#         "txt": f"%{txt}%",
+#         "start": start,
+#         "page_len": page_len,
+#         "item_code": item_code
+#     })
+    
 def get_filtered_batches(doctype, txt, searchfield, start, page_len, filters):
-    from frappe.utils import cint
+    from frappe.utils import flt, cint
+
     min_avg_length = flt(filters.get("average_length") or 0)
     item_code = filters.get("item_code")
     warehouse = filters.get("warehouse")
     include_expired = cint(filters.get("include_expired") or 0)
-    
-    conditions = ["average_length >= %(min_avg_length)s"]
-    
-    if item_code:
-        conditions.append("item = %(item_code)s")
 
-    # if warehouse:
-    #     conditions.append("warehouse = %(warehouse)s")
+    conditions = ["b.average_length >= %(min_avg_length)s"]
+
+    if item_code:
+        conditions.append("b.item = %(item_code)s")
 
     if not include_expired:
-        conditions.append("(expiry_date IS NULL OR expiry_date >= CURDATE())")
+        conditions.append("(b.expiry_date IS NULL OR b.expiry_date >= CURDATE())")
 
     return frappe.db.sql(f"""
         SELECT
-            name,
+            b.name,
             CONCAT(
-                '<b>P:</b> ', CAST(IFNULL(pieces, 0) AS CHAR), ', ',
-                '<b>L:</b> ', CAST(ROUND(IFNULL(average_length, 0), 2) AS CHAR), ', ',
-                '<b>SW:</b> ', CAST(ROUND(IFNULL(section_weight, 0), 2) AS CHAR), ', ',
-                CAST(ROUND(IFNULL(batch_qty, 0), 2) AS CHAR), ', ',
-                IFNULL(batch_group_reference, 'N/A')
+                '<b>P:</b> ', CAST(IFNULL(b.pieces, 0) AS CHAR), ', ',
+                '<b>L:</b> ', CAST(ROUND(IFNULL(b.average_length, 0), 2) AS CHAR), ', ',
+                '<b>SW:</b> ', CAST(ROUND(IFNULL(b.section_weight, 0), 2) AS CHAR), ', ',
+                CAST(ROUND(IFNULL(b.batch_qty, 0), 2) AS CHAR), ', ',
+                IFNULL(b.batch_group_reference, 'N/A')
             ) AS custom_label
-        FROM `tabBatch`
+        FROM `tabBatch` b
         WHERE
-            {" AND ".join(conditions)} AND
-            name LIKE %(txt)s
-        ORDER BY name
+            {" AND ".join(conditions)}
+            AND EXISTS (
+                SELECT 1
+                FROM `tabPiece Stock Ledger Entry` sle
+                JOIN `tabSerial and Batch Bundle` sb ON sb.name = sle.serial_and_batch_bundle
+                JOIN `tabSerial and Batch Entry` sb_entry ON sb_entry.parent = sb.name
+                WHERE sb_entry.batch_no = b.name
+                  {f"AND sle.warehouse = %(warehouse)s" if warehouse else ""}
+            )
+            AND b.name LIKE %(txt)s
+        ORDER BY b.name
         LIMIT %(page_len)s OFFSET %(start)s
     """, {
         "min_avg_length": min_avg_length,
         "txt": f"%{txt}%",
         "start": start,
         "page_len": page_len,
-        "item_code": item_code
-    })
+        "item_code": item_code,
+        "warehouse": warehouse
+    })         
+    
+    
