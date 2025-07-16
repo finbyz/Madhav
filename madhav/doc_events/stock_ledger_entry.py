@@ -60,6 +60,8 @@ import frappe
 
 def create_piece_stock_ledger_entry(sle_doc, method):
     # Check if piece_qty exists in the parent document, else skip
+    if not frappe.db.get_value("Item",sle_doc.item_code,"required_stock_in_pieces"):
+        return
     piece_qty = get_piece_qty(sle_doc)
     
     if piece_qty is None:

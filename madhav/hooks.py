@@ -47,7 +47,7 @@ app_license = "gpl-3.0"
 doctype_js = {
     "Attendance" : "public/js/attendance.js",
     "Stock Entry": "public/js/stock_entry.js",
-    "Purchase Receipt": "public/js/purchase_receipt.js"
+    # "Purchase Receipt": "public/js/purchase_receipt.js"
 }
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
 doctype_list_js = {
