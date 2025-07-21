@@ -50,16 +50,16 @@ frappe.ui.form.on('Stock Entry', {
                             item_code: item.item_code,
                             required_stock_in_pieces: item.required_stock_in_pieces,
                             qty: item.qty,
+                            transfer_qty: item.qty,
                             uom: item.uom,
-                            stock_uom: item.stock_uom,
-                            s_warehouse: item.s_warehouse,
-                            t_warehouse: item.t_warehouse,                            
+                            stock_uom: item.stock_uom,                           
                             average_length: item.average_length,
                             section_weight: item.section_weight,
                             basic_rate: item.basic_rate,
                             conversion_factor: item.conversion_factor,
                             stock_qty: item.stock_qty,
-                            use_serial_batch_fields: 1
+                            use_serial_batch_fields: 1,
+                            original_qty: item.qty
                         });
                     });
 
@@ -204,7 +204,19 @@ function update_totals(frm) {
             let accepted_qty_kg = pieces * avg_len * section_weight;
             let qty = (accepted_qty_kg / 1000).toFixed(4);
 
-            frappe.model.set_value(item.doctype, item.name, "qty", qty);
+            if (item.original_qty && qty > flt(item.original_qty)) {
+                frappe.msgprint({
+                    title: "Quantity Exceeded",
+                    message: `Qty for item <b>${item.item_code}</b> cannot exceed original reference qty: <b>${item.original_qty}</b>`,
+                    indicator: "red"
+                });
+
+                // Optional: Reset pieces or qty
+                frappe.model.set_value(item.doctype, item.name, "pieces", 0);
+                frappe.model.set_value(item.doctype, item.name, "qty", flt(item.original_qty));
+            } else {
+                frappe.model.set_value(item.doctype, item.name, "qty", qty);
+            }
         });
     }
 }
