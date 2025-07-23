@@ -68,7 +68,7 @@ def create_batch_group(purchase_receipt):
         },
         fields=["name","pieces","weight_received","average_length","section_weight"]
     )
-    
+    frappe.throw(str(batch_list))
     if not batch_list:        
         return
         
