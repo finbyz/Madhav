@@ -68,13 +68,13 @@ def create_batch_group(purchase_receipt):
         },
         fields=["name","pieces","weight_received","average_length","section_weight"]
     )
+    
+    if not batch_list:        
+        return
         
     for batch in batch_list:
         if batch.pieces == 0 or batch.average_length == 0.0 or batch.section_weight == 0.0:            
             return
-
-    if not batch_list:        
-        return
 
     # Create Batch Group
     batch_group = frappe.new_doc("Batch Group")
