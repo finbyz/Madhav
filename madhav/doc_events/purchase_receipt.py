@@ -81,7 +81,13 @@ def create_batch_group(purchase_receipt):
     batch_group.reference_doctype = "Purchase Receipt"
     batch_group.reference_document_name = purchase_receipt.name
     batch_group.total_length_in_meter = purchase_receipt.total_length_in_meter
-    weight_received_kg = purchase_receipt.weight_received * 1000
+
+    weight_received_kg = purchase_receipt.weight_received * 1000 if purchase_receipt.weight_received else 0
+
+    # Check if weight is zero or invalid
+    if weight_received_kg == 0:
+        return
+    
     batch_group.section_weight = round(weight_received_kg/purchase_receipt.total_length_in_meter, 2)
 
     for batch in batch_list:
