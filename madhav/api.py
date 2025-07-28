@@ -165,8 +165,22 @@ def custom_make_variant_item_code(template_item_code, template_item_name, varian
         m = re.match(rf"^{prefix}(\d{{6}})$", code)
         if m:
             suffixes.append(int(m.group(1)))
+            
+    if prefix == "RM":
+        all_numbers = sorted(set(suffixes + [base_number]))
 
-    next_number = max(suffixes or [base_number]) + 1
+        # Find next missing number
+        next_number = None
+        for i in range(base_number, all_numbers[-1] + 2):
+            if i not in all_numbers:
+                next_number = i
+                break
+
+        if not next_number:
+            frappe.throw("Unable to determine next item code")
+    else:
+        next_number = max(suffixes or [base_number]) + 1
+        
     suffix_str = f"{next_number:06d}"  # Pad to 6 digits like 000002
 
     # Set new item_code
