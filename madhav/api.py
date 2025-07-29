@@ -151,7 +151,7 @@ def custom_make_variant_item_code(template_item_code, template_item_name, varian
 
     prefix, base_number = match.groups()
     base_number = int(base_number)
-
+    
     # Get all items starting with this prefix
     existing_codes = frappe.get_all(
         "Item",
@@ -167,11 +167,12 @@ def custom_make_variant_item_code(template_item_code, template_item_name, varian
             suffixes.append(int(m.group(1)))
             
     if prefix == "RM":
+        
         all_numbers = sorted(set(suffixes + [base_number]))
 
         # Find next missing number
         next_number = None
-        for i in range(base_number, all_numbers[-1] + 2):
+        for i in range(1, all_numbers[-1] + 2):
             if i not in all_numbers:
                 next_number = i
                 break
