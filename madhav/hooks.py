@@ -47,6 +47,7 @@ app_license = "gpl-3.0"
 doctype_js = {
     "Attendance" : "public/js/attendance.js",
     "Stock Entry": "public/js/stock_entry.js",
+    "BOM": "public/js/bom.js",
     # "Purchase Receipt": "public/js/purchase_receipt.js"
 }
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
@@ -172,6 +173,9 @@ doc_events = {
     },
     "Batch":{
         "autoname":"madhav.doc_events.batch.autoname"
+    },
+    "BOM":{
+        
     },
     "Attendance":{
       "validate":"madhav.doc_events.attendance.set_status",
