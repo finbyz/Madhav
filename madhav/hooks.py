@@ -144,7 +144,8 @@ doctype_calendar_js = {"Shift Assignment":"public/js/shift_assignment_calendar.j
 # }
 
 override_doctype_class = {
-    "Attendance":"madhav.madhav.override.attendance.Attendance"
+    "Attendance":"madhav.madhav.override.attendance.Attendance",
+    "BOM":"madhav.madhav.override.bom.BOM",
 }
 
 # Document Events
