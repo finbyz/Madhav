@@ -1,9 +1,11 @@
 import frappe
 
 def calculate_qty_in_tonne(doc,method):
+    
+    total_length_in_meter = 0
+    total_qty = 0
+    
     for row in doc.items:
-        total_length_in_meter = 0
-        total_qty = 0
 
         if row.length_size and row.pieces:  
             
