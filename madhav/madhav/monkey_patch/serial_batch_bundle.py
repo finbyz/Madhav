@@ -21,6 +21,7 @@ def create_batch(self):
 			# "no_of_packages": data.get("no_of_packages"),
 			# "batch_yield": data.get("batch_yield"),
 			# "concentration": data.get("concentration")
+			"reference_detail_no": self.voucher_detail_no
 		})
 		# if data.get("quality_inspection"):
 		# 	quality_inspection = frappe.get_doc("Quality Inspection", data.get("quality_inspection"))

@@ -1,0 +1,199 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "naming_series:",
+ "creation": "2025-08-08 17:39:49.801517",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "date",
+  "column_break_bicg",
+  "company",
+  "section_break_rylt",
+  "default_source_warehouse",
+  "target_qty",
+  "column_break_3kmq",
+  "default_finished_goods_warehouse",
+  "wastage_warehouse",
+  "section_break_odby",
+  "cut_plan_detail",
+  "section_break_at2n",
+  "total_qty",
+  "actual_qty",
+  "amount",
+  "section_break_2gpb",
+  "cutting_plan_finish",
+  "cut_plan_total_qty",
+  "work_order",
+  "stock_entry_reference",
+  "section_break_3nfq",
+  "cutting_plan_scrap_transfer",
+  "amended_from",
+  "naming_series"
+ ],
+ "fields": [
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Cutting Plan",
+   "print_hide": 1,
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "date",
+   "fieldtype": "Datetime",
+   "label": "Date"
+  },
+  {
+   "fieldname": "column_break_bicg",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "company",
+   "fieldtype": "Link",
+   "label": "Company",
+   "options": "Company"
+  },
+  {
+   "fieldname": "section_break_rylt",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "default_source_warehouse",
+   "fieldtype": "Link",
+   "label": "Default Source Warehouse",
+   "options": "Warehouse"
+  },
+  {
+   "fieldname": "target_qty",
+   "fieldtype": "Float",
+   "label": "Target Qty"
+  },
+  {
+   "fieldname": "column_break_3kmq",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fetch_from": "work_order.fg_warehouse",
+   "fieldname": "default_finished_goods_warehouse",
+   "fieldtype": "Link",
+   "label": "Default Finished Goods Warehouse",
+   "options": "Warehouse"
+  },
+  {
+   "fieldname": "wastage_warehouse",
+   "fieldtype": "Link",
+   "label": "Wastage Warehouse",
+   "options": "Warehouse"
+  },
+  {
+   "fieldname": "section_break_odby",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "cut_plan_detail",
+   "fieldtype": "Table",
+   "label": "RM Detail For Cut Plan",
+   "options": "Cut Plan Detail"
+  },
+  {
+   "fieldname": "section_break_at2n",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "total_qty",
+   "fieldtype": "Float",
+   "label": "Total Qty",
+   "precision": "2",
+   "read_only": 1
+  },
+  {
+   "fieldname": "actual_qty",
+   "fieldtype": "Float",
+   "label": "Actual Qty"
+  },
+  {
+   "fieldname": "amount",
+   "fieldtype": "Float",
+   "label": "Amount",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_2gpb",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "cutting_plan_finish",
+   "fieldtype": "Table",
+   "label": "Cutting Plan Finish",
+   "options": "Cutting Plan Finish"
+  },
+  {
+   "fieldname": "work_order",
+   "fieldtype": "Link",
+   "label": "Work Order",
+   "options": "Work Order",
+   "read_only": 1
+  },
+  {
+   "fieldname": "stock_entry_reference",
+   "fieldtype": "Link",
+   "label": "Stock Entry Reference",
+   "options": "Stock Entry"
+  },
+  {
+   "fieldname": "cut_plan_total_qty",
+   "fieldtype": "Float",
+   "label": "Cut Plan Total Qty",
+   "precision": "2"
+  },
+  {
+   "fieldname": "naming_series",
+   "fieldtype": "Data",
+   "label": "Naming Series",
+   "options": "MSCUT.-######\nMUCUT.-######"
+  },
+  {
+   "fieldname": "section_break_3nfq",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "cutting_plan_scrap_transfer",
+   "fieldtype": "Table",
+   "label": "Cutting Plan Scrap Transfer",
+   "options": "Cutting Plan Scrap Transfer"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2025-08-18 11:19:24.343875",
+ "modified_by": "Administrator",
+ "module": "Madhav",
+ "name": "Cutting Plan",
+ "naming_rule": "By \"Naming Series\" field",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}
