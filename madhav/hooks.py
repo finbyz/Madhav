@@ -178,7 +178,7 @@ doc_events = {
         "autoname":"madhav.doc_events.batch.autoname"
     },
     "Sales Order":{
-        "validate":"madhav.doc_events.sales_order.calculate_qty_in_tonne"
+        "before_validate":"madhav.doc_events.sales_order.calculate_qty_in_tonne"
     },
     "Attendance":{
       "validate":"madhav.doc_events.attendance.set_status",
