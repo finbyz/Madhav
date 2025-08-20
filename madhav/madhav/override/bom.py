@@ -16,7 +16,7 @@ class BOM(_BOM):
 		index = self.get_index_for_bom(existing_boms)
 
 		prefix = self.doctype
-		suffix = "%.5i" % index  # convert index to string (1 -> "001")
+		suffix = "%.2i" % index  # convert index to string (1 -> "001")
 		if self.bom_creator:
 			prefix = self.bom_creator
 			bom_name = f"{prefix}-{suffix}"
@@ -40,7 +40,7 @@ class BOM(_BOM):
 			)
 
 			index = self.get_index_for_bom(existing_boms)
-			suffix = "%.5i" % index
+			suffix = "%.2i" % index
 			name = f"{prefix}-{self.item}-{suffix}"
 
 		self.name = name
