@@ -17,6 +17,9 @@
   "pieces",
   "length_size",
   "section_weight",
+  "column_break_wnln",
+  "total_length_in_meter",
+  "section_break_mnai",
   "qty_section",
   "qty",
   "scrap_qty",
@@ -135,13 +138,27 @@
    "fieldtype": "Float",
    "label": "Scrap Qty",
    "precision": "2"
+  },
+  {
+   "fieldname": "column_break_wnln",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "total_length_in_meter",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Total Length In Meter"
+  },
+  {
+   "fieldname": "section_break_mnai",
+   "fieldtype": "Section Break"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2025-08-13 11:27:35.511923",
+ "modified": "2025-08-22 15:30:04.731897",
  "modified_by": "Administrator",
  "module": "Madhav",
  "name": "Cut Plan Detail",
