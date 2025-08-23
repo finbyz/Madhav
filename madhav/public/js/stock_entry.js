@@ -27,6 +27,12 @@ frappe.ui.form.on('Stock Entry', {
                 };
             }
         });
+         //New logic: copy qty → required_qty in each row
+        if (frm.is_new() && frm.doc.work_order && frm.doc.stock_entry_type === "Material Transfer for Manufacture") {
+            (frm.doc.items || []).forEach(d => {
+                frappe.model.set_value(d.doctype, d.name, 'required_qty', d.qty);
+            });
+        }
     },
     
     weight_received: function(frm) {
