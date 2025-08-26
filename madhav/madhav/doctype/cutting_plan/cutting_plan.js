@@ -309,13 +309,8 @@ frappe.ui.form.on('Cutting Plan Finish', {
 
 // Updated helper function to auto-fill remaining length
 function auto_fill_remaining_length(frm, cdt, cdn) {
-    console.log("=== AUTO_FILL_REMAINING_LENGTH FUNCTION STARTED ===");
-    console.log("cdt:", cdt, "cdn:", cdn);
-    
     let row = locals[cdt][cdn];
-    console.log("Current row:", row);
-    console.log("Current row batch:", row.rm_reference_batch);
-        
+            
     // Find the batch total length from cut_plan_detail
     let batch_total_length = 0;
     if (frm.doc.cut_plan_detail && frm.doc.cut_plan_detail.length > 0) {
@@ -346,10 +341,7 @@ function auto_fill_remaining_length(frm, cdt, cdn) {
         });
     }
     
-    console.log("FINAL CALCULATIONS:");
-    console.log("batch_total_length:", batch_total_length);
-    console.log("total_consumed_length:", total_consumed_length);
-    
+        
     // Calculate remaining length
     let remaining_length = batch_total_length - total_consumed_length;
     console.log("remaining_length:", remaining_length);
@@ -446,7 +438,7 @@ function validate_batch_qty_consumption(frm, cdt, cdn) {
         let remaining_qty = (available_qty - consumed_qty).toFixed(2);
         
         frappe.msgprint({
-            title: 'Quantity Validation Error',
+            title: 'Quantity Validation',
             message: `<p><strong>Batch:</strong> ${batch_to_validate}</p>
                      <p><strong>Available Quantity:</strong> ${available_qty.toFixed(2)}</p>
                      <p><strong>Already Consumed:</strong> ${consumed_qty.toFixed(2)}</p>
