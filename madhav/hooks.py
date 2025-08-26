@@ -184,7 +184,10 @@ doc_events = {
       "validate":"madhav.doc_events.attendance.set_status",
       "after_insert":"madhav.doc_events.attendance.set_short_leave_count",
       "on_update_after_submit": "madhav.doc_events.attendance.set_short_leave_count"     
-  }
+    },
+    "Production Plan": {
+        "before_save":"madhav.doc_events.production_plan.consolidate_assembly_items"
+        }    
 }
 
 from erpnext.stock.serial_batch_bundle import SerialBatchCreation
