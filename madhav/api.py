@@ -281,5 +281,30 @@ def get_filtered_batches(doctype, txt, searchfield, start, page_len, filters):
         "item_code": item_code,
         "warehouse": warehouse
     })         
+
+@frappe.whitelist()    
+def get_work_order_details(work_orders):
+    """
+    Fetch detailed information for selected work orders
+    """
+    import json
     
+    if isinstance(work_orders, str):
+        work_orders = json.loads(work_orders)
     
+    items = []
+    
+    for wo_data in work_orders:
+        work_order_name = wo_data.get('work_order')
+        
+        # Fetch work order details
+        work_order = frappe.get_doc('Work Order', work_order_name)
+        
+        for wo_items in work_order.required_items:
+            items.append({
+            'item_code': wo_items.item_code,
+            'source_warehouse': wo_items.source_warehouse,
+            'qty': wo_items.get('required_qty', 0),
+            'work_order_reference':work_order_name
+            })
+    return items

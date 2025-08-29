@@ -19,6 +19,9 @@ class CuttingPlan(Document):
         doc.name = make_autoname(doc.naming_series)
         
     def on_submit(doc):
+        
+        set_cutting_reference(doc)
+
 		
         """Auto create Repack Stock Entry when Cutting Plan is submitted"""
         # Validate required data
@@ -188,3 +191,13 @@ def create_batch_for_finish_item(cutting_plan_doc, finish_item):
 def get_item_stock_uom(item_code):
     """Get stock UOM for item"""
     return frappe.db.get_value("Item", item_code, "stock_uom")
+
+def set_cutting_reference(doc):
+    if not doc.cut_plan_detail:
+            frappe.throw(_("Cut Plan Detail is required to create stock entry"))
+            
+    for rm_item in doc.cut_plan_detail:
+        if rm_item.work_order_reference:
+            work_order = frappe.get_doc("Work Order", rm_item.work_order_reference)
+            work_order.db_set("cutting_plan_reference", doc.name)
+            work_order.save()

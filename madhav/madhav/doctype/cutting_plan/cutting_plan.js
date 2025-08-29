@@ -1,6 +1,13 @@
 frappe.ui.form.on('Cutting Plan', {
     refresh: function(frm) {
 
+        // Add the "Get Items From" button
+        if (!frm.is_new()) {
+            frm.add_custom_button(__('Get Items From'), function() {
+                show_work_order_dialog(frm);
+            });
+        }
+
         // Disable add/remove rows in scrap_transfer child table
         frm.fields_dict["cutting_plan_scrap_transfer"].grid.cannot_add_rows = true;
         frm.fields_dict["cutting_plan_scrap_transfer"].grid.only_sortable = true;
@@ -81,6 +88,192 @@ frappe.ui.form.on('Cutting Plan', {
         }
     }
 });
+
+function show_work_order_dialog(frm) {
+    let dialog = new frappe.ui.Dialog({
+        title: __('Select Work Orders'),
+        fields: [
+            {
+                fieldtype: 'Link',
+                fieldname: 'item_to_manufacture',
+                label: __('Item to Manufacture'),
+                options: 'Item',
+                get_query: function() {
+                    return {
+                        filters: {
+                            'is_stock_item': 1
+                        }
+                    };
+                },
+                onchange: function() {
+                    // When item is selected, update Work Order filter
+                    let item = dialog.get_value('item_to_manufacture');
+                    dialog.fields_dict.work_order_name.get_query = function() {
+                        return {
+                            filters: {
+                                production_item: item   // <-- filter by selected item
+                            }
+                        };
+                    };
+                }
+            },            
+            {
+                fieldtype: 'Link',
+                fieldname: 'work_order_name',
+                label: __('Work Order Name'),
+                options: 'Work Order',
+                description: __('Enter partial name to filter work orders')
+            },
+            {
+                fieldtype: 'HTML',
+                fieldname: 'work_orders_html',
+                options: '<div id="work_orders_container"></div>'
+            }
+        ],
+        primary_action_label: __('Get Selected Items'),
+        primary_action: function(values) {
+            get_selected_work_orders(frm, dialog);
+        }
+    });
+
+    // Add search functionality
+    dialog.fields_dict.item_to_manufacture.$input.on('change', function() {
+        load_work_orders(dialog);
+    });
+
+    dialog.fields_dict.work_order_name.$input.on('input', function() {
+        load_work_orders(dialog);
+    });
+
+    dialog.show();
+    
+    // Load work orders initially
+    setTimeout(() => {
+        load_work_orders(dialog);
+    }, 100);
+}
+
+function load_work_orders(dialog) {
+    let item_to_manufacture = dialog.get_value('item_to_manufacture');
+    let work_order_name = dialog.get_value('work_order_name');
+    
+    let filters = {
+        'status': ['not in', ['Completed', 'Stopped', 'Cancelled']],
+        'docstatus': 1
+    };
+    
+    if (work_order_name) {
+        filters['name'] = ['like', '%' + work_order_name + '%'];
+    } else if (item_to_manufacture) {
+        filters['production_item'] = item_to_manufacture;
+    }
+
+    frappe.call({
+        method: 'frappe.client.get_list',
+        args: {
+            doctype: 'Work Order',
+            filters: filters,
+            fields: ['name','production_item'],
+            order_by: 'creation desc',
+            limit_page_length: 20
+        },
+        callback: function(r) {
+            if (r.message) {
+                render_work_orders_table(dialog, r.message);
+            }else {
+                // Clear HTML if no records found
+                dialog.fields_dict.work_orders_html.$wrapper.html('<p>No Work Orders Found</p>');
+            }
+        }
+    });
+}
+
+function render_work_orders_table(dialog, work_orders) {
+    let html = `
+        <div class="table-responsive">
+            <table class="table table-striped">
+                <thead>
+                    <tr>
+                        <th><input type="checkbox" id="select_all_wo"></th>
+                        <th>Work Order</th>
+                        <th>Production Item</th>
+                    </tr>
+                </thead>
+                <tbody>
+    `;
+
+    work_orders.forEach(function(wo) {
+        let pending_qty = wo.qty - (wo.produced_qty || 0);
+        html += `
+            <tr>
+                <td><input type="checkbox" class="work-order-checkbox" data-name="${wo.name}" data-item="${wo.production_item}" data-qty="${pending_qty}"></td>
+                <td>${wo.name}</td>
+                <td>${wo.production_item}</td>
+            </tr>
+        `;
+    });
+
+    html += `
+                </tbody>
+            </table>
+        </div>
+    `;
+
+    dialog.fields_dict.work_orders_html.$wrapper.html(html);
+
+    // Add select all functionality
+    $('#select_all_wo').on('change', function() {
+        $('.work-order-checkbox').prop('checked', this.checked);
+    });
+}
+
+function get_selected_work_orders(frm, dialog) {
+    let selected_work_orders = [];
+    
+    $('.work-order-checkbox:checked').each(function() {
+        selected_work_orders.push({
+            work_order: $(this).data('name'),
+            item_code: $(this).data('item'),
+            qty: $(this).data('qty')
+        });
+    });
+
+    if (selected_work_orders.length === 0) {
+        frappe.msgprint(__('Please select at least one Work Order'));
+        return;
+    }
+
+    // Process selected work orders and add to cutting plan
+    process_selected_work_orders(frm, selected_work_orders);
+    dialog.hide();
+}
+
+function process_selected_work_orders(frm, selected_work_orders) {
+    frappe.call({
+        method: 'madhav.api.get_work_order_details',
+        args: {
+            work_orders: selected_work_orders
+        },
+        callback: function(r) {
+            if (r.message) {
+                                
+                r.message.forEach(function(item) {
+                    let child = frm.add_child('cut_plan_detail');
+                    child.item_code = item.item_code;
+                    child.source_warehouse = item.source_warehouse;
+                    child.qty = item.qty;
+                    child.work_order_reference =  item.work_order_reference;
+                });
+                
+                frm.refresh_field('cut_plan_detail');
+                frappe.show_alert({
+                    message: __('Items added successfully'),
+                    indicator: 'green'
+                });
+            }
+        }
+    });
+}
 
 // Child table events for cut_plan_detail
 frappe.ui.form.on('Cut Plan Detail', {

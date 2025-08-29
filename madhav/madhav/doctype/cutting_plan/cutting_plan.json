@@ -43,6 +43,7 @@
    "search_index": 1
   },
   {
+   "default": "Now",
    "fieldname": "date",
    "fieldtype": "Datetime",
    "label": "Date"
@@ -171,7 +172,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2025-08-18 11:19:24.343875",
+ "modified": "2025-08-29 10:13:14.670959",
  "modified_by": "Administrator",
  "module": "Madhav",
  "name": "Cutting Plan",
