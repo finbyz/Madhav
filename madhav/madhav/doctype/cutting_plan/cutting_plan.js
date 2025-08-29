@@ -2,7 +2,7 @@ frappe.ui.form.on('Cutting Plan', {
     refresh: function(frm) {
 
         // Add the "Get Items From" button
-        if (!frm.is_new()) {
+        if (frm.is_new()) {
             frm.add_custom_button(__('Get Items From'), function() {
                 show_work_order_dialog(frm);
             });
