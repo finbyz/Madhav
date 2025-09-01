@@ -34,6 +34,9 @@ class CuttingPlan(Document):
         try:
             # Create Repack Stock Entry
             stock_entry = create_repack_stock_entry(doc)
+            
+            if stock_entry:
+                set_stock_entry_reference_wo(doc,stock_entry)
 
             # Update cutting plan with stock entry reference
             doc.db_set('stock_entry_reference', stock_entry.name, update_modified=False)
@@ -150,9 +153,8 @@ def create_repack_stock_entry(cutting_plan_doc):
 
     # Insert and submit stock entry
     stock_entry.insert()
-    stock_entry.submit()
+    # stock_entry.submit()
 
-    # Update cutting plan with batch references
     cutting_plan_doc.save()
 
     return stock_entry
@@ -201,3 +203,12 @@ def set_cutting_reference(doc):
             work_order = frappe.get_doc("Work Order", rm_item.work_order_reference)
             work_order.db_set("cutting_plan_reference", doc.name)
             work_order.save()
+
+def set_stock_entry_reference_wo(doc,stock_entry):
+    for row in doc.cut_plan_detail:
+        if row.work_order_reference:
+            wo = frappe.get_doc("Work Order", row.work_order_reference)
+            wo.db_set("repack_stock_entry_reference",stock_entry.name)
+            wo.save()
+            
+    
