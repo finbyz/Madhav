@@ -41,17 +41,22 @@ class CuttingPlan(Document):
             # Update cutting plan with stock entry reference
             doc.db_set('stock_entry_reference', stock_entry.name, update_modified=False)
 
-            # Show success message
+            
             frappe.msgprint(
             _(f'Repack Stock Entry <a href="/app/stock-entry/{stock_entry.name}" style="font-weight:bold;">{stock_entry.name}</a> created successfully'),
                 title="Stock Entry Created",
                 indicator="green"
             )
-            # frappe.msgprint(_(f"Repack Stock Entry <b>{stock_entry.name}</b> created successfully"),
-            #                 title="Stock Entry Created", indicator="green")
-
+            
         except Exception as e:
-            frappe.log_error(f"Error creating repack entry for {doc.name}: {str(e)}", "Cutting Plan Repack Error")
+            error_message = f"Error creating repack entry for {doc.name}: {str(e)}"
+            
+            # keep title short, details go into message
+            frappe.log_error(
+                title=f"Repack Error - {doc.name}",
+                message=error_message
+            )
+
             frappe.throw(_("Error creating Repack Stock Entry: {0}").format(str(e)))
 
 
@@ -88,7 +93,7 @@ def create_repack_stock_entry(cutting_plan_doc):
             source_entry.section_weight = source_item.section_weight
             source_entry.s_warehouse = source_item.source_warehouse
             source_entry.uom = source_item.get('uom') or get_item_stock_uom(source_item.item_code)
-            source_entry.basic_rate = source_item.get('basic_rate') or 0
+            # source_entry.basic_rate = source_item.basic_rate
             source_entry.use_serial_batch_fields = 1
 
             # Add existing batch if available
@@ -98,7 +103,7 @@ def create_repack_stock_entry(cutting_plan_doc):
             # Add serial and batch bundle if exists
             if source_item.get('serial_and_batch_bundle'):
                 source_entry.serial_and_batch_bundle = source_item.serial_and_batch_bundle
-
+        
     # Add TARGET items (Items being produced from cut_plan_finish)
     for finish_item in cutting_plan_doc.cutting_plan_finish:
         if finish_item.item and finish_item.qty > 0:
@@ -140,22 +145,22 @@ def create_repack_stock_entry(cutting_plan_doc):
                 scrap_entry.qty = scrap_item.scrap_qty
                 scrap_entry.t_warehouse = scrap_item.target_scrap_warehouse
                 scrap_entry.uom = scrap_item.get('uom') or get_item_stock_uom(scrap_item.item_code)
-                scrap_entry.basic_rate = scrap_item.get('basic_rate') or 0
+                # scrap_entry.basic_rate = scrap_item.get('basic_rate') or 0
                 scrap_entry.use_serial_batch_fields = 1
                 
                 # Add batch information if available
-                if scrap_item.get('batch'):
-                    scrap_entry.batch_no = scrap_item.batch
+                # if scrap_item.get('batch'):
+                #     scrap_entry.batch_no = scrap_item.batch
                 
                 # Add serial and batch bundle if exists
-                if scrap_item.get('serial_and_batch_bundle'):
-                    scrap_entry.serial_and_batch_bundle = scrap_item.serial_and_batch_bundle
+                # if scrap_item.get('serial_and_batch_bundle'):
+                #     scrap_entry.serial_and_batch_bundle = scrap_item.serial_and_batch_bundle
 
     # Insert and submit stock entry
     stock_entry.insert()
-    # stock_entry.submit()
-
-    cutting_plan_doc.save()
+    stock_entry.submit()
+    
+    # cutting_plan_doc.save()
 
     return stock_entry
 

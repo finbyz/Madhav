@@ -2,7 +2,7 @@ frappe.ui.form.on('Cutting Plan', {
     refresh: function(frm) {
 
         // Add the "Get Items From" button
-        if (frm.is_new()) {
+        if (frm.doc.docstatus !== 1) {
             frm.add_custom_button(__('Get Items From'), function() {
                 show_work_order_dialog(frm);
             });
@@ -79,13 +79,6 @@ frappe.ui.form.on('Cutting Plan', {
                 };
             }
         });
-
-        // Add button to auto-fill scrap transfer table
-        if (!frm.is_new()) {
-            frm.add_custom_button(__('Auto Fill Scrap Transfer'), function() {
-                auto_fill_scrap_transfer_table(frm);
-            }, __('Actions'));
-        }
     }
 });
 
@@ -109,20 +102,65 @@ function show_work_order_dialog(frm) {
                     // When item is selected, update Work Order filter
                     let item = dialog.get_value('item_to_manufacture');
                     dialog.fields_dict.work_order_name.get_query = function() {
-                        return {
-                            filters: {
-                                production_item: item   // <-- filter by selected item
-                            }
+                        let filters = {
+                            'status': ['not in', ['Completed', 'Stopped', 'Cancelled']],
+                            'docstatus': 1
                         };
+                        if (item) {
+                            filters.production_item = item;
+                        }
+                        return { filters: filters };
                     };
+                    // Reload work orders when item changes
+                    load_work_orders(dialog);
                 }
-            },            
+            },  
+            {
+                fieldtype: 'Link',
+                fieldname: 'rm_used',
+                label: __('Work Orders Raw Material'),
+                options: 'Item',
+                description: __('Filter work orders by raw material used'),
+                get_query: function() {
+                    return {
+                        filters: {
+                            'is_stock_item': 1
+                        }
+                    };
+                },
+                onchange: function() {
+                    // Disable work order if RM is selected
+                    if (dialog.get_value('rm_used')) {
+                        dialog.set_df_property('work_order_name', 'read_only', 1);
+                        dialog.set_value('work_order_name', ''); // Clear work order value if any
+                    } else {
+                        dialog.set_df_property('work_order_name', 'read_only', 0);
+                    }
+                    // Reload work orders when RM changes
+                    load_work_orders(dialog);
+                }
+            },          
             {
                 fieldtype: 'Link',
                 fieldname: 'work_order_name',
                 label: __('Work Order Name'),
                 options: 'Work Order',
-                description: __('Enter partial name to filter work orders')
+                description: __('Enter partial name to filter work orders'),
+                get_query: function() {
+                    let item = dialog.get_value('item_to_manufacture');
+                    let filters = {
+                        'status': ['not in', ['Completed', 'Stopped', 'Cancelled']],
+                        'docstatus': 1
+                    };
+                    if (item) {
+                        filters.production_item = item;
+                    }
+                    return { filters: filters };
+                },
+                onchange: function() {
+                    // Load work orders when work order name changes
+                    load_work_orders(dialog);
+                }
             },
             {
                 fieldtype: 'HTML',
@@ -145,6 +183,13 @@ function show_work_order_dialog(frm) {
         load_work_orders(dialog);
     });
 
+    // Also handle the awesomplete selection event
+    dialog.fields_dict.work_order_name.$input.on('awesomplete-selectcomplete', function() {
+        setTimeout(() => {
+            load_work_orders(dialog);
+        }, 100);
+    });
+
     dialog.show();
     
     // Load work orders initially
@@ -156,18 +201,45 @@ function show_work_order_dialog(frm) {
 function load_work_orders(dialog) {
     let item_to_manufacture = dialog.get_value('item_to_manufacture');
     let work_order_name = dialog.get_value('work_order_name');
+    let rm_used = dialog.get_value('rm_used');
     
     let filters = {
         'status': ['not in', ['Completed', 'Stopped', 'Cancelled']],
         'docstatus': 1
     };
     
-    if (work_order_name) {
-        filters['name'] = ['like', '%' + work_order_name + '%'];
-    } else if (item_to_manufacture) {
+    if (item_to_manufacture) {
         filters['production_item'] = item_to_manufacture;
     }
+    
+    if (work_order_name) {
+        filters['name'] = ['like', '%' + work_order_name + '%'];
+    }
 
+    // If RM is selected, we need to use a server method to filter work orders
+    if (rm_used) {
+        frappe.call({
+            method: 'madhav.api.get_work_orders_by_rm', // You'll need to create this method
+            args: {
+                rm_item: rm_used,
+                filters: filters
+            },
+            callback: function(r) {
+                if (r.message && r.message.length > 0) {
+                    render_work_orders_table(dialog, r.message);
+                } else {
+                    dialog.fields_dict.work_orders_html.$wrapper.html('<p>No Work Orders Found with selected Raw Material</p>');
+                }
+            }
+        });
+        return;
+    }
+
+    // Regular call when no RM filter
+    get_filtered_work_orders(dialog, filters);
+}
+
+function get_filtered_work_orders(dialog, filters) {
     frappe.call({
         method: 'frappe.client.get_list',
         args: {
@@ -262,6 +334,7 @@ function process_selected_work_orders(frm, selected_work_orders) {
                     child.item_code = item.item_code;
                     child.source_warehouse = item.source_warehouse;
                     child.qty = item.qty;
+                    child.basic_rate = item.basic_rate;
                     child.work_order_reference =  item.work_order_reference;
                 });
                 
@@ -351,7 +424,7 @@ frappe.ui.form.on('Cut Plan Detail', {
         update_total_qty_and_amount(frm, cdt, cdn);
 
         // Update scrap quantity when qty changes in RM Plan Detail
-        update_scrap_qty_for_all_batches(frm);  
+        // update_scrap_qty_for_all_batches(frm);  
         // Auto-fill scrap transfer table when qty changes
         auto_fill_scrap_transfer_table(frm);
     },
@@ -397,7 +470,7 @@ frappe.ui.form.on('Cutting Plan Finish', {
         // Validate batch quantity after qty calculation
         validate_batch_qty_consumption(frm, cdt, cdn);
         // Update scrap quantity in RM Plan Detail
-        update_scrap_qty_for_all_batches(frm);
+        // update_scrap_qty_for_all_batches(frm);
         // Auto-fill scrap transfer table
         auto_fill_scrap_transfer_table(frm);
     },
@@ -407,14 +480,14 @@ frappe.ui.form.on('Cutting Plan Finish', {
         // Validate batch quantity after qty calculation
         validate_batch_qty_consumption(frm, cdt, cdn);
         // Update scrap quantity in RM Plan Detail
-        update_scrap_qty_for_all_batches(frm);
+        // update_scrap_qty_for_all_batches(frm);
         // Auto-fill scrap transfer table
         auto_fill_scrap_transfer_table(frm);
     },
     cutting_plan_finish_remove: function(frm, cdt, cdn) {
         update_total_cut_plan_qty(frm, cdt, cdn);    
         // Update scrap quantity in RM Plan Detail
-        update_scrap_qty_for_all_batches(frm);
+        // update_scrap_qty_for_all_batches(frm);
         // Auto-fill scrap transfer table
         auto_fill_scrap_transfer_table(frm);
     },
@@ -423,7 +496,7 @@ frappe.ui.form.on('Cutting Plan Finish', {
         validate_batch_qty_consumption(frm, cdt, cdn);
         update_total_cut_plan_qty(frm, cdt, cdn);
         // Update scrap quantity in RM Plan Detail
-        update_scrap_qty_for_all_batches(frm);
+        // update_scrap_qty_for_all_batches(frm);
         // Auto-fill scrap transfer table
         auto_fill_scrap_transfer_table(frm);
     },
@@ -492,7 +565,7 @@ frappe.ui.form.on('Cutting Plan Finish', {
             if (row.qty) {
                 validate_batch_qty_consumption(frm, cdt, cdn);
                 // Update scrap quantity in RM Plan Detail
-                update_scrap_qty_for_all_batches(frm);
+                // update_scrap_qty_for_all_batches(frm);
                 // Auto-fill scrap transfer table
                 auto_fill_scrap_transfer_table(frm);
             }
@@ -717,7 +790,7 @@ function update_scrap_qty_for_all_batches(frm) {
     frm.refresh_field('cut_plan_detail');
 }
 
-// Function to update scrap quantity for a specific batch
+// Function to update scrap quantity for a specific batch - currently not using**
 function update_scrap_qty_for_batch(frm, batch_name) {
     if (!frm.doc.cut_plan_detail || frm.doc.cut_plan_detail.length === 0) {
         return;
@@ -750,49 +823,68 @@ function update_scrap_qty_for_batch(frm, batch_name) {
     frm.refresh_field('cut_plan_detail');
 }
 
-// Function to auto-fill scrap transfer table
-function auto_fill_scrap_transfer_table(frm) {
-    if (!frm.doc.cut_plan_detail || frm.doc.cut_plan_detail.length === 0) {
-        return;
-    }
+// // Function to auto-fill scrap transfer table for batch wise maintainnace
+// function auto_fill_scrap_transfer_table(frm) {
+//     if (!frm.doc.cut_plan_detail || frm.doc.cut_plan_detail.length === 0) {
+//         return;
+//     }
     
+//     // Clear existing scrap transfer rows
+//     frm.clear_table('cutting_plan_scrap_transfer');
+    
+//     // Get scrap items from RM Plan Detail
+//     frm.doc.cut_plan_detail.forEach(function(detail_row) {
+//         if (detail_row.item_code && detail_row.scrap_qty && flt(detail_row.scrap_qty) > 0) {
+//             // Add scrap transfer row
+//             let scrap_row = frm.add_child('cutting_plan_scrap_transfer');
+//             scrap_row.item_code = detail_row.item_code;
+//             scrap_row.scrap_qty = detail_row.scrap_qty;
+//             scrap_row.batch = detail_row.batch;
+            
+//             // Get UOM from item or use the one from detail row
+//             if (detail_row.uom) {
+//                 scrap_row.uom = detail_row.uom;
+//             } else {
+//                 // Fetch UOM from Item master
+//                 frappe.db.get_value('Item', detail_row.item_code, 'stock_uom')
+//                     .then(r => {
+//                         if (r.message && r.message.stock_uom) {
+//                             frappe.model.set_value('Cutting Plan Scrap Transfer', scrap_row.name, 'uom', r.message.stock_uom);
+//                         }
+//                     });
+//             }
+            
+//             // Set basic rate if available
+//             if (detail_row.basic_rate) {
+//                 scrap_row.basic_rate = detail_row.basic_rate;
+//             }
+            
+//             // Set default scrap warehouse if available in form
+//             if (frm.doc.default_scrap_warehouse) {
+//                 scrap_row.target_scrap_warehouse = frm.doc.default_scrap_warehouse;
+//             }
+//         }
+//     });
+    
+//     // Refresh the scrap transfer table
+//     frm.refresh_field('cutting_plan_scrap_transfer');
+// }
+
+// Function to auto-fill scrap transfer table - without batchwise
+function auto_fill_scrap_transfer_table(frm) {
     // Clear existing scrap transfer rows
     frm.clear_table('cutting_plan_scrap_transfer');
-    
-    // Get scrap items from RM Plan Detail
-    frm.doc.cut_plan_detail.forEach(function(detail_row) {
-        if (detail_row.item_code && detail_row.scrap_qty && flt(detail_row.scrap_qty) > 0) {
-            // Add scrap transfer row
-            let scrap_row = frm.add_child('cutting_plan_scrap_transfer');
-            scrap_row.item_code = detail_row.item_code;
-            scrap_row.scrap_qty = detail_row.scrap_qty;
-            scrap_row.batch = detail_row.batch;
-            
-            // Get UOM from item or use the one from detail row
-            if (detail_row.uom) {
-                scrap_row.uom = detail_row.uom;
-            } else {
-                // Fetch UOM from Item master
-                frappe.db.get_value('Item', detail_row.item_code, 'stock_uom')
-                    .then(r => {
-                        if (r.message && r.message.stock_uom) {
-                            frappe.model.set_value('Cutting Plan Scrap Transfer', scrap_row.name, 'uom', r.message.stock_uom);
-                        }
-                    });
-            }
-            
-            // Set basic rate if available
-            if (detail_row.basic_rate) {
-                scrap_row.basic_rate = detail_row.basic_rate;
-            }
-            
-            // Set default scrap warehouse if available in form
-            if (frm.doc.default_scrap_warehouse) {
-                scrap_row.target_scrap_warehouse = frm.doc.default_scrap_warehouse;
-            }
-        }
-    });
-    
+
+    // Calculate scrap qty = totalqty - cut_plan_total_qty
+    let scrap_qty = flt(frm.doc.total_qty) - flt(frm.doc.cut_plan_total_qty);
+
+    if (scrap_qty > 0 && frm.doc.cut_plan_detail && frm.doc.cut_plan_detail.length > 0) {
+        let first_row = frm.doc.cut_plan_detail[0];  // take first row reference
+
+        let scrap_row = frm.add_child('cutting_plan_scrap_transfer');
+        scrap_row.scrap_qty = scrap_qty;
+    }
+
     // Refresh the scrap transfer table
     frm.refresh_field('cutting_plan_scrap_transfer');
 }

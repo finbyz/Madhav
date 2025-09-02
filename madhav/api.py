@@ -305,6 +305,62 @@ def get_work_order_details(work_orders):
             'item_code': wo_items.item_code,
             'source_warehouse': wo_items.source_warehouse,
             'qty': wo_items.get('required_qty', 0),
+            'basic_rate': wo_items.get('basic_rate', 0),
             'work_order_reference':work_order_name
             })
     return items
+
+@frappe.whitelist()
+def get_work_orders_by_rm(rm_item, filters=None):
+    """
+    Get work orders that have a specific raw material in their required items
+    """
+    if not filters:
+        filters = {}
+
+    if isinstance(filters, str):
+        import json
+        filters = json.loads(filters)
+
+    query = """
+        SELECT DISTINCT wo.name, wo.production_item
+        FROM `tabWork Order` wo
+        INNER JOIN `tabWork Order Item` woi ON wo.name = woi.parent
+        WHERE woi.item_code = %(rm_item)s
+    """
+
+    conditions = []
+    params = {"rm_item": rm_item}
+
+    # ✅ Fix: expand status NOT IN list into placeholders
+    if filters.get("status"):
+        status_filter = filters["status"]
+        if isinstance(status_filter, list) and len(status_filter) == 2 and status_filter[0] == "not in":
+            placeholders = []
+            for i, status in enumerate(status_filter[1]):
+                key = f"status_{i}"
+                placeholders.append(f"%({key})s")
+                params[key] = status
+            conditions.append(f"wo.status NOT IN ({', '.join(placeholders)})")
+
+    if filters.get("docstatus") is not None:
+        conditions.append("wo.docstatus = %(docstatus)s")
+        params["docstatus"] = filters["docstatus"]
+
+    if filters.get("production_item"):
+        conditions.append("wo.production_item = %(production_item)s")
+        params["production_item"] = filters["production_item"]
+
+    if filters.get("name") and isinstance(filters["name"], list) and filters["name"][0] == "like":
+        conditions.append("wo.name LIKE %(work_order_name)s")
+        params["work_order_name"] = filters["name"][1]
+
+    if conditions:
+        query += " AND " + " AND ".join(conditions)
+
+    query += " ORDER BY wo.creation DESC LIMIT 20"
+
+    # 🔍 Debugging log
+    frappe.log_error(f"Query: {query}\nParams: {params}", "get_work_orders_by_rm Debug")
+
+    return frappe.db.sql(query, params, as_dict=True)

@@ -25,6 +25,7 @@
   "cutting_plan_finish",
   "cut_plan_total_qty",
   "work_order",
+  "production_plan",
   "stock_entry_reference",
   "section_break_3nfq",
   "cutting_plan_scrap_transfer",
@@ -55,8 +56,10 @@
   {
    "fieldname": "company",
    "fieldtype": "Link",
+   "in_list_view": 1,
    "label": "Company",
-   "options": "Company"
+   "options": "Company",
+   "reqd": 1
   },
   {
    "fieldname": "section_break_rylt",
@@ -136,6 +139,7 @@
    "fieldname": "work_order",
    "fieldtype": "Link",
    "label": "Work Order",
+   "no_copy": 1,
    "options": "Work Order",
    "read_only": 1
   },
@@ -143,6 +147,7 @@
    "fieldname": "stock_entry_reference",
    "fieldtype": "Link",
    "label": "Stock Entry Reference",
+   "no_copy": 1,
    "options": "Stock Entry"
   },
   {
@@ -166,13 +171,28 @@
    "fieldtype": "Table",
    "label": "Cutting Plan Scrap Transfer",
    "options": "Cutting Plan Scrap Transfer"
+  },
+  {
+   "fieldname": "production_plan",
+   "fieldtype": "Link",
+   "label": "Production Plan",
+   "options": "Production Plan"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
- "links": [],
- "modified": "2025-08-29 10:13:14.670959",
+ "links": [
+  {
+   "link_doctype": "Stock Entry",
+   "link_fieldname": "cutting_plan_reference"
+  },
+  {
+   "link_doctype": "Work Order",
+   "link_fieldname": "cutting_plan_reference"
+  }
+ ],
+ "modified": "2025-09-02 17:47:06.620879",
  "modified_by": "Administrator",
  "module": "Madhav",
  "name": "Cutting Plan",
