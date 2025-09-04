@@ -279,6 +279,7 @@ def create_material_transfer_entry(self):
                         "uom": item.uom or frappe.db.get_value("Item", item.item_code, "stock_uom"),
                         "s_warehouse": item.get('source_warehouse'),
                         "t_warehouse": "Production Planning Yard - MS",
+                        "batch_no": item.get('batch')
                         # "basic_rate": frappe.db.get_value("Item", item.item_code, "valuation_rate") or 0
                     })
             
