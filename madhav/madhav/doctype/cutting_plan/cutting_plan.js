@@ -506,10 +506,10 @@ frappe.ui.form.on('Cutting Plan Finish', {
         let row = locals[cdt][cdn];
         let available_batches = [];
         
-        // Get all batches from cut_plan_detail
+        // Get all unique batches from cut_plan_detail
         if (frm.doc.cut_plan_detail && frm.doc.cut_plan_detail.length > 0) {
             frm.doc.cut_plan_detail.forEach(function(detail_row) {
-                if (detail_row.batch) {
+                if (detail_row.batch && !available_batches.includes(detail_row.batch)) {
                     available_batches.push(detail_row.batch);
                 }
             });
@@ -519,56 +519,37 @@ frappe.ui.form.on('Cutting Plan Finish', {
         if (row.rm_reference_batch && !available_batches.includes(row.rm_reference_batch)) {
             frappe.msgprint('Selected batch is not available in RM Detail For Cut Plan section');
             frappe.model.set_value(cdt, cdn, 'rm_reference_batch', '');
-        } else if (row.rm_reference_batch) {
-            // Auto-fill pieces and length_size from cut_plan_detail table
-            if (frm.doc.cut_plan_detail && frm.doc.cut_plan_detail.length > 0) {
-                frm.doc.cut_plan_detail.forEach(function(detail_row) {
-                    if (detail_row.batch === row.rm_reference_batch) {
-                        // Auto-fill pieces and length_size if they exist in cut_plan_detail
-                        if (detail_row.pieces) {
-                            frappe.model.set_value(cdt, cdn, 'pieces', detail_row.pieces);
-                        }
-                        if (detail_row.length_size) {
-                            frappe.model.set_value(cdt, cdn, 'length_size', detail_row.length_size);
-                        }
-                        // If both pieces and length_size are available, calculate qty
-                        if (detail_row.pieces && detail_row.length_size) {
-                            console.log("Checking if this is first occurrence of batch:", row.rm_reference_batch);
-                        
-                            let current_table = frm.doc.cutting_plan_finish || [];
-                            
-                            // Find if there are any existing rows with the same batch (excluding current row)
-                            let existing_batch_rows = current_table.filter(table_row => 
-                                table_row.rm_reference_batch === row.rm_reference_batch && 
-                                table_row.name !== cdn
-                            );
-                            
-                            console.log("Existing rows with same batch:", existing_batch_rows.length);
-                            
-                            if (existing_batch_rows.length === 0) {
-                                // This is the first occurrence of this batch
-                                console.log("First occurrence of batch - setting full length");
-                                let total_meter_length = detail_row.pieces * detail_row.length_size;
-                                frappe.model.set_value(cdt, cdn, 'total_length_in_meter', total_meter_length);
-                            } else {
-                                // This batch already exists, calculate remaining length
-                                console.log("Batch already exists - calculating remaining length");
-                                auto_fill_remaining_length(frm, cdt, cdn);
-                            }
-                        }
-                        return false; // Break the loop once we find the matching batch
-                    }
-                });
+        } 
+        if (row.rm_reference_batch) {
+            let batch_totals = calculate_batch_totals(frm, row.rm_reference_batch);
+            row.pieces = batch_totals.total_pieces || 0;
+            row.length_size = batch_totals.total_length || 0;
+
+            // Check first occurrence logic only if both values exist
+            if (batch_totals.total_pieces && batch_totals.total_length) {
+            console.log("Checking if this is first occurrence of batch:", row.rm_reference_batch);
+
+            let current_table = frm.doc.cutting_plan_finish || [];
+
+            // Find if there are any existing rows with the same batch (excluding current row)
+            let existing_batch_rows = current_table.filter(table_row =>
+                table_row.rm_reference_batch === row.rm_reference_batch &&
+                table_row.name !== cdn
+            );
+
+            console.log("Existing rows with same batch:", existing_batch_rows.length);
+
+            if (existing_batch_rows.length === 0) {
+                // This is the first occurrence of this batch
+                console.log("First occurrence of batch - setting full length");
+                let total_meter_length = batch_totals.total_pieces * batch_totals.total_length;
+                frappe.model.set_value(cdt, cdn, 'total_length_in_meter', total_meter_length);
+            } else {
+                // This batch already exists, calculate remaining length
+                console.log("Batch already exists - calculating remaining length");
+                auto_fill_remaining_length(frm, cdt, cdn);
             }
-            
-            // Validate quantity if qty is available after auto-fill
-            if (row.qty) {
-                validate_batch_qty_consumption(frm, cdt, cdn);
-                // Update scrap quantity in RM Plan Detail
-                // update_scrap_qty_for_all_batches(frm);
-                // Auto-fill scrap transfer table
-                auto_fill_scrap_transfer_table(frm);
-            }
+        }
         }
     }
 });
@@ -577,20 +558,9 @@ frappe.ui.form.on('Cutting Plan Finish', {
 function auto_fill_remaining_length(frm, cdt, cdn) {
     let row = locals[cdt][cdn];
             
-    // Find the batch total length from cut_plan_detail
-    let batch_total_length = 0;
-    if (frm.doc.cut_plan_detail && frm.doc.cut_plan_detail.length > 0) {
-        console.log("Searching in cut_plan_detail...");
-        frm.doc.cut_plan_detail.forEach(function(detail_row, index) {
-            console.log(`cut_plan_detail[${index}]:`, detail_row.batch, "pieces:", detail_row.pieces, "length_size:", detail_row.length_size);
-            if (detail_row.batch === row.rm_reference_batch) {
-                batch_total_length = detail_row.pieces * detail_row.length_size;
-                console.log("MATCH FOUND! batch_total_length calculated:", batch_total_length);
-                return false; // Break the loop
-            }
-        });
-    }
-    
+    let batch_totals = calculate_batch_totals(frm, row.rm_reference_batch);
+    let batch_total_length = batch_totals.total_length;
+
     // Calculate total consumed length from all previous rows with the same batch
     let total_consumed_length = 0;
     console.log("Checking cutting_plan_finish for consumed length...");
@@ -618,7 +588,7 @@ function auto_fill_remaining_length(frm, cdt, cdn) {
         
         // Use setTimeout to ensure this runs after other field triggers
         setTimeout(() => {
-            frappe.model.set_value(cdt, cdn, 'length_size', remaining_length);
+            frappe.model.set_value(cdt, cdn, 'total_length_in_meter', remaining_length);
             console.log("frappe.model.set_value called with delay");
         }, 100);
         
@@ -632,6 +602,37 @@ function auto_fill_remaining_length(frm, cdt, cdn) {
         }
     }
     console.log("=== AUTO_FILL_REMAINING_LENGTH FUNCTION ENDED ===");
+}
+
+function calculate_batch_totals(frm, selected_batch) {
+    let total_pieces = 0;
+    let matching_rows = 0;
+    let batch_length_size = 0;
+
+    if (frm.doc.cut_plan_detail && frm.doc.cut_plan_detail.length > 0) {
+        frm.doc.cut_plan_detail.forEach(function(detail_row) {
+            if (detail_row.batch === selected_batch) {
+                total_pieces += flt(detail_row.pieces) || 0;
+                batch_length_size = detail_row.length_size || 0; // fixed length size
+                matching_rows++;
+            }
+        });
+    }
+
+    let total_length = total_pieces * batch_length_size;
+
+    console.log(`Batch ${selected_batch} found in ${matching_rows} rows:`, {
+        total_pieces: total_pieces,
+        length_size: batch_length_size,
+        total_length: total_length
+    });
+
+    return {
+        total_pieces: total_pieces,
+        length_size: batch_length_size,
+        total_length: total_length,
+        matching_rows: matching_rows
+    };
 }
 
 function calculate_qty(frm, cdt, cdn) {
@@ -663,6 +664,7 @@ function update_total_cut_plan_qty(frm, cdt, cdn){
 
 // Function to validate batch quantity consumption
 function validate_batch_qty_consumption(frm, cdt, cdn) {
+    console.log("yesy we are cekin gfor quality validation............")
     let current_row = locals[cdt][cdn];
     
     // Only validate if both rm_reference_batch and qty are present
@@ -682,7 +684,7 @@ function validate_batch_qty_consumption(frm, cdt, cdn) {
             }
         });
     }
-    
+    console.log("Batch total availble qttttttttttttttttttty",available_qty)
     // Calculate total consumed quantity for this batch from Cut Plan Finish (excluding current row)
     let consumed_qty = 0;
     if (frm.doc.cutting_plan_finish && frm.doc.cutting_plan_finish.length > 0) {
@@ -698,7 +700,8 @@ function validate_batch_qty_consumption(frm, cdt, cdn) {
     
     // Calculate total after adding current row quantity
     let total_with_current = consumed_qty + flt(current_row.qty);
-    
+    console.log("currrrrrrrrrrrrrrrrrrrent qty",total_with_current)
+    console.log("Available qqqqqqqqqqqqqqqty",available_qty)
     // Check if total quantity exceeds available quantity
     if (total_with_current > available_qty) {
         let remaining_qty = (available_qty - consumed_qty).toFixed(2);
@@ -717,6 +720,7 @@ function validate_batch_qty_consumption(frm, cdt, cdn) {
         frappe.model.set_value(cdt, cdn, 'qty', '');
         frappe.model.set_value(cdt, cdn, 'pieces', '');
         frappe.model.set_value(cdt, cdn, 'length_size', '');
+        frappe.model.set_value(cdt, cdn, 'total_length_in_meter', '');
         
         return false;
     }
@@ -872,19 +876,35 @@ function update_scrap_qty_for_batch(frm, batch_name) {
 
 // Function to auto-fill scrap transfer table - without batchwise
 function auto_fill_scrap_transfer_table(frm) {
-    // Clear existing scrap transfer rows
-    frm.clear_table('cutting_plan_scrap_transfer');
-
-    // Calculate scrap qty = totalqty - cut_plan_total_qty
     let scrap_qty = flt(frm.doc.total_qty) - flt(frm.doc.cut_plan_total_qty);
-
-    if (scrap_qty > 0 && frm.doc.cut_plan_detail && frm.doc.cut_plan_detail.length > 0) {
-        let first_row = frm.doc.cut_plan_detail[0];  // take first row reference
-
+    
+    // If table exists and has data
+    if (frm.doc.cutting_plan_scrap_transfer && frm.doc.cutting_plan_scrap_transfer.length > 0) {
+        // Check if user has entered item_code or target_warehouse
+        let first_row = frm.doc.cutting_plan_scrap_transfer[0];
+        let has_user_data = first_row.item_code || first_row.target_warehouse;
+        
+        if (has_user_data) {
+            // PRESERVE user data, only update scrap_qty
+            first_row.scrap_qty = scrap_qty;
+            frm.refresh_field('cutting_plan_scrap_transfer');
+            console.log("Updated scrap_qty to:", scrap_qty, "while preserving user data");
+            return;
+        } else {
+            // No user data, safe to recreate
+            frm.clear_table('cutting_plan_scrap_transfer');
+        }
+    } else {
+        // Table is empty, clear it anyway (safety)
+        frm.clear_table('cutting_plan_scrap_transfer');
+    }
+    
+    // Create new row only if scrap_qty > 0
+    if (scrap_qty > 0) {
         let scrap_row = frm.add_child('cutting_plan_scrap_transfer');
         scrap_row.scrap_qty = scrap_qty;
+        console.log("Created new scrap row with qty:", scrap_qty);
     }
-
-    // Refresh the scrap transfer table
+    
     frm.refresh_field('cutting_plan_scrap_transfer');
 }

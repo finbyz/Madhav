@@ -6,7 +6,11 @@ def after_submit(doc,method):
     
     if doc.stock_entry_type == "Material Receipt":
         create_batch_group(doc)
-
+        
+    if doc.stock_entry_type == "Material Transfer" and doc.get('cutting_plan_reference'):
+        update_cutting_plan_workflow(doc.cutting_plan_reference, doc.name)
+        update_source_warehouse(doc.cutting_plan_reference, doc.name)
+        
 def create_batch_group(doc):
     # Find all batches linked to this PR
     batch_list = frappe.get_all(
@@ -111,3 +115,46 @@ def validation_section_weight(doc, method):
             "Standard section weight for item {0} is outside ±1.5% of received section weight ({1}).\n"
             "This Stock Entry is subject to approval and cannot be submitted."
         ).format(item_code, received_section_weight))    
+
+def update_cutting_plan_workflow(cutting_plan_name, stock_entry_name):
+    from frappe.model.workflow import apply_workflow
+    cutting_plan = frappe.get_doc("Cutting Plan", cutting_plan_name)
+        
+    if cutting_plan.workflow_state == "RM Allocation pending( Rm Not Allocated yet)":
+            
+            
+            apply_workflow(cutting_plan, "Approve")
+            
+            cutting_plan.material_transfer_stock_entry = stock_entry_name
+            cutting_plan.save(ignore_permissions=True)
+            
+            cutting_plan.add_comment(
+                "Workflow", 
+                f"Material Transfer {stock_entry_name} submitted - Status updated automatically"
+            )
+            
+            frappe.msgprint(
+                _("Cutting Plan {0} updated to 'RM Allocated' status").format(cutting_plan_name),
+                alert=True
+            )
+
+def update_source_warehouse(cutting_plan_name, stock_entry_name):
+        
+    # Get the cutting plan document
+    cutting_plan = frappe.get_doc("Cutting Plan", cutting_plan_name)
+    
+    # Get the stock entry document to fetch to_warehouse
+    stock_entry = frappe.get_doc("Stock Entry", stock_entry_name)
+    
+    if cutting_plan.cut_plan_detail:
+        for row in cutting_plan.cut_plan_detail:
+            # Set source_warehouse as the to_warehouse from stock entry
+            row.source_warehouse = stock_entry.to_warehouse
+    
+    # Save the cutting plan with updated source warehouses
+    cutting_plan.save()
+    
+    frappe.msgprint(
+        _("Source warehouse updated to {0} for all items in Cutting Plan {1}")
+        .format(frappe.bold(stock_entry.to_warehouse), frappe.bold(cutting_plan_name))
+    )

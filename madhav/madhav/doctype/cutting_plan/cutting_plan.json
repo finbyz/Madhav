@@ -14,7 +14,7 @@
   "target_qty",
   "column_break_3kmq",
   "default_finished_goods_warehouse",
-  "wastage_warehouse",
+  "default_unplanned_warehouse",
   "section_break_odby",
   "cut_plan_detail",
   "section_break_at2n",
@@ -27,10 +27,12 @@
   "work_order",
   "production_plan",
   "stock_entry_reference",
+  "material_transfer_stock_entry",
   "section_break_3nfq",
   "cutting_plan_scrap_transfer",
   "amended_from",
-  "naming_series"
+  "naming_series",
+  "workflow_state"
  ],
  "fields": [
   {
@@ -85,12 +87,6 @@
    "fieldname": "default_finished_goods_warehouse",
    "fieldtype": "Link",
    "label": "Default Finished Goods Warehouse",
-   "options": "Warehouse"
-  },
-  {
-   "fieldname": "wastage_warehouse",
-   "fieldtype": "Link",
-   "label": "Wastage Warehouse",
    "options": "Warehouse"
   },
   {
@@ -177,6 +173,28 @@
    "fieldtype": "Link",
    "label": "Production Plan",
    "options": "Production Plan"
+  },
+  {
+   "fieldname": "default_unplanned_warehouse",
+   "fieldtype": "Link",
+   "label": "Default Unplanned Warehouse",
+   "options": "Warehouse"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "workflow_state",
+   "fieldtype": "Link",
+   "hidden": 1,
+   "label": "Workflow State",
+   "no_copy": 1,
+   "options": "Workflow State"
+  },
+  {
+   "fieldname": "material_transfer_stock_entry",
+   "fieldtype": "Link",
+   "label": "Material Transfer Stock Entry",
+   "no_copy": 1,
+   "options": "Stock Entry"
   }
  ],
  "grid_page_length": 50,
@@ -192,7 +210,7 @@
    "link_fieldname": "cutting_plan_reference"
   }
  ],
- "modified": "2025-09-02 17:47:06.620879",
+ "modified": "2025-09-04 10:08:41.519482",
  "modified_by": "Administrator",
  "module": "Madhav",
  "name": "Cutting Plan",

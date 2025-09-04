@@ -18,6 +18,43 @@ class CuttingPlan(Document):
         # Actually generate the name using the selected naming_series
         doc.name = make_autoname(doc.naming_series)
         
+    def on_update(self):
+        """Called on every save - check for workflow state change"""
+        # Only proceed if workflow state actually changed to "RM Planned"
+        if (self.has_value_changed("workflow_state") and 
+            self.workflow_state == "RM Allocation pending( Rm Not Allocated yet)"):
+            create_material_transfer_entry(self)
+    def validate(self):
+        if self.workflow_state in ["RM Allocated( Material Transfer Submitted)", "Cut plan pending", "Cut-plan Done",]:
+            self.validate_material_transfer_before_approve()        
+    
+    def validate_material_transfer_before_approve(self):
+        """Check if linked Material Transfer Stock Entry is submitted"""
+        if not self.material_transfer_stock_entry:
+            frappe.throw(
+                _("Material Transfer Stock Entry is required before proceeding with this workflow action")
+            )
+        
+        try:
+            # Get the Stock Entry document
+            stock_entry_doc = frappe.get_doc("Stock Entry", self.material_transfer_stock_entry)
+            
+            # Check if it's submitted (docstatus = 1)
+            if stock_entry_doc.docstatus != 1:
+                frappe.throw(
+                    _("Material Transfer Stock Entry {0} must be submitted first. Current status: {1}")
+                    .format(
+                        frappe.bold(self.material_transfer_stock_entry),
+                        frappe.bold("Draft" if stock_entry_doc.docstatus == 0 else "Cancelled")
+                    )
+                )
+                
+        except frappe.DoesNotExistError:
+            frappe.throw(
+                _("Material Transfer Stock Entry {0} does not exist. Please create it first.")
+                .format(frappe.bold(self.material_transfer_stock_entry))
+            )
+        
     def on_submit(doc):
         
         set_cutting_reference(doc)
@@ -84,6 +121,7 @@ def create_repack_stock_entry(cutting_plan_doc):
 
     # Add SOURCE items (Items being consumed from cut_plan_detail)
     for source_item in cutting_plan_doc.cut_plan_detail:
+        default_source_warehouse = cutting_plan_doc.get('default_source_warehouse')
         if source_item.item_code and source_item.qty > 0:
             source_entry = stock_entry.append("items", {})
             source_entry.item_code = source_item.item_code
@@ -91,7 +129,7 @@ def create_repack_stock_entry(cutting_plan_doc):
             source_entry.pieces = source_item.pieces
             source_entry.average_length = source_item.length_size
             source_entry.section_weight = source_item.section_weight
-            source_entry.s_warehouse = source_item.source_warehouse
+            source_entry.s_warehouse = default_source_warehouse
             source_entry.uom = source_item.get('uom') or get_item_stock_uom(source_item.item_code)
             # source_entry.basic_rate = source_item.basic_rate
             source_entry.use_serial_batch_fields = 1
@@ -109,6 +147,10 @@ def create_repack_stock_entry(cutting_plan_doc):
         if finish_item.item and finish_item.qty > 0:
             # Create new batch for finished item
             # batch_doc = create_batch_for_finish_item(cutting_plan_doc, finish_item)
+            if finish_item.return_to_stock:
+                default_target_warehouse = cutting_plan_doc.get('default_unplanned_warehouse')
+            else:
+                default_target_warehouse = cutting_plan_doc.get('default_finished_goods_warehouse')
             
             target_entry = stock_entry.append("items", {})
             target_entry.item_code = finish_item.item
@@ -116,7 +158,7 @@ def create_repack_stock_entry(cutting_plan_doc):
             target_entry.pieces = finish_item.pieces
             target_entry.average_length = finish_item.length_size
             target_entry.section_weight = finish_item.section_weight
-            target_entry.t_warehouse = finish_item.get('warehouse') or cutting_plan_doc.get('default_finished_goods_warehouse')
+            target_entry.t_warehouse = finish_item.get('warehouse') or default_target_warehouse
             # target_entry.uom = finish_item.get('uom') or get_item_stock_uom(finish_item.item_code)
             # target_entry.batch_no = batch_doc.name
             # target_entry.basic_rate = finish_item.get('rate') or 0
@@ -158,7 +200,7 @@ def create_repack_stock_entry(cutting_plan_doc):
 
     # Insert and submit stock entry
     stock_entry.insert()
-    # stock_entry.submit()
+    stock_entry.submit()
     
     # cutting_plan_doc.save()
 
@@ -216,4 +258,51 @@ def set_stock_entry_reference_wo(doc,stock_entry):
             wo.db_set("repack_stock_entry_reference",stock_entry.name)
             wo.save()
             
-    
+def create_material_transfer_entry(self):
+        """Create Stock Entry of type Material Transfer"""
+        try:
+            # Create new Stock Entry
+            stock_entry = frappe.new_doc("Stock Entry")
+            stock_entry.stock_entry_type = "Material Transfer"
+            stock_entry.purpose = "Material Transfer"
+            stock_entry.company = self.company
+            stock_entry.to_warehouse = "Production Planning Yard - MS"
+            # Set reference to cutting plan
+            stock_entry.cutting_plan_reference = self.name
+                     
+            # Add items from cutting plan (assuming you have items table)
+            if hasattr(self, 'cut_plan_detail') and self.cut_plan_detail:
+                for item in self.cut_plan_detail:
+                    stock_entry.append("items", {
+                        "item_code": item.item_code,
+                        "qty": item.qty,
+                        "uom": item.uom or frappe.db.get_value("Item", item.item_code, "stock_uom"),
+                        "s_warehouse": item.get('source_warehouse'),
+                        "t_warehouse": "Production Planning Yard - MS",
+                        # "basic_rate": frappe.db.get_value("Item", item.item_code, "valuation_rate") or 0
+                    })
+            
+            # Save the stock entry
+            stock_entry.insert()
+            # stock_entry.submit()
+            self.material_transfer_stock_entry = stock_entry.name
+            self.save(ignore_permissions=True)
+            # Show success message
+            frappe.msgprint(
+                _("Material Transfer Entry {0} created successfully").format(
+                    '<a href="/app/stock-entry/{0}">{0}</a>'.format(stock_entry.name)
+                ),
+                title="Stock Entry Created",
+                indicator='green'
+            )
+            
+        except Exception as e:
+            error_message = f"Error creating repack entry for {self.name}: {str(e)}"
+            
+            # keep title short, details go into message
+            frappe.log_error(
+                title=f"Material Transfer Error - {self.name}",
+                message=error_message
+            )
+
+            frappe.throw(_("Failed to create Material Transfer Entry: {0}").format(str(e)))    
