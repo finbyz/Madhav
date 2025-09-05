@@ -269,6 +269,7 @@ def get_filtered_batches(doctype, txt, searchfield, start, page_len, filters):
                 JOIN `tabSerial and Batch Entry` sb_entry ON sb_entry.parent = sb.name
                 WHERE sb_entry.batch_no = b.name
                   {f"AND sle.warehouse = %(warehouse)s" if warehouse else ""}
+                  AND sb_entry.qty > 0
             )
             AND b.name LIKE %(txt)s
         ORDER BY b.name
@@ -281,6 +282,64 @@ def get_filtered_batches(doctype, txt, searchfield, start, page_len, filters):
         "item_code": item_code,
         "warehouse": warehouse
     })         
+
+@frappe.whitelist()
+def get_cutting_plan_batches(doctype, txt, searchfield, start, page_len, filters):
+    """
+    Get batches for cutting plan with rich presentation format
+    No length filtering - shows all batches for the item and warehouse
+    """
+    from frappe.utils import cint
+
+    item_code = filters.get("item_code")
+    warehouse = filters.get("warehouse")
+    include_expired = cint(filters.get("include_expired") or 0)
+
+    conditions = []
+
+    if item_code:
+        conditions.append("b.item = %(item_code)s")
+
+    if not include_expired:
+        conditions.append("(b.expiry_date IS NULL OR b.expiry_date >= CURDATE())")
+
+    # Build WHERE clause
+    where_clause = ""
+    if conditions:
+        where_clause = " AND ".join(conditions) + " AND "
+    
+    return frappe.db.sql(f"""
+        SELECT
+            b.name,
+            CONCAT(
+                '<b>P:</b> ', CAST(IFNULL(b.pieces, 0) AS CHAR), ', ',
+                '<b>L:</b> ', CAST(ROUND(IFNULL(b.average_length, 0), 2) AS CHAR), ', ',
+                '<b>SW:</b> ', CAST(ROUND(IFNULL(b.section_weight, 0), 2) AS CHAR), ', ',
+                CAST(ROUND(IFNULL(b.batch_qty, 0), 2) AS CHAR), ', ',
+                IFNULL(b.batch_group_reference, 'N/A')
+            ) AS custom_label
+        FROM `tabBatch` b
+        WHERE
+            {where_clause}
+            EXISTS (
+                SELECT 1
+                FROM `tabPiece Stock Ledger Entry` sle
+                JOIN `tabSerial and Batch Bundle` sb ON sb.name = sle.serial_and_batch_bundle
+                JOIN `tabSerial and Batch Entry` sb_entry ON sb_entry.parent = sb.name
+                WHERE sb_entry.batch_no = b.name
+                  {f"AND sle.warehouse = %(warehouse)s" if warehouse else ""}
+                  AND sb_entry.qty > 0
+            )
+            AND b.name LIKE %(txt)s
+        ORDER BY b.name
+        LIMIT %(page_len)s OFFSET %(start)s
+    """, {
+        "txt": f"%{txt}%",
+        "start": start,
+        "page_len": page_len,
+        "item_code": item_code,
+        "warehouse": warehouse
+    })
 
 @frappe.whitelist()    
 def get_work_order_details(work_orders):

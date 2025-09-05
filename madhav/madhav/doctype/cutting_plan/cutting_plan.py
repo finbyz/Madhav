@@ -23,6 +23,7 @@ class CuttingPlan(Document):
         # Only proceed if workflow state actually changed to "RM Planned"
         if (self.has_value_changed("workflow_state") and 
             self.workflow_state == "RM Allocation pending( Rm Not Allocated yet)"):
+            validate_cut_plan_quantities(self)
             create_material_transfer_entry(self)
         if (self.has_value_changed("workflow_state") and 
             self.workflow_state == "Cut plan pending"):
@@ -109,7 +110,33 @@ class CuttingPlan(Document):
             )
 
             frappe.throw(_("Error creating Repack Stock Entry: {0}").format(str(e)))
-
+            
+def validate_cut_plan_quantities(doc):
+    """Validate that qty is within 10% tolerance of wo_qty in cut plan detail table"""
+    if hasattr(doc, 'cut_plan_detail') and doc.cut_plan_detail:
+        for row in doc.cut_plan_detail:
+            if row.wo_qty and row.qty:
+                # Calculate 10% tolerance range
+                tolerance = 0.10
+                min_allowed = row.wo_qty * (1 - tolerance)
+                max_allowed = row.wo_qty * (1 + tolerance)
+                
+                # Check if qty is within tolerance
+                if not (min_allowed <= row.qty <= max_allowed):
+                    frappe.throw(
+                        _("Row #{0}: Quantity ({1}) must be within 10% tolerance of WO Quantity ({2}). "
+                          "Allowed range: {3} to {4}").format(
+                            row.idx, 
+                            row.qty, 
+                            row.wo_qty,
+                            round(min_allowed, 2),
+                            round(max_allowed, 2)
+                        )
+                    )
+            elif row.wo_qty and not row.qty:
+                frappe.throw(
+                    _("Row #{0}: Quantity is mandatory when WO Quantity is set.").format(row.idx)
+                )
 
 def create_repack_stock_entry(cutting_plan_doc):
     """Create Repack Stock Entry with batches"""
@@ -198,6 +225,8 @@ def create_repack_stock_entry(cutting_plan_doc):
             if scrap_item.item_code and scrap_item.scrap_qty > 0:
                 scrap_entry = stock_entry.append("items", {})
                 scrap_entry.item_code = scrap_item.item_code
+                scrap_entry.is_finished_item = 0
+                scrap_entry.is_scrap_item = 1
                 scrap_entry.qty = scrap_item.scrap_qty
                 scrap_entry.t_warehouse = scrap_item.target_scrap_warehouse
                 scrap_entry.uom = scrap_item.get('uom') or get_item_stock_uom(scrap_item.item_code)

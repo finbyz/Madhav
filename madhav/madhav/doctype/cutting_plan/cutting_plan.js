@@ -34,9 +34,11 @@ frappe.ui.form.on('Cutting Plan', {
             let row = locals[cdt][cdn];
             if (row.item_code) {
                 return {
+                    query: "madhav.api.get_cutting_plan_batches",
                     filters: {
-                        'item': row.item_code,
-                        'disabled': 0
+                        item_code: row.item_code,
+                        warehouse: row.source_warehouse,
+                        include_expired: 1
                     }
                 };
             } else {
@@ -333,7 +335,7 @@ function process_selected_work_orders(frm, selected_work_orders) {
                     let child = frm.add_child('cut_plan_detail');
                     child.item_code = item.item_code;
                     child.source_warehouse = item.source_warehouse;
-                    child.qty = item.qty;
+                    child.wo_qty = item.qty;
                     child.basic_rate = item.basic_rate;
                     child.work_order_reference =  item.work_order_reference;
                 });
@@ -373,6 +375,11 @@ frappe.ui.form.on('Cut Plan Detail', {
         if (row.batch) {
             frappe.model.set_value(cdt, cdn, 'batch', '');
         }
+
+        // Set batch filter when item code changes
+        setTimeout(() => {
+            set_batch_filter_for_cutting_plan(frm, cdt, cdn);
+        }, 100);
 
         frappe.db.get_value('Item Price', {
             item_code: row.item_code,
@@ -907,4 +914,22 @@ function auto_fill_scrap_transfer_table(frm) {
     }
     
     frm.refresh_field('cutting_plan_scrap_transfer');
+}
+
+// Function to set batch filter for cutting plan detail table
+function set_batch_filter_for_cutting_plan(frm, cdt, cdn) {
+    // Set the query filter for batch field
+    console.log("Setting batch filter for cutting plan detail...");
+    frm.set_query('batch', 'cut_plan_detail', function(doc, cdt, cdn) {
+        const child = locals[cdt][cdn];
+        
+        return {
+            query: "madhav.api.get_cutting_plan_batches",
+            filters: {
+                item_code: child.item_code,
+                warehouse: child.source_warehouse,
+                include_expired: 1
+            }
+        };
+    });
 }
