@@ -19,7 +19,6 @@
   "cut_plan_detail",
   "section_break_at2n",
   "total_qty",
-  "actual_qty",
   "amount",
   "section_break_2gpb",
   "cutting_plan_finish",
@@ -109,11 +108,6 @@
    "label": "Total Qty",
    "precision": "2",
    "read_only": 1
-  },
-  {
-   "fieldname": "actual_qty",
-   "fieldtype": "Float",
-   "label": "Actual Qty"
   },
   {
    "fieldname": "amount",
@@ -210,7 +204,7 @@
    "link_fieldname": "cutting_plan_reference"
   }
  ],
- "modified": "2025-09-04 10:08:41.519482",
+ "modified": "2025-09-04 17:38:22.064336",
  "modified_by": "Administrator",
  "module": "Madhav",
  "name": "Cutting Plan",

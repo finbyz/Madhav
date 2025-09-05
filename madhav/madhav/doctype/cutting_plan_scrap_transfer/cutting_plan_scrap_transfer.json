@@ -17,23 +17,21 @@
    "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Item Code",
-   "options": "Item",
-   "reqd": 1
+   "options": "Item"
   },
   {
    "fieldname": "scrap_qty",
    "fieldtype": "Float",
    "in_list_view": 1,
    "label": "Scrap Qty",
-   "precision": "2"
+   "precision": "3"
   },
   {
    "fieldname": "target_scrap_warehouse",
    "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Target Scrap Warehouse",
-   "options": "Warehouse",
-   "reqd": 1
+   "options": "Warehouse"
   },
   {
    "fieldname": "batch",
@@ -48,7 +46,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2025-09-03 12:16:46.054983",
+ "modified": "2025-09-04 18:28:25.802633",
  "modified_by": "Administrator",
  "module": "Madhav",
  "name": "Cutting Plan Scrap Transfer",

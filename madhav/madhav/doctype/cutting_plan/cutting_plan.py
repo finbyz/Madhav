@@ -24,6 +24,20 @@ class CuttingPlan(Document):
         if (self.has_value_changed("workflow_state") and 
             self.workflow_state == "RM Allocation pending( Rm Not Allocated yet)"):
             create_material_transfer_entry(self)
+        if (self.has_value_changed("workflow_state") and 
+            self.workflow_state == "Cut plan pending"):
+            if self.cutting_plan_scrap_transfer:
+                for row in self.cutting_plan_scrap_transfer:
+                    if not row.item_code:
+                        frappe.throw(
+                            _("Row #{0}: Item is mandatory for scrap transfer.").format(row.idx)
+                        )
+                    if not row.target_scrap_warehouse:
+                        frappe.throw(
+                            _("Row #{0}: Target Warehouse is mandatory for scrap transfer.").format(row.idx)
+                        )
+                    
+                    
     def validate(self):
         if self.workflow_state in ["RM Allocated( Material Transfer Submitted)", "Cut plan pending", "Cut-plan Done",]:
             self.validate_material_transfer_before_approve()        
@@ -279,8 +293,9 @@ def create_material_transfer_entry(self):
                         "uom": item.uom or frappe.db.get_value("Item", item.item_code, "stock_uom"),
                         "s_warehouse": item.get('source_warehouse'),
                         "t_warehouse": "Production Planning Yard - MS",
-                        "batch_no": item.get('batch')
-                        # "basic_rate": frappe.db.get_value("Item", item.item_code, "valuation_rate") or 0
+                        "batch_no": item.get('batch'),
+                        "use_serial_batch_fields" : 1,
+                        "pieces": item.pieces
                     })
             
             # Save the stock entry
