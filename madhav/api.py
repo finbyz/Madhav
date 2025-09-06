@@ -371,6 +371,28 @@ def get_work_order_details(work_orders):
     return items
 
 @frappe.whitelist()
+def get_production_items_from_work_orders(work_orders):
+    """
+    Get production items from selected work orders
+    """
+    import json
+    
+    if isinstance(work_orders, str):
+        work_orders = json.loads(work_orders)
+    
+    production_items = []
+    
+    for work_order_name in work_orders:
+        # Fetch work order details
+        work_order = frappe.get_doc('Work Order', work_order_name)
+        
+        # Add production item to the list
+        if work_order.production_item and work_order.production_item not in production_items:
+            production_items.append(work_order.production_item)
+    
+    return production_items
+
+@frappe.whitelist()
 def get_work_orders_by_rm(rm_item, filters=None):
     """
     Get work orders that have a specific raw material in their required items

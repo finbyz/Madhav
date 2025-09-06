@@ -81,6 +81,10 @@ frappe.ui.form.on('Cutting Plan', {
                 };
             }
         });
+
+        // Set FG item filter for cutting_plan_finish child table
+        // This will show only production items from work orders in cut_plan_detail
+        setup_fg_item_filter(frm);
     }
 });
 
@@ -342,6 +346,10 @@ function process_selected_work_orders(frm, selected_work_orders) {
                 });
                 
                 frm.refresh_field('cut_plan_detail');
+                
+                // Setup FG item filter after adding work orders
+                setup_fg_item_filter(frm);
+                
                 frappe.show_alert({
                     message: __('Items added successfully'),
                     indicator: 'green'
@@ -472,6 +480,12 @@ function update_total_qty_and_amount(frm, cdt, cdn) {
 }
 
 frappe.ui.form.on('Cutting Plan Finish', {
+    cutting_plan_finish_add: function(frm, cdt, cdn) {
+        // Auto-fill FG item if there's only one production item available
+        if (frm.doc.available_fg_items && frm.doc.available_fg_items.length === 1) {
+            frappe.model.set_value(cdt, cdn, 'fg_item', frm.doc.available_fg_items[0]);
+        }
+    },
     pieces: function (frm, cdt, cdn) {
         calculate_qty(frm, cdt, cdn);
         update_total_cut_plan_qty(frm, cdt, cdn);
@@ -559,7 +573,8 @@ frappe.ui.form.on('Cutting Plan Finish', {
             }
         }
         }
-    }
+    },
+
 });
 
 // Updated helper function to auto-fill remaining length
@@ -933,4 +948,74 @@ function set_batch_filter_for_cutting_plan(frm, cdt, cdn) {
             }
         };
     });
+}
+
+// Function to setup FG item filter for cutting plan finish table
+function setup_fg_item_filter(frm) {
+    // Get all work order references from cut_plan_detail
+    let work_order_references = [];
+    if (frm.doc.cut_plan_detail && frm.doc.cut_plan_detail.length > 0) {
+        frm.doc.cut_plan_detail.forEach(function(row) {
+            if (row.work_order_reference && !work_order_references.includes(row.work_order_reference)) {
+                work_order_references.push(row.work_order_reference);
+            }
+        });
+    }
+    
+    if (work_order_references.length > 0) {
+        // Get production items from these work orders
+        frappe.call({
+            method: 'madhav.api.get_production_items_from_work_orders',
+            args: {
+                work_orders: work_order_references
+            },
+            callback: function(r) {
+                if (r.message && r.message.length > 0) {
+                    // Store available FG items for auto-fill on new rows
+                    frm.doc.available_fg_items = r.message;
+                    
+                    // Set FG item filter
+                    frm.set_query('fg_item', 'cutting_plan_finish', function(doc, cdt, cdn) {
+                        return {
+                            filters: {
+                                'name': ['in', r.message]
+                            }
+                        };
+                    });
+                    
+                    // Auto-fill if only one production item
+                    if (r.message.length === 1) {
+                        // Auto-fill existing rows
+                        if (frm.doc.cutting_plan_finish && frm.doc.cutting_plan_finish.length > 0) {
+                            frm.doc.cutting_plan_finish.forEach(function(row) {
+                                if (!row.fg_item) {
+                                    frappe.model.set_value('Cutting Plan Finish', row.name, 'fg_item', r.message[0]);
+                                }
+                            });
+                        }
+                        
+                        // Set default for new rows
+                        frm.set_df_property('fg_item', 'cutting_plan_finish', 'default', r.message[0]);
+                        
+                        frappe.show_alert({
+                            message: __('FG Item auto-filled: ' + r.message[0]),
+                            indicator: 'blue'
+                        });
+                    }
+                    
+                    frm.refresh_field('cutting_plan_finish');
+                }
+            }
+        });
+    } else {
+        // If no work orders in cut_plan_detail, show message
+        frm.set_query('fg_item', 'cutting_plan_finish', function(doc, cdt, cdn) {
+            frappe.msgprint('Please add work orders in RM Detail section first');
+            return {
+                filters: {
+                    'name': 'no_work_orders_available'
+                }
+            };
+        });
+    }
 }
