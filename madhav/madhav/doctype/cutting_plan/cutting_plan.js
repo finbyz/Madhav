@@ -334,6 +334,7 @@ function process_selected_work_orders(frm, selected_work_orders) {
                 r.message.forEach(function(item) {
                     let child = frm.add_child('cut_plan_detail');
                     child.item_code = item.item_code;
+                    child.item_name = item.item_name;
                     child.source_warehouse = item.source_warehouse;
                     child.wo_qty = item.qty;
                     child.basic_rate = item.basic_rate;

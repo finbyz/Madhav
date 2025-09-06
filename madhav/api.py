@@ -362,6 +362,7 @@ def get_work_order_details(work_orders):
         for wo_items in work_order.required_items:
             items.append({
             'item_code': wo_items.item_code,
+            'item_name': wo_items.item_name,
             'source_warehouse': wo_items.source_warehouse,
             'qty': wo_items.get('required_qty', 0),
             'basic_rate': wo_items.get('basic_rate', 0),
