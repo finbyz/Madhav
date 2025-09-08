@@ -505,6 +505,50 @@ frappe.ui.form.on('Cutting Plan Finish', {
         // update_scrap_qty_for_all_batches(frm);
         // Auto-fill scrap transfer table
         auto_fill_scrap_transfer_table(frm);
+        let row = locals[cdt][cdn];
+        if (row.length_size && row.section_weight) {
+            frappe.model.set_value(cdt, cdn, 'weight_per_length', row.section_weight * row.length_size);
+        }
+    },
+    weight_per_length: function (frm, cdt, cdn) {
+        let row = locals[cdt][cdn];
+        if (row.weight_per_length && row.process_loss){
+            frappe.model.set_value(cdt, cdn, 'remaining_weight', row.weight_per_length - row.process_loss);
+        }
+    },
+    process_loss: function (frm, cdt, cdn) {
+        let row = locals[cdt][cdn];
+        if (row.weight_per_length && row.process_loss){
+            frappe.model.set_value(cdt, cdn, 'remaining_weight', row.weight_per_length - row.process_loss);
+        }
+    },
+    remaining_weight: function (frm, cdt, cdn) {
+        let row = locals[cdt][cdn];
+        if (row.remaining_weight && row.fg_item) {
+            frappe.db.get_value("Item", row.fg_item, "weight_per_meter")
+                .then(r => {
+                    if (r && r.message && r.message.weight_per_meter) {
+                        let wpm = r.message.weight_per_meter;
+                        let semi_length = row.remaining_weight / wpm;
+                        frappe.model.set_value(cdt, cdn, 'semi_fg_length', semi_length);
+                    }
+                });
+        }
+    },
+    fg_item: function(frm, cdt, cdn) {
+        let row = locals[cdt][cdn];
+        console.log("FG Item changed:", row.fg_item);
+
+        if (row.remaining_weight && row.fg_item) {
+            frappe.db.get_value("Item", row.fg_item, "weight_per_meter")
+                .then(r => {
+                    if (r && r.message && r.message.weight_per_meter) {
+                        let wpm = r.message.weight_per_meter;
+                        let semi_length = row.remaining_weight / wpm;
+                        frappe.model.set_value(cdt, cdn, 'semi_fg_length', semi_length);
+                    }
+                });
+        }
     },
     cutting_plan_finish_remove: function(frm, cdt, cdn) {
         update_total_cut_plan_qty(frm, cdt, cdn);    
@@ -522,7 +566,13 @@ frappe.ui.form.on('Cutting Plan Finish', {
         // Auto-fill scrap transfer table
         auto_fill_scrap_transfer_table(frm);
     },
-
+    section_weight: function (frm, cdt, cdn) {
+        let row = locals[cdt][cdn];
+        if (row.length_size && row.section_weight) {
+            frappe.model.set_value(cdt, cdn, 'weight_per_length', row.section_weight * row.length_size);
+        }
+    },
+        //  
     // Add validation for RM reference batch
     rm_reference_batch: function(frm, cdt, cdn) {
         let row = locals[cdt][cdn];
