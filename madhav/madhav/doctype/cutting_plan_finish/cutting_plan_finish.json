@@ -20,7 +20,11 @@
   "qty",
   "warehouse",
   "column_break_dcba",
-  "rm_reference_batch"
+  "rm_reference_batch",
+  "weight_per_length",
+  "process_loss",
+  "remaining_weight",
+  "semi_fg_length"
  ],
  "fields": [
   {
@@ -117,13 +121,36 @@
    "fieldtype": "Link",
    "label": "FG Item",
    "options": "Item"
+  },
+  {
+   "fieldname": "weight_per_length",
+   "fieldtype": "Float",
+   "label": "Weight per length",
+   "read_only": 1
+  },
+  {
+   "fieldname": "process_loss",
+   "fieldtype": "Float",
+   "label": "Process Loss"
+  },
+  {
+   "fieldname": "semi_fg_length",
+   "fieldtype": "Float",
+   "label": "Semi fg Length",
+   "read_only": 1
+  },
+  {
+   "fieldname": "remaining_weight",
+   "fieldtype": "Float",
+   "label": "Remaining Weight",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2025-09-06 10:44:46.480934",
+ "modified": "2025-09-08 14:53:54.946914",
  "modified_by": "Administrator",
  "module": "Madhav",
  "name": "Cutting Plan Finish",
