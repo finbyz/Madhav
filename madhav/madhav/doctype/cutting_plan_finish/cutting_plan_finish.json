@@ -10,6 +10,7 @@
   "fg_item",
   "column_break_encc",
   "item_name",
+  "root_radius",
   "return_to_stock",
   "section_break_swxg",
   "pieces",
@@ -150,13 +151,19 @@
    "fieldname": "remarks",
    "fieldtype": "Data",
    "label": "Remarks"
+  },
+  {
+   "fetch_from": "item.root_radius",
+   "fieldname": "root_radius",
+   "fieldtype": "Float",
+   "label": "Root Radius"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2025-09-10 09:46:23.726340",
+ "modified": "2025-09-10 12:24:02.776570",
  "modified_by": "Administrator",
  "module": "Madhav",
  "name": "Cutting Plan Finish",
