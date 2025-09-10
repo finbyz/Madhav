@@ -122,7 +122,7 @@
   {
    "fieldname": "cutting_plan_finish",
    "fieldtype": "Table",
-   "label": "Cutting Plan Finish",
+   "label": "Raw Material Cutting Plan",
    "options": "Cutting Plan Finish"
   },
   {
@@ -204,7 +204,7 @@
    "link_fieldname": "cutting_plan_reference"
   }
  ],
- "modified": "2025-09-04 17:38:22.064336",
+ "modified": "2025-09-10 09:43:26.667972",
  "modified_by": "Administrator",
  "module": "Madhav",
  "name": "Cutting Plan",
