@@ -29,6 +29,7 @@
   "material_transfer_stock_entry",
   "section_break_3nfq",
   "cutting_plan_scrap_transfer",
+  "cut_plan_finish",
   "amended_from",
   "naming_series",
   "workflow_state"
@@ -189,6 +190,12 @@
    "label": "Material Transfer Stock Entry",
    "no_copy": 1,
    "options": "Stock Entry"
+  },
+  {
+   "fieldname": "cut_plan_finish",
+   "fieldtype": "Table",
+   "label": "Cut Plan Finish",
+   "options": "Cutting plan Finish Second"
   }
  ],
  "grid_page_length": 50,
@@ -204,7 +211,7 @@
    "link_fieldname": "cutting_plan_reference"
   }
  ],
- "modified": "2025-09-10 09:43:26.667972",
+ "modified": "2025-09-10 14:43:09.785616",
  "modified_by": "Administrator",
  "module": "Madhav",
  "name": "Cutting Plan",

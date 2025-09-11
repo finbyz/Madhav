@@ -25,6 +25,7 @@ class CuttingPlan(Document):
             self.workflow_state == "RM Allocation pending( Rm Not Allocated yet)"):
             validate_cut_plan_quantities(self)
             create_material_transfer_entry(self)
+            
         if (self.has_value_changed("workflow_state") and 
             self.workflow_state == "Cut plan pending"):
             if self.cutting_plan_scrap_transfer:
@@ -37,7 +38,14 @@ class CuttingPlan(Document):
                         frappe.throw(
                             _("Row #{0}: Target Warehouse is mandatory for scrap transfer.").format(row.idx)
                         )
-                    
+
+        if (self.has_value_changed("workflow_state") and 
+            self.workflow_state == "Cut-plan Done"):
+            self.on_cut_plan_done()         
+
+        if (self.has_value_changed("workflow_state") and 
+            self.workflow_state == "Finished Cut Plan Pending"):
+            update_finished_cut_plan_table(self)         
                     
     def validate(self):
         if self.workflow_state in ["RM Allocated( Material Transfer Submitted)", "Cut plan pending", "Cut-plan Done",]:
@@ -70,28 +78,28 @@ class CuttingPlan(Document):
                 .format(frappe.bold(self.material_transfer_stock_entry))
             )
         
-    def on_submit(doc):
+    def on_cut_plan_done(self):
         
-        set_cutting_reference(doc)
+        set_cutting_reference(self)
 
 		
         """Auto create Repack Stock Entry when Cutting Plan is submitted"""
         # Validate required data
-        if not doc.cut_plan_detail:
+        if not self.cut_plan_detail:
             frappe.throw(_("Cut Plan Detail is required to create stock entry"))
 
-        if not doc.cutting_plan_finish:
+        if not self.cutting_plan_finish:
             frappe.throw(_("Cut Plan Finish is required to create stock entry"))
 
         try:
             # Create Repack Stock Entry
-            stock_entry = create_repack_stock_entry(doc)
+            stock_entry = create_repack_stock_entry(self)
             
             if stock_entry:
-                set_stock_entry_reference_wo(doc,stock_entry)
+                set_stock_entry_reference_wo(self,stock_entry)
 
             # Update cutting plan with stock entry reference
-            doc.db_set('stock_entry_reference', stock_entry.name, update_modified=False)
+            self.db_set('stock_entry_reference', stock_entry.name, update_modified=False)
 
             
             frappe.msgprint(
@@ -101,11 +109,11 @@ class CuttingPlan(Document):
             )
             
         except Exception as e:
-            error_message = f"Error creating repack entry for {doc.name}: {str(e)}"
+            error_message = f"Error creating repack entry for {self.name}: {str(e)}"
             
             # keep title short, details go into message
             frappe.log_error(
-                title=f"Repack Error - {doc.name}",
+                title=f"Repack Error - {self.name}",
                 message=error_message
             )
 
@@ -117,7 +125,7 @@ def validate_cut_plan_quantities(doc):
         for row in doc.cut_plan_detail:
             if row.wo_qty and row.qty:
                 # Calculate 10% tolerance range
-                tolerance = 0.10
+                tolerance = 0.20
                 min_allowed = row.wo_qty * (1 - tolerance)
                 max_allowed = row.wo_qty * (1 + tolerance)
                 
@@ -199,6 +207,8 @@ def create_repack_stock_entry(cutting_plan_doc):
             target_entry.pieces = finish_item.pieces
             target_entry.average_length = finish_item.length_size
             target_entry.section_weight = finish_item.section_weight
+            target_entry.return_to_stock = finish_item.return_to_stock
+            target_entry.semi_fg_length = finish_item.semi_fg_length
             target_entry.t_warehouse = finish_item.get('warehouse') or default_target_warehouse
             # target_entry.uom = finish_item.get('uom') or get_item_stock_uom(finish_item.item_code)
             # target_entry.batch_no = batch_doc.name
@@ -351,3 +361,41 @@ def create_material_transfer_entry(self):
             )
 
             frappe.throw(_("Failed to create Material Transfer Entry: {0}").format(str(e)))    
+
+def update_finished_cut_plan_table(self):
+    if self.stock_entry_reference:
+        
+        stock_entry_doc = frappe.get_doc("Stock Entry", self.stock_entry_reference)
+        
+        finished_items = [
+            item for item in stock_entry_doc.items 
+            if item.get("is_finished_item") == 1 and item.get("is_scrap_item") != 1
+        ]
+        
+        # Clear existing entries in cut_plan_finish table (optional)
+        # self.cut_plan_finish = []
+        # frappe.throw("checking for items in stock entry reference..........."+str(finished_items))
+        # Append each finished item batch to cut_plan_finish table
+        for item in finished_items:
+            if item.batch_no:  # Only if batch exists
+                # Check if this batch is already in the table to avoid duplicates
+                existing_batches = [row.batch for row in self.cut_plan_finish if row.batch]
+                
+                if item.batch_no not in existing_batches:
+                    self.append("cut_plan_finish", {
+                        "batch": item.batch_no,
+                        "item": item.item_code,
+                        "pieces": item.pieces,
+                        "length_size": item.average_length,
+                        "section_weight": item.section_weight,
+                        "semi_fg_length": item.semi_fg_length
+                        # "qty": item.qty,
+                        # Add other relevant fields as needed
+                        # "warehouse": item.t_warehouse,
+                        # "uom": item.uom,
+                    })
+        
+        # Save the document to persist changes
+        self.save()
+        
+         
