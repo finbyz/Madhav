@@ -132,7 +132,7 @@ def validate_cut_plan_quantities(doc):
                 # Check if qty is within tolerance
                 if not (min_allowed <= row.qty <= max_allowed):
                     frappe.throw(
-                        _("Row #{0}: Quantity ({1}) must be within 10% tolerance of WO Quantity ({2}). "
+                        _("Row #{0}: Quantity ({1}) must be within 20% tolerance of WO Quantity ({2}). "
                           "Allowed range: {3} to {4}").format(
                             row.idx, 
                             row.qty, 
@@ -209,6 +209,7 @@ def create_repack_stock_entry(cutting_plan_doc):
             target_entry.section_weight = finish_item.section_weight
             target_entry.return_to_stock = finish_item.return_to_stock
             target_entry.semi_fg_length = finish_item.semi_fg_length
+            target_entry.fg_item = finish_item.fg_item
             target_entry.t_warehouse = finish_item.get('warehouse') or default_target_warehouse
             # target_entry.uom = finish_item.get('uom') or get_item_stock_uom(finish_item.item_code)
             # target_entry.batch_no = batch_doc.name
@@ -385,16 +386,27 @@ def update_finished_cut_plan_table(self):
                     self.append("cut_plan_finish", {
                         "batch": item.batch_no,
                         "item": item.item_code,
-                        "pieces": item.pieces,
-                        "length_size": item.average_length,
+                        "fg_item": getattr(item, "fg_item", None),
                         "section_weight": item.section_weight,
                         "semi_fg_length": item.semi_fg_length
-                        # "qty": item.qty,
-                        # Add other relevant fields as needed
-                        # "warehouse": item.t_warehouse,
-                        # "uom": item.uom,
+                        # do not pre-fill pieces/length_size; user will enter per-size rows
                     })
         
+        # Expand rows based on no_of_length_sizes: for any row that has multiple sizes
+        rows_to_expand = [r for r in self.cut_plan_finish if getattr(r, "no_of_length_sizes", 0) and r.no_of_length_sizes > 1]
+        for base in rows_to_expand:
+            count = int(base.no_of_length_sizes or 0)
+            # create one line per pieces_i/length_size_i if values provided
+            for i in range(1, min(count, 5) + 1):
+                # just create empty rows for user input
+                self.append("cut_plan_finish", {
+                    "batch": base.batch,
+                    "item": base.item,
+                    "fg_item": getattr(base, "fg_item", None),
+                    "section_weight": base.section_weight,
+                    "semi_fg_length": base.semi_fg_length,
+                })
+
         # Save the document to persist changes
         self.save()
         

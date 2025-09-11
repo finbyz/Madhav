@@ -484,6 +484,12 @@ frappe.ui.form.on('Cutting Plan Finish', {
         // Auto-fill FG item if there's only one production item available
         if (frm.doc.available_fg_items && frm.doc.available_fg_items.length === 1) {
             frappe.model.set_value(cdt, cdn, 'fg_item', frm.doc.available_fg_items[0]);
+            // also set work_order_reference when map is available
+            const map = frm.__fg_item_to_wo || {};
+            const wo = map[frm.doc.available_fg_items[0]];
+            if (wo) {
+                frappe.model.set_value(cdt, cdn, 'work_order_reference', wo);
+            }
         }
     },
     pieces: function (frm, cdt, cdn) {
@@ -513,13 +519,17 @@ frappe.ui.form.on('Cutting Plan Finish', {
     weight_per_length: function (frm, cdt, cdn) {
         let row = locals[cdt][cdn];
         if (row.weight_per_length && row.process_loss){
-            frappe.model.set_value(cdt, cdn, 'remaining_weight', row.weight_per_length - row.process_loss);
+            // remaining_weight = weight_per_length - (process_loss% of weight_per_length)
+            let remaining = row.weight_per_length - (row.weight_per_length * row.process_loss / 100);
+            frappe.model.set_value(cdt, cdn, 'remaining_weight', remaining);
         }
     },
     process_loss: function (frm, cdt, cdn) {
         let row = locals[cdt][cdn];
         if (row.weight_per_length && row.process_loss){
-            frappe.model.set_value(cdt, cdn, 'remaining_weight', row.weight_per_length - row.process_loss);
+            // remaining_weight = weight_per_length - (process_loss% of weight_per_length)
+            let remaining = row.weight_per_length - (row.weight_per_length * row.process_loss / 100);
+            frappe.model.set_value(cdt, cdn, 'remaining_weight', remaining);
         }
     },
     remaining_weight: function (frm, cdt, cdn) {
@@ -538,6 +548,11 @@ frappe.ui.form.on('Cutting Plan Finish', {
     fg_item: function(frm, cdt, cdn) {
         let row = locals[cdt][cdn];
         console.log("FG Item changed:", row.fg_item);
+        // Set work_order_reference from fg -> wo map if present
+        const fgToWo = frm.__fg_item_to_wo || {};
+        if (row.fg_item && fgToWo[row.fg_item]) {
+            frappe.model.set_value(cdt, cdn, 'work_order_reference', fgToWo[row.fg_item]);
+        }
 
         if (row.remaining_weight && row.fg_item) {
             frappe.db.get_value("Item", row.fg_item, "weight_per_meter")
@@ -576,7 +591,7 @@ frappe.ui.form.on('Cutting Plan Finish', {
     // Add validation for RM reference batch
     rm_reference_batch: function(frm, cdt, cdn) {
         let row = locals[cdt][cdn];
-        let available_batches = [];
+        let available_batches = [];     
         
         // Get all unique batches from cut_plan_detail
         if (frm.doc.cut_plan_detail && frm.doc.cut_plan_detail.length > 0) {
@@ -623,8 +638,7 @@ frappe.ui.form.on('Cutting Plan Finish', {
             }
         }
         }
-    },
-
+    }
 });
 
 // Updated helper function to auto-fill remaining length
@@ -1021,34 +1035,45 @@ function setup_fg_item_filter(frm) {
             },
             callback: function(r) {
                 if (r.message && r.message.length > 0) {
-                    // Store available FG items for auto-fill on new rows
-                    frm.doc.available_fg_items = r.message;
+                    // r.message is a list of { fg_item, work_order_reference }
+                    const pairs = r.message || [];
+                    const fgItems = pairs.map(p => p.fg_item).filter(Boolean);
+                    const map = {};
+                    pairs.forEach(p => { if (p.fg_item) { map[p.fg_item] = p.work_order_reference; } });
+
+                    // Store available items and mapping for use in other handlers
+                    frm.doc.available_fg_items = fgItems;
+                    frm.__fg_item_to_wo = map;
                     
                     // Set FG item filter
                     frm.set_query('fg_item', 'cutting_plan_finish', function(doc, cdt, cdn) {
                         return {
                             filters: {
-                                'name': ['in', r.message]
+                                'name': ['in', fgItems]
                             }
                         };
                     });
                     
                     // Auto-fill if only one production item
-                    if (r.message.length === 1) {
+                    if (fgItems.length === 1) {
                         // Auto-fill existing rows
                         if (frm.doc.cutting_plan_finish && frm.doc.cutting_plan_finish.length > 0) {
                             frm.doc.cutting_plan_finish.forEach(function(row) {
                                 if (!row.fg_item) {
-                                    frappe.model.set_value('Cutting Plan Finish', row.name, 'fg_item', r.message[0]);
+                                    frappe.model.set_value('Cutting Plan Finish', row.name, 'fg_item', fgItems[0]);
+                                    const wo = map[fgItems[0]];
+                                    if (wo) {
+                                        frappe.model.set_value('Cutting Plan Finish', row.name, 'work_order_reference', wo);
+                                    }
                                 }
                             });
                         }
                         
                         // Set default for new rows
-                        frm.set_df_property('fg_item', 'cutting_plan_finish', 'default', r.message[0]);
+                        frm.set_df_property('fg_item', 'cutting_plan_finish', 'default', fgItems[0]);
                         
                         frappe.show_alert({
-                            message: __('FG Item auto-filled: ' + r.message[0]),
+                            message: __('FG Item auto-filled: ' + fgItems[0]),
                             indicator: 'blue'
                         });
                     }

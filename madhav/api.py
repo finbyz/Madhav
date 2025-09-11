@@ -388,7 +388,10 @@ def get_production_items_from_work_orders(work_orders):
         
         # Add production item to the list
         if work_order.production_item and work_order.production_item not in production_items:
-            production_items.append(work_order.production_item)
+            production_items.append({
+                "fg_item": work_order.production_item,
+                "work_order_reference": work_order.name
+            })  
     
     return production_items
 

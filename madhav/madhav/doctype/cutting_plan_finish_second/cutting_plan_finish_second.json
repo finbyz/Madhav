@@ -8,6 +8,7 @@
  "field_order": [
   "item",
   "item_name",
+  "fg_item",
   "root_radius",
   "batch",
   "pieces",
@@ -33,11 +34,12 @@
    "label": "Item Name"
   },
   {
-   "fetch_from": "item.root_radius",
+   "fetch_from": "fg_item.root_radius",
    "fieldname": "root_radius",
    "fieldtype": "Float",
    "in_list_view": 1,
-   "label": "Root Radius"
+   "label": "Root Radius",
+   "read_only": 1
   },
   {
    "fieldname": "batch",
@@ -81,13 +83,20 @@
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Remarks"
+  },
+  {
+   "fieldname": "fg_item",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "FG Item",
+   "options": "Item"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2025-09-10 14:45:55.256451",
+ "modified": "2025-09-11 17:53:56.538056",
  "modified_by": "Administrator",
  "module": "Madhav",
  "name": "Cutting plan Finish Second",

@@ -12,7 +12,6 @@
   "item_name",
   "description",
   "uom",
-  "root_radius",
   "section_break_4rwo",
   "batch",
   "pieces",
@@ -164,19 +163,13 @@
    "label": "WO Qty",
    "precision": "3",
    "read_only": 1
-  },
-  {
-   "fetch_from": "item_code.root_radius",
-   "fieldname": "root_radius",
-   "fieldtype": "Float",
-   "label": "Root Radius"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2025-09-10 12:22:46.996873",
+ "modified": "2025-09-11 15:38:14.427222",
  "modified_by": "Administrator",
  "module": "Madhav",
  "name": "Cut Plan Detail",
