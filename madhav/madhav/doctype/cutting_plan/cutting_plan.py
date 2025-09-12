@@ -442,7 +442,7 @@ def update_finished_cut_plan_table(self):
                         })
         
         # Save the document to persist changes
-        self.save()
+        # self.save()
 
 
 def get_cutting_plan_entries_for_item(doc, item_code):
