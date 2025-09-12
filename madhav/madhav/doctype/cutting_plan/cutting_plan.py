@@ -49,7 +49,10 @@ class CuttingPlan(Document):
                     
     def validate(self):
         if self.workflow_state in ["RM Allocated( Material Transfer Submitted)", "Cut plan pending", "Cut-plan Done",]:
-            self.validate_material_transfer_before_approve()        
+            self.validate_material_transfer_before_approve() 
+
+        if self.workflow_state == "Finished Cut Plan Pending":
+            update_finished_cut_plan_table(self)       
     
     def validate_material_transfer_before_approve(self):
         """Check if linked Material Transfer Stock Entry is submitted"""
