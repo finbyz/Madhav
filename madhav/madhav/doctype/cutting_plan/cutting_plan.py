@@ -261,7 +261,7 @@ def create_repack_stock_entry(cutting_plan_doc):
 
     # Insert and submit stock entry
     stock_entry.insert()
-    stock_entry.submit()
+    # stock_entry.submit()
     
     # cutting_plan_doc.save()
 

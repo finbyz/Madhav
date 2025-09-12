@@ -197,6 +197,7 @@
    "options": "Stock Entry"
   },
   {
+   "allow_bulk_edit": 1,
    "fieldname": "cut_plan_finish",
    "fieldtype": "Table",
    "label": "Cut Plan Finish",
@@ -223,7 +224,7 @@
    "link_fieldname": "cutting_plan_reference"
   }
  ],
- "modified": "2025-09-12 12:37:21.980659",
+ "modified": "2025-09-12 15:23:24.654988",
  "modified_by": "Administrator",
  "module": "Madhav",
  "name": "Cutting Plan",
