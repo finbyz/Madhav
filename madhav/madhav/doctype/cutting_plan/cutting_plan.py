@@ -120,25 +120,32 @@ class CuttingPlan(Document):
             frappe.throw(_("Error creating Repack Stock Entry: {0}").format(str(e)))
             
 def validate_cut_plan_quantities(doc):
-    """Validate that qty is within 10% tolerance of wo_qty in cut plan detail table"""
+    
     if hasattr(doc, 'cut_plan_detail') and doc.cut_plan_detail:
         for row in doc.cut_plan_detail:
             if row.wo_qty and row.qty:
-                # Calculate 10% tolerance range
-                tolerance = 0.20
+                
+                # Fetch tolerance from document field `material_transfer_tolerance`.
+                # Fallback to 20% if not set. Normalize values greater than 1 (e.g., 20 -> 0.20).
+                raw_tolerance = getattr(doc, 'material_transfer_tolerance', None)
+                tolerance = float(raw_tolerance) if raw_tolerance not in (None, "",) else 0.20
+                if tolerance > 1:
+                    tolerance = tolerance / 100.0
                 min_allowed = row.wo_qty * (1 - tolerance)
                 max_allowed = row.wo_qty * (1 + tolerance)
                 
                 # Check if qty is within tolerance
                 if not (min_allowed <= row.qty <= max_allowed):
+                    percent = round(tolerance * 100, 2)
                     frappe.throw(
-                        _("Row #{0}: Quantity ({1}) must be within 20% tolerance of WO Quantity ({2}). "
+                        _("Row #{0}: Quantity ({1}) must be within {5}% tolerance of WO Quantity ({2}). "
                           "Allowed range: {3} to {4}").format(
                             row.idx, 
                             row.qty, 
                             row.wo_qty,
                             round(min_allowed, 2),
-                            round(max_allowed, 2)
+                            round(max_allowed, 2),
+                            percent
                         )
                     )
             elif row.wo_qty and not row.qty:
@@ -370,44 +377,87 @@ def update_finished_cut_plan_table(self):
         
         finished_items = [
             item for item in stock_entry_doc.items 
-            if item.get("is_finished_item") == 1 and item.get("is_scrap_item") != 1
+            if item.get("is_finished_item") == 1 and item.get("is_scrap_item") != 1 and item.get("return_to_stock") != 1
         ]
         
         # Clear existing entries in cut_plan_finish table (optional)
         # self.cut_plan_finish = []
-        # frappe.throw("checking for items in stock entry reference..........."+str(finished_items))
-        # Append each finished item batch to cut_plan_finish table
+        
+        # Track which plan entry to use next per item so batches map to corresponding entries
+        plan_entries_cache = {}
+        plan_entry_index_by_item = {}
+
+        # Process each finished item from stock entry
         for item in finished_items:
             if item.batch_no:  # Only if batch exists
                 # Check if this batch is already in the table to avoid duplicates
                 existing_batches = [row.batch for row in self.cut_plan_finish if row.batch]
                 
                 if item.batch_no not in existing_batches:
-                    self.append("cut_plan_finish", {
-                        "batch": item.batch_no,
-                        "item": item.item_code,
-                        "fg_item": getattr(item, "fg_item", None),
-                        "section_weight": item.section_weight,
-                        "semi_fg_length": item.semi_fg_length
-                        # do not pre-fill pieces/length_size; user will enter per-size rows
-                    })
+                    # Find corresponding cutting plan finish entries for this item
+                    if item.item_code not in plan_entries_cache:
+                        plan_entries_cache[item.item_code] = get_cutting_plan_entries_for_item(self, item.item_code)
+                        plan_entry_index_by_item[item.item_code] = 0
+                    cutting_plan_entries = plan_entries_cache.get(item.item_code, [])
+                    
+                    if cutting_plan_entries:
+                        # Use the next corresponding plan entry for this item's batch
+                        use_index = plan_entry_index_by_item.get(item.item_code, 0)
+                        if use_index >= len(cutting_plan_entries):
+                            use_index = len(cutting_plan_entries) - 1
+                        plan_entry = cutting_plan_entries[use_index]
+                        # Increment pointer for next batch of same item
+                        if plan_entry_index_by_item.get(item.item_code, 0) < len(cutting_plan_entries) - 1:
+                            plan_entry_index_by_item[item.item_code] = use_index + 1
+                        no_of_sizes = getattr(plan_entry, "no_of_length_sizes", 0) or 1
+                        max_slots = min(int(no_of_sizes), 5)
+                        for i in range(1, max_slots + 1):
+                            pieces_field = f"pieces_{i}"
+                            length_size_field = f"length_size_{i}"
+                            pieces_value = getattr(plan_entry, pieces_field, None)
+                            length_size_value = getattr(plan_entry, length_size_field, None)
+                            if pieces_value or length_size_value:
+                                self.append("cut_plan_finish", {
+                                    "batch": item.batch_no,
+                                    "item": item.item_code,
+                                    "fg_item": getattr(item, "fg_item", None),
+                                    "section_weight": getattr(item, "section_weight", None),
+                                    "semi_fg_length": getattr(item, "semi_fg_length", None),
+                                    "pieces": pieces_value,
+                                    "length_size": length_size_value,
+                                    "source_plan_entry": plan_entry.name if hasattr(plan_entry, 'name') else None
+                                })
+                            
+                    else:
+                        # If no cutting plan entries found, create a basic entry
+                        self.append("cut_plan_finish", {
+                            "batch": item.batch_no,
+                            "item": item.item_code,
+                            "fg_item": getattr(item, "fg_item", None),
+                            "section_weight": getattr(item, "section_weight", None),
+                            "semi_fg_length": getattr(item, "semi_fg_length", None),
+                        })
         
-        # Expand rows based on no_of_length_sizes: for any row that has multiple sizes
-        rows_to_expand = [r for r in self.cut_plan_finish if getattr(r, "no_of_length_sizes", 0) and r.no_of_length_sizes > 1]
-        for base in rows_to_expand:
-            count = int(base.no_of_length_sizes or 0)
-            # create one line per pieces_i/length_size_i if values provided
-            for i in range(1, min(count, 5) + 1):
-                # just create empty rows for user input
-                self.append("cut_plan_finish", {
-                    "batch": base.batch,
-                    "item": base.item,
-                    "fg_item": getattr(base, "fg_item", None),
-                    "section_weight": base.section_weight,
-                    "semi_fg_length": base.semi_fg_length,
-                })
-
         # Save the document to persist changes
         self.save()
-        
-         
+
+
+def get_cutting_plan_entries_for_item(doc, item_code):
+    
+    if hasattr(doc, 'cutting_plan_finish'):
+        return [entry for entry in doc.cutting_plan_finish 
+               if getattr(entry, 'item', None) == item_code]
+    
+    # Option 2: If cutting plan data is in a related document
+    # Replace 'cutting_plan_reference' with your actual field name
+    if hasattr(doc, 'cutting_plan_reference') and doc.cutting_plan_reference:
+        cutting_plan_doc = frappe.get_doc("Cutting Plan", doc.cutting_plan_reference)
+        return [entry for entry in cutting_plan_doc.cut_plan_finish 
+               if getattr(entry, 'item', None) == item_code]
+    
+    # Option 3: If you need to query from database
+    # return frappe.get_all("Cutting Plan Finish", 
+    #                      filters={"item": item_code, "parent": doc.cutting_plan_reference},
+    #                      fields=["*"])
+    
+    return []

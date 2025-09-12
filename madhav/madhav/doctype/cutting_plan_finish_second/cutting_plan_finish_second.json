@@ -8,14 +8,19 @@
  "field_order": [
   "item",
   "item_name",
+  "column_break_pg1b",
   "fg_item",
+  "fg_item_name",
   "root_radius",
+  "section_break_41jx",
   "batch",
   "pieces",
   "length_size",
   "section_weight",
+  "column_break_h7pv",
   "total_length_in_meter",
   "semi_fg_length",
+  "section_break_rfhy",
   "remarks"
  ],
  "fields": [
@@ -90,13 +95,35 @@
    "in_list_view": 1,
    "label": "FG Item",
    "options": "Item"
+  },
+  {
+   "fieldname": "column_break_pg1b",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fetch_from": "fg_item.item_name",
+   "fieldname": "fg_item_name",
+   "fieldtype": "Data",
+   "label": "FG Item Name"
+  },
+  {
+   "fieldname": "section_break_41jx",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "column_break_h7pv",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "section_break_rfhy",
+   "fieldtype": "Section Break"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2025-09-11 17:53:56.538056",
+ "modified": "2025-09-12 11:05:10.133717",
  "modified_by": "Administrator",
  "module": "Madhav",
  "name": "Cutting plan Finish Second",

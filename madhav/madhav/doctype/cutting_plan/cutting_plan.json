@@ -12,6 +12,7 @@
   "section_break_rylt",
   "default_source_warehouse",
   "target_qty",
+  "material_transfer_tolerance",
   "column_break_3kmq",
   "default_finished_goods_warehouse",
   "default_unplanned_warehouse",
@@ -122,6 +123,7 @@
    "fieldtype": "Section Break"
   },
   {
+   "allow_bulk_edit": 1,
    "fieldname": "cutting_plan_finish",
    "fieldtype": "Table",
    "label": "Raw Material Cutting Plan",
@@ -200,6 +202,12 @@
    "label": "Cut Plan Finish",
    "no_copy": 1,
    "options": "Cutting plan Finish Second"
+  },
+  {
+   "fieldname": "material_transfer_tolerance",
+   "fieldtype": "Percent",
+   "label": "Material Transfer Tolerance (%)",
+   "reqd": 1
   }
  ],
  "grid_page_length": 50,
@@ -215,7 +223,7 @@
    "link_fieldname": "cutting_plan_reference"
   }
  ],
- "modified": "2025-09-11 17:19:16.893380",
+ "modified": "2025-09-12 12:37:21.980659",
  "modified_by": "Administrator",
  "module": "Madhav",
  "name": "Cutting Plan",

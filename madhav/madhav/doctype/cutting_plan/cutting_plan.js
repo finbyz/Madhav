@@ -515,6 +515,8 @@ frappe.ui.form.on('Cutting Plan Finish', {
         if (row.length_size && row.section_weight) {
             frappe.model.set_value(cdt, cdn, 'weight_per_length', row.section_weight * row.length_size);
         }
+        // Validate finish row constraints in real-time
+        validate_cutting_plan_finish_row_constraints(frm, cdt, cdn);
     },
     weight_per_length: function (frm, cdt, cdn) {
         let row = locals[cdt][cdn];
@@ -638,7 +640,39 @@ frappe.ui.form.on('Cutting Plan Finish', {
             }
         }
         }
-    }
+    },
+    // Real-time field handlers for finish constraints
+    semi_fg_length: function(frm, cdt, cdn) {
+        validate_cutting_plan_finish_row_constraints(frm, cdt, cdn);
+    },
+    no_of_length_sizes: function(frm, cdt, cdn) {
+        validate_cutting_plan_finish_row_constraints(frm, cdt, cdn);
+    },
+    length_size_1: function(frm, cdt, cdn) {
+        frm.__last_edited_length_field = 'length_size_1';
+        frm.__last_edited_length_row = cdn;
+        validate_cutting_plan_finish_row_constraints(frm, cdt, cdn);
+    },
+    length_size_2: function(frm, cdt, cdn) {
+        frm.__last_edited_length_field = 'length_size_2';
+        frm.__last_edited_length_row = cdn;
+        validate_cutting_plan_finish_row_constraints(frm, cdt, cdn);
+    },
+    length_size_3: function(frm, cdt, cdn) {
+        frm.__last_edited_length_field = 'length_size_3';
+        frm.__last_edited_length_row = cdn;
+        validate_cutting_plan_finish_row_constraints(frm, cdt, cdn);
+    },
+    length_size_4: function(frm, cdt, cdn) {
+        frm.__last_edited_length_field = 'length_size_4';
+        frm.__last_edited_length_row = cdn;
+        validate_cutting_plan_finish_row_constraints(frm, cdt, cdn);
+    },
+    length_size_5: function(frm, cdt, cdn) {
+        frm.__last_edited_length_field = 'length_size_5';
+        frm.__last_edited_length_row = cdn;
+        validate_cutting_plan_finish_row_constraints(frm, cdt, cdn);
+    },
 });
 
 // Updated helper function to auto-fill remaining length
@@ -1092,5 +1126,39 @@ function setup_fg_item_filter(frm) {
                 }
             };
         });
+    }
+}
+
+// Real-time validation for Cutting Plan Finish constraints
+function validate_cutting_plan_finish_row_constraints(frm, cdt, cdn) {
+    let row = locals[cdt][cdn];
+    let semi = flt(row.semi_fg_length);
+    let count = cint(row.no_of_length_sizes);
+    if (!semi || !count) {
+        return;
+    }
+
+    // Constraint 1: semi_fg_length <= 27
+    if (semi > 27) {
+        frappe.msgprint(__('Semi-FG Length must be less than or equal to 27.'));
+        // frappe.model.set_value(cdt, cdn, 'semi_fg_length', '');
+        return;
+    }
+
+    // Constraint 2: sum(length_size_1..n) < semi_fg_length
+    let total = 0.0;
+    for (let i = 1; i <= Math.min(count, 5); i++) {
+        let val = flt(row['length_size_' + i] || 0);
+        total += val;
+    }
+    if (total >= semi) {
+        frappe.msgprint(__('Sum of Length Sizes must be less than Semi-FG Length.'));
+        // Try to clear the last edited length_size if possible
+        if (frm.__last_edited_length_field && frm.__last_edited_length_row === row.name) {
+            frappe.model.set_value(cdt, cdn, frm.__last_edited_length_field, '');
+        } else {
+            // fallback: clear length_size_1
+            frappe.model.set_value(cdt, cdn, 'length_size_1', '');
+        }
     }
 }
