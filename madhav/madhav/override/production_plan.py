@@ -19,9 +19,10 @@ class CustomProductionPlan(ERPNextProductionPlan):
     def get_items(self):
         super().get_items()
 
-        # after fetching items, also pull custom fields from Sales Order Item
+        # after fetching items, also pull custom fields from Sales Order Item and Sales Order
         for row in self.get("po_items"):   # adjust child table name if needed
             if row.sales_order and row.sales_order_item:
+                # Get custom fields from Sales Order Item
                 so_item = frappe.db.get_value(
                     "Sales Order Item",
                     row.sales_order_item,
@@ -31,3 +32,14 @@ class CustomProductionPlan(ERPNextProductionPlan):
                 if so_item:
                     row.pieces = so_item.pieces or 0
                     row.length = so_item.length_size or 0.0   # ✅ float, no strip
+                
+                # Get customer information from Sales Order
+                so_details = frappe.db.get_value(
+                    "Sales Order",
+                    row.sales_order,
+                    ["customer", "customer_name"],
+                    as_dict=True
+                )
+                if so_details:
+                    row.customer = so_details.customer or ""
+                    row.customer_name = so_details.customer_name or ""
