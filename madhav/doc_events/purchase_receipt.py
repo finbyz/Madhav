@@ -143,27 +143,54 @@ def validation_section_weight(doc, method):
     if not doc.items or not doc.weight_received or not doc.total_length_in_meter:
         return
 
-    item_code = doc.items[0].item_code
-    standard_section_weight = frappe.db.get_value("Item", item_code, "weight_per_meter")
-
-    if not standard_section_weight:
-        frappe.throw(_("Standard section weight not found for item {0}").format(item_code))
-
+    # Compute receipt-level received section weight from total weight and length
     try:
         weight_received_kg = float(doc.weight_received) * 1000
-        received_section_weight = round(weight_received_kg/ doc.total_length_in_meter, 2)
+        received_section_weight = round(weight_received_kg / doc.total_length_in_meter, 2)
     except ZeroDivisionError:
         frappe.throw(_("Total Length in Meter cannot be zero."))
 
-    # ±1.5% tolerance check
-    lower_bound = received_section_weight * 0.985
-    upper_bound = received_section_weight * 1.015
+    # Validate each item against its own tolerance and standard section weight
+    violations = []
+    missing_standard = []
 
-    if float(standard_section_weight) < lower_bound or float(standard_section_weight) > upper_bound:
-        frappe.throw(_(
-            "Standard section weight for item {0} is outside ±1.5% of received section weight ({1}).\n"
-            "This Purchase Receipt is subject to approval and cannot be submitted."
-        ).format(item_code, received_section_weight))
+    for d in doc.items:
+        if not d.item_code:
+            continue
+
+        standard_section_weight = frappe.db.get_value("Item", d.item_code, "weight_per_meter")
+        if not standard_section_weight:
+            missing_standard.append(d.item_code)
+            continue
+
+        tolerance_pct = frappe.db.get_value("Item", d.item_code, "section_weight_tolerance")
+        try:
+            tolerance_pct = float(tolerance_pct) if tolerance_pct is not None else 1.5
+        except (TypeError, ValueError):
+            tolerance_pct = 1.5
+
+        lower_bound = received_section_weight * (1 - tolerance_pct / 100.0)
+        upper_bound = received_section_weight * (1 + tolerance_pct / 100.0)
+
+        if float(standard_section_weight) < lower_bound or float(standard_section_weight) > upper_bound:
+            violations.append({
+                "item_code": d.item_code,
+                "tolerance": tolerance_pct,
+                "received_section_weight": received_section_weight,
+                "standard_section_weight": float(standard_section_weight),
+            })
+
+    if missing_standard:
+        frappe.throw(_("Standard section weight not found for items: {0}").format(", ".join(missing_standard)))
+
+    if violations:
+        lines = []
+        for v in violations:
+            lines.append(_("Item {0}: standard {1} outside ±{2}% of received {3}.<br>").format(
+                v["item_code"], v["standard_section_weight"], round(v["tolerance"], 2), v["received_section_weight"]
+            ))
+        message = "\n".join(lines) + "\n" + _("This Purchase Receipt is subject to approval and cannot be submitted.")
+        frappe.throw(message)
 
     
     
