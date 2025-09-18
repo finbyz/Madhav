@@ -565,7 +565,7 @@ function update_total_qty_and_amount(frm, cdt, cdn) {
 
     });
 
-    frm.set_value("total_qty", total_qty.toFixed(2));
+    frm.set_value("total_qty", total_qty.toFixed(3));
     frm.set_value("amount", total_amount.toFixed(2));
 
 }
@@ -884,7 +884,7 @@ function update_total_cut_plan_qty(frm, cdt, cdn){
         }
     });
 
-    frm.set_value("cut_plan_total_qty", total_cut_plan_qty.toFixed(2));
+    frm.set_value("cut_plan_total_qty", total_cut_plan_qty.toFixed(3));
 }
 
 // Function to validate batch quantity consumption

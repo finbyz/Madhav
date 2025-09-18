@@ -47,12 +47,16 @@ class CuttingPlan(Document):
                         )
 
         if (self.has_value_changed("workflow_state") and 
-            self.workflow_state in ["Cut-plan Done", "Finished Cut Plan Done"]):
+            self.workflow_state in ["Finished Cut Plan Pending", "Cut plan pending"]):
             self.on_cut_plan_done()         
 
         if (self.has_value_changed("workflow_state") and 
-            self.workflow_state == "Cut-plan Done"):
+            self.workflow_state in ["Cut-plan Done", "Finished Cut Plan Done"]):
             update_finished_cut_plan_table(self)         
+        
+        # If stock entry reference was set/changed, update table immediately
+        if self.has_value_changed("stock_entry_reference"):
+            update_finished_cut_plan_table(self)
                     
     def validate(self):
         # Auto-set customer if field exists and is empty
@@ -62,6 +66,10 @@ class CuttingPlan(Document):
 
         if self.workflow_state == "Cut-plan Done":
             update_finished_cut_plan_table(self)       
+        
+        # Also react if user just set the reference field during edit
+        if self.has_value_changed("stock_entry_reference"):
+            update_finished_cut_plan_table(self)
         
         # Always ensure qty is calculated for cut_plan_finish rows on save
         calculate_qty_for_cut_plan_finish(self)
@@ -170,9 +178,14 @@ def validate_cut_plan_quantities(doc):
 def create_repack_stock_entry(cutting_plan_doc):
     """Create Repack Stock Entry with batches"""
 
+    if cutting_plan_doc.cut_plan_type == "Raw Material Cut Plan":
+        stock_entry_type = "RM Transfer cum Cutting Entry"
+    elif cutting_plan_doc.cut_plan_type == "Finished Cut Plan":
+        stock_entry_type = "FG Free Length Transfer cum Cutting Entry"
+
     # Create Stock Entry document
     stock_entry = frappe.new_doc("Stock Entry")
-    stock_entry.stock_entry_type = "Repack"
+    stock_entry.stock_entry_type = stock_entry_type
     stock_entry.purpose = "Repack"
     stock_entry.company = cutting_plan_doc.company
     stock_entry.posting_date = cutting_plan_doc.get('date') or frappe.utils.today()
@@ -485,7 +498,6 @@ def create_material_transfer_entry(self):
 
 def update_finished_cut_plan_table(self):
     if self.stock_entry_reference:
-        
         stock_entry_doc = frappe.get_doc("Stock Entry", self.stock_entry_reference)
         
         finished_items = [

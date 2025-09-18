@@ -27,7 +27,8 @@ frappe.ui.form.on('Work Order', {
                             let row = cutting_plan_form.add_child('cut_plan_detail');
                             row.item_code = d.item_code;
                             row.source_warehouse = d.source_warehouse || source_warehouse;
-                            row.qty = d.required_qty || d.qty;
+                            row.wo_qty = d.required_qty || d.qty;
+                            row.work_order_reference = frm.doc.name;
                         });
 
                         cutting_plan_form.refresh_field('cut_plan_detail');

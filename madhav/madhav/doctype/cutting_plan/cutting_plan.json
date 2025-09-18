@@ -152,7 +152,7 @@
    "fieldname": "cut_plan_total_qty",
    "fieldtype": "Float",
    "label": "Cut Plan Total Qty",
-   "precision": "2"
+   "precision": "3"
   },
   {
    "fieldname": "naming_series",
@@ -245,7 +245,7 @@
    "link_fieldname": "cutting_plan_reference"
   }
  ],
- "modified": "2025-09-17 14:39:29.305636",
+ "modified": "2025-09-18 17:36:33.005447",
  "modified_by": "Administrator",
  "module": "Madhav",
  "name": "Cutting Plan",
