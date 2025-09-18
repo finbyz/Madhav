@@ -449,3 +449,148 @@ def get_work_orders_by_rm(rm_item, filters=None):
     frappe.log_error(f"Query: {query}\nParams: {params}", "get_work_orders_by_rm Debug")
 
     return frappe.db.sql(query, params, as_dict=True)
+
+@frappe.whitelist()
+def get_items_from_cut_plan(work_order):
+    
+    if not work_order:
+        return []
+    fg_item = frappe.get_doc("Work Order", work_order).production_item
+    rows = frappe.get_all(
+        "Cutting plan Finish Second",
+        filters={"work_order_reference": work_order, "fg_item": fg_item},
+        fields=[
+            "item as item_code",
+            "batch as batch_no",
+            "qty",
+            # "warehouse as t_warehouse",
+            "pieces",
+            "length_size as average_length",
+            "section_weight",
+            "fg_item",
+            "semi_fg_length",
+            "work_order_reference",
+        ],
+        order_by="creation asc",
+    )
+
+    # Enrich with UOM metadata and batch flags needed by Stock Entry Detail
+    for row in rows:
+        row["use_serial_batch_fields"] = 1
+        row["required_stock_in_pieces"] = 1
+        # Default conversion factor and stock/uom
+        stock_uom = frappe.db.get_value("Item", row.get("item_code"), "stock_uom")
+        row["stock_uom"] = stock_uom
+        row["uom"] = stock_uom
+        row["conversion_factor"] = 1
+        row["basic_rate"] = 0
+
+    return rows
+
+
+@frappe.whitelist()
+def get_finished_cut_plan_from_mtm(work_orders):
+    """
+    For Finished Cut Plan: gather Stock Entry (Material Transfer for Manufacture) items
+    linked to given Work Orders and prepare:
+    - detail_rows: consolidated by (item_code, batch_no, s_warehouse)
+    - finish_rows: non-consolidated, one row per stock entry item
+
+    work_orders: list of work order names or JSON string
+    """
+    import json
+
+    if isinstance(work_orders, str):
+        work_orders = json.loads(work_orders)
+
+    if not work_orders:
+        return {"detail_rows": [], "finish_rows": []}
+
+    # Pre-fetch WO -> FG item map
+    wo_to_fg = {}
+    for wo_name in work_orders:
+        try:
+            wo_to_fg[wo_name] = frappe.db.get_value("Work Order", wo_name, "production_item")
+        except Exception:
+            wo_to_fg[wo_name] = None
+
+    # Fetch submitted MTM Stock Entries for provided WOs
+    se_list = frappe.get_all(
+        "Stock Entry",
+        filters={
+            "docstatus": 1,
+            "work_order": ["in", work_orders],
+            "stock_entry_type": "Material Transfer for Manufacture",
+        },
+        fields=["name", "work_order", "posting_date", "posting_time"],
+        order_by="posting_date asc, posting_time asc, name asc",
+    )
+
+    detail_key_to_row = {}
+    finish_rows = []
+
+    for se in se_list:
+        # Get items
+        items = frappe.get_all(
+            "Stock Entry Detail",
+            filters={"parent": se["name"]},
+            fields=[
+                "item_code",
+                "item_name",
+                "s_warehouse",
+                "t_warehouse",
+                "qty",
+                "batch_no",
+                # custom fields if present
+                "pieces",
+                "average_length",
+                "section_weight",
+            ],
+            order_by="idx asc",
+        )
+
+        for it in items:
+            item_code = it.get("item_code")
+            batch_no = it.get("batch_no")
+            s_wh = it.get("s_warehouse")
+
+            # Consolidated key for detail table
+            key = (item_code or "", batch_no or "", s_wh or "")
+            if key not in detail_key_to_row:
+                detail_key_to_row[key] = {
+                    "item_code": item_code,
+                    "item_name": it.get("item_name"),
+                    "source_warehouse": s_wh,
+                    "qty": 0.0,
+                    "pieces": 0.0,
+                    "length_size": it.get("average_length"),
+                    "section_weight": it.get("section_weight"),
+                    "batch": batch_no,
+                    "work_order_reference": se.get("work_order"),
+                }
+            # Sum quantities/pieces
+            row = detail_key_to_row[key]
+            row["qty"] = float(row.get("qty") or 0) + float(it.get("qty") or 0)
+            row["pieces"] = float(row.get("pieces") or 0) + float(it.get("pieces") or 0)
+
+            # Keep length/section_weight consistent if same, else drop to None
+            if row.get("length_size") != it.get("average_length"):
+                row["length_size"] = row.get("length_size") if row.get("length_size") == it.get("average_length") else row.get("length_size")
+            if row.get("section_weight") != it.get("section_weight"):
+                row["section_weight"] = row.get("section_weight") if row.get("section_weight") == it.get("section_weight") else row.get("section_weight")
+
+            # Non-consolidated finish row
+            finish_rows.append({
+                "item": item_code,
+                "batch": batch_no,
+                "qty": it.get("qty"),
+                "pieces": it.get("pieces"),
+                "length_size": it.get("average_length"),
+                "section_weight": it.get("section_weight"),
+                "rm_reference_batch": batch_no,
+                "work_order_reference": se.get("work_order"),
+                "fg_item": wo_to_fg.get(se.get("work_order")),
+            })
+
+    detail_rows = list(detail_key_to_row.values())
+    return {"detail_rows": detail_rows, "finish_rows": finish_rows}

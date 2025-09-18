@@ -10,10 +10,17 @@ from frappe.model.naming import make_autoname
 class CuttingPlan(Document):
     
     def autoname(doc):
-        if doc.company == "MADHAV UDYOG PRIVATE LIMITED":
-                doc.naming_series = "MUCUT.-"
-        elif doc.company == "MADHAV STELCO PRIVATE LIMITED":
-                doc.naming_series = "MSCUT.-"
+        # Set naming series based on both cut_plan_type and company
+        if doc.cut_plan_type == "Raw Material Cut Plan":
+            if doc.company == "MADHAV UDYOG PRIVATE LIMITED":
+                doc.naming_series = "MU.-RMCUT.-"
+            elif doc.company == "MADHAV STELCO PRIVATE LIMITED":
+                doc.naming_series = "MS.-RMCUT.-"
+        elif doc.cut_plan_type == "Finished Cut Plan":
+            if doc.company == "MADHAV UDYOG PRIVATE LIMITED":
+                doc.naming_series = "MU.-FGCUT.-"
+            elif doc.company == "MADHAV STELCO PRIVATE LIMITED":
+                doc.naming_series = "MS.-FGCUT.-"
 
         # Actually generate the name using the selected naming_series
         doc.name = make_autoname(doc.naming_series)
@@ -40,19 +47,24 @@ class CuttingPlan(Document):
                         )
 
         if (self.has_value_changed("workflow_state") and 
-            self.workflow_state == "Cut-plan Done"):
+            self.workflow_state in ["Cut-plan Done", "Finished Cut Plan Done"]):
             self.on_cut_plan_done()         
 
         if (self.has_value_changed("workflow_state") and 
-            self.workflow_state == "Finished Cut Plan Pending"):
+            self.workflow_state == "Cut-plan Done"):
             update_finished_cut_plan_table(self)         
                     
     def validate(self):
+        # Auto-set customer if field exists and is empty
+        # set_customer_on_cutting_plan(self)
         if self.workflow_state in ["RM Allocated( Material Transfer Submitted)", "Cut plan pending", "Cut-plan Done",]:
             self.validate_material_transfer_before_approve() 
 
-        if self.workflow_state == "Finished Cut Plan Pending":
+        if self.workflow_state == "Cut-plan Done":
             update_finished_cut_plan_table(self)       
+        
+        # Always ensure qty is calculated for cut_plan_finish rows on save
+        calculate_qty_for_cut_plan_finish(self)
     
     def validate_material_transfer_before_approve(self):
         """Check if linked Material Transfer Stock Entry is submitted"""
@@ -82,8 +94,8 @@ class CuttingPlan(Document):
             )
         
     def on_cut_plan_done(self):
-        
-        set_cutting_reference(self)
+
+        # set_cutting_reference(self)
 
 		
         """Auto create Repack Stock Entry when Cutting Plan is submitted"""
@@ -97,9 +109,8 @@ class CuttingPlan(Document):
         try:
             # Create Repack Stock Entry
             stock_entry = create_repack_stock_entry(self)
-            
-            if stock_entry:
-                set_stock_entry_reference_wo(self,stock_entry)
+            # if stock_entry:
+            #     set_stock_entry_reference_wo(self,stock_entry)
 
             # Update cutting plan with stock entry reference
             self.db_set('stock_entry_reference', stock_entry.name, update_modified=False)
@@ -188,7 +199,7 @@ def create_repack_stock_entry(cutting_plan_doc):
             source_entry.pieces = source_item.pieces
             source_entry.average_length = source_item.length_size
             source_entry.section_weight = source_item.section_weight
-            source_entry.s_warehouse = default_source_warehouse
+            source_entry.s_warehouse = source_item.get('source_warehouse')
             source_entry.uom = source_item.get('uom') or get_item_stock_uom(source_item.item_code)
             # source_entry.basic_rate = source_item.basic_rate
             source_entry.use_serial_batch_fields = 1
@@ -212,7 +223,7 @@ def create_repack_stock_entry(cutting_plan_doc):
                 default_target_warehouse = cutting_plan_doc.get('default_finished_goods_warehouse')
             
             target_entry = stock_entry.append("items", {})
-            target_entry.item_code = finish_item.item
+            target_entry.item_code = finish_item.item if cutting_plan_doc.cut_plan_type == "Raw Material Cut Plan" else finish_item.fg_item
             target_entry.qty = finish_item.qty
             target_entry.pieces = finish_item.pieces
             target_entry.average_length = finish_item.length_size
@@ -225,6 +236,7 @@ def create_repack_stock_entry(cutting_plan_doc):
             # target_entry.batch_no = batch_doc.name
             # target_entry.basic_rate = finish_item.get('rate') or 0
             target_entry.use_serial_batch_fields = 1
+            target_entry.work_order_reference = finish_item.work_order_reference
 
             # Update finish item with created batch 
             # finish_item.batch_no = batch_doc
@@ -321,6 +333,104 @@ def set_stock_entry_reference_wo(doc,stock_entry):
             wo = frappe.get_doc("Work Order", row.work_order_reference)
             wo.db_set("repack_stock_entry_reference",stock_entry.name)
             wo.save()
+
+def set_customer_on_cutting_plan(doc):
+    """Populate `customer` on Cutting Plan if the field exists but is empty.
+
+    Resolution order:
+    1) From any row's `work_order_reference` -> related Sales Order -> Customer
+    2) From header `work_order` link (if present)
+    3) From Work Order's own `customer` (if customized)
+    4) From linked Production Plan -> direct `customer` or first Sales Order -> Customer
+    """
+    # If there is no `customer` field on this DocType, or it's already set, do nothing
+    if not hasattr(doc, "customer"):
+        return
+    if getattr(doc, "customer", None):
+        return
+
+    work_order_names = []
+    # Collect WOs from child table
+    if hasattr(doc, "cut_plan_detail") and doc.cut_plan_detail:
+        for row in doc.cut_plan_detail:
+            two_ref = getattr(row, "work_order_reference", None)
+            if two_ref:
+                work_order_names.append(two_ref)
+
+    # Fallback to header-level work_order if provided
+    if not work_order_names and getattr(doc, "work_order", None):
+        work_order_names.append(doc.work_order)
+
+    def fetch_customer_from_work_order(work_order_name):
+        try:
+            wo = frappe.get_doc("Work Order", work_order_name)
+            # Try via Sales Order on Work Order
+            so_name = getattr(wo, "sales_order", None) or getattr(wo, "sales_order_id", None)
+            if so_name:
+                customer = frappe.db.get_value("Sales Order", so_name, "customer")
+                if customer:
+                    return customer
+            # Try direct customer on WO (if customized)
+            customer_on_wo = getattr(wo, "customer", None)
+            if customer_on_wo:
+                return customer_on_wo
+            # Try via Production Plan linked on WO
+            pp_name = getattr(wo, "production_plan", None)
+            if pp_name:
+                try:
+                    pp = frappe.get_doc("Production Plan", pp_name)
+                    pp_customer = getattr(pp, "customer", None)
+                    if pp_customer:
+                        return pp_customer
+                    rows = frappe.get_all(
+                        "Production Plan Sales Order",
+                        filters={"parent": pp_name},
+                        fields=["sales_order"],
+                        limit=1,
+                    )
+                    if rows:
+                        so = rows[0].get("sales_order")
+                        if so:
+                            customer = frappe.db.get_value("Sales Order", so, "customer")
+                            if customer:
+                                return customer
+                except Exception:
+                    return None
+        except Exception:
+            return None
+        return None
+
+    # Try each collected Work Order for a customer
+    for wo_name in work_order_names:
+        customer = fetch_customer_from_work_order(wo_name)
+        if customer:
+            doc.customer = customer
+            return
+
+    # Final fallback via document's own Production Plan link
+    pp_name = getattr(doc, "production_plan", None)
+    if pp_name and not getattr(doc, "customer", None):
+        try:
+            pp = frappe.get_doc("Production Plan", pp_name)
+            pp_customer = getattr(pp, "customer", None)
+            if pp_customer:
+                doc.customer = pp_customer
+                return
+            rows = frappe.get_all(
+                "Production Plan Sales Order",
+                filters={"parent": pp_name},
+                fields=["sales_order"],
+                limit=1,
+            )
+            if rows:
+                so = rows[0].get("sales_order")
+                if so:
+                    customer = frappe.db.get_value("Sales Order", so, "customer")
+                    if customer:
+                        doc.customer = customer
+                        return
+        except Exception:
+            return
             
 def create_material_transfer_entry(self):
         """Create Stock Entry of type Material Transfer"""
@@ -382,7 +492,7 @@ def update_finished_cut_plan_table(self):
             item for item in stock_entry_doc.items 
             if item.get("is_finished_item") == 1 and item.get("is_scrap_item") != 1 and item.get("return_to_stock") != 1
         ]
-        
+        # frappe.throw("finished_items: "+str(finished_items))
         # Clear existing entries in cut_plan_finish table (optional)
         # self.cut_plan_finish = []
         
@@ -428,7 +538,8 @@ def update_finished_cut_plan_table(self):
                                     "semi_fg_length": getattr(item, "semi_fg_length", None),
                                     "pieces": pieces_value,
                                     "length_size": length_size_value,
-                                    "source_plan_entry": plan_entry.name if hasattr(plan_entry, 'name') else None
+                                    "source_plan_entry": plan_entry.name if hasattr(plan_entry, 'name') else None,
+                                    "work_order_reference": item.work_order_reference
                                 })
                             
                     else:
@@ -439,6 +550,7 @@ def update_finished_cut_plan_table(self):
                             "fg_item": getattr(item, "fg_item", None),
                             "section_weight": getattr(item, "section_weight", None),
                             "semi_fg_length": getattr(item, "semi_fg_length", None),
+                            "work_order_reference": item.work_order_reference
                         })
         
         # Save the document to persist changes
@@ -464,3 +576,29 @@ def get_cutting_plan_entries_for_item(doc, item_code):
     #                      fields=["*"])
     
     return []
+
+def calculate_qty_for_cut_plan_finish(doc):
+    """Calculate qty and total_length_in_meter for rows in cut_plan_finish on save.
+
+    qty (in tonnes) = pieces × length_size × section_weight ÷ 1000
+    total_length_in_meter = pieces × length_size
+    """
+    try:
+        if hasattr(doc, 'cut_plan_finish') and doc.cut_plan_finish:
+            for row in doc.cut_plan_finish:
+                pieces = float(getattr(row, 'pieces', 0) or 0)
+                length_size = float(getattr(row, 'length_size', 0) or 0)
+                section_weight = float(getattr(row, 'section_weight', 0) or 0)
+
+                if pieces and length_size and section_weight:
+                    qty_kg = pieces * length_size * section_weight
+                    qty_tonnes = round(qty_kg / 1000.0, 3)
+                    total_length = pieces * length_size
+
+                    row.qty = qty_tonnes
+                    # Some schemas may not have total_length_in_meter on this child; set if present
+                    if hasattr(row, 'total_length_in_meter'):
+                        row.total_length_in_meter = total_length
+    except Exception as e:
+        frappe.log_error(title="Cut Plan Finish Qty Calc Error",
+                         message=f"Doc: {getattr(doc, 'name', '')} Error: {str(e)}")

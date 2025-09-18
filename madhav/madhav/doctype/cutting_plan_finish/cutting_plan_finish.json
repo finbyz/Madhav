@@ -42,7 +42,7 @@
   "length_size_3",
   "length_size_4",
   "length_size_5",
-  "section_break_keun",
+  "section_break_s4cm",
   "remarks"
  ],
  "fields": [
@@ -165,6 +165,7 @@
    "read_only": 1
   },
   {
+   "depends_on": "eval:parent.cut_plan_type == \"Raw Material Cut Plan\";",
    "fieldname": "remarks",
    "fieldtype": "Data",
    "label": "Remarks"
@@ -184,6 +185,7 @@
   },
   {
    "default": "1",
+   "depends_on": "eval:parent.cut_plan_type == \"Raw Material Cut Plan\";",
    "description": "Select For FG Cut Plan ",
    "fieldname": "no_of_length_sizes",
    "fieldtype": "Select",
@@ -208,10 +210,7 @@
    "placeholder": "Length Size 1"
   },
   {
-   "fieldname": "section_break_keun",
-   "fieldtype": "Section Break"
-  },
-  {
+   "depends_on": "eval:parent.cut_plan_type == \"Raw Material Cut Plan\";",
    "fieldname": "section_break_k9gr",
    "fieldtype": "Section Break"
   },
@@ -274,13 +273,18 @@
    "fieldname": "column_break_ec0e",
    "fieldtype": "Column Break",
    "label": "Pieces"
+  },
+  {
+   "depends_on": "eval:parent.cut_plan_type == \"Raw Material Cut Plan\";",
+   "fieldname": "section_break_s4cm",
+   "fieldtype": "Section Break"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2025-09-11 18:40:37.725304",
+ "modified": "2025-09-17 14:26:39.243861",
  "modified_by": "Administrator",
  "module": "Madhav",
  "name": "Cutting Plan Finish",

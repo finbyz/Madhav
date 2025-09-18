@@ -254,9 +254,9 @@ item_variant.make_variant_item_code = custom_make_variant_item_code
 # Overriding Methods
 # ------------------------------
 #
-# override_whitelisted_methods = {
-# 	"frappe.desk.doctype.event.event.get_events": "madhav.event.get_events"
-# }
+override_whitelisted_methods = {
+    "erpnext.manufacturing.doctype.work_order.work_order.make_stock_entry": "madhav.madhav.override.work_order.make_stock_entry"
+}
 #
 # each overriding function accepts a `data` argument;
 # generated from the base implementation of the doctype dashboard,

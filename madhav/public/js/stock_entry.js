@@ -8,6 +8,57 @@ frappe.ui.form.on('Stock Entry', {
             }
         }
     },
+    
+    // Handler you can call from your existing custom button:
+    get_items_from_cut_plan: function(frm) {
+        if (!frm.doc.work_order) {
+            frappe.msgprint(__('Please set Work Order first'));
+            return;
+        }
+
+        frappe.call({
+            method: 'madhav.api.get_items_from_cut_plan',
+            args: {
+                work_order: frm.doc.work_order
+            },
+            freeze: true,
+            callback: function(r) {
+                const items = (r && r.message) || [];
+                if (!items.length) {
+                    frappe.msgprint(__('No matching Cut Plan Finish rows found'));
+                    return;
+                }
+
+                // Clear existing items before appending new ones
+                frm.clear_table('items');
+
+                items.forEach(function(d) {
+                    frm.add_child('items', {
+                        item_code: d.item_code,
+                        qty: d.qty,
+                        pieces: d.pieces,
+                        average_length: d.average_length,
+                        section_weight: d.section_weight,
+                        fg_item: d.fg_item,
+                        semi_fg_length: d.semi_fg_length,
+                        work_order_reference: d.work_order_reference,
+                        // t_warehouse: d.t_warehouse,
+                        batch_no: d.batch_no,
+                        use_serial_batch_fields: 1,
+                        required_stock_in_pieces: 1,
+                        stock_uom: d.stock_uom,
+                        stock_qty: d.stock_qty,
+                        transfer_qty: d.qty,
+                        uom: d.uom,
+                        conversion_factor: d.conversion_factor,
+                        basic_rate: d.basic_rate
+                    });
+                });
+
+                frm.refresh_field('items');
+            }
+        });
+    },
 
     onload: function(frm) {
         

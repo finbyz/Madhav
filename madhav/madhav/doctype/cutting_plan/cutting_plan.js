@@ -85,10 +85,18 @@ frappe.ui.form.on('Cutting Plan', {
         // Set FG item filter for cutting_plan_finish child table
         // This will show only production items from work orders in cut_plan_detail
         setup_fg_item_filter(frm);
+    },
+    
+    cut_plan_type: function(frm) {
+        // When cut_plan_type changes, refresh the form to update any cached data
+        frm.refresh();
     }
 });
 
 function show_work_order_dialog(frm) {
+    // Get the cut_plan_type from the current form
+    let cut_plan_type = frm.doc.cut_plan_type || '';
+    
     let dialog = new frappe.ui.Dialog({
         title: __('Select Work Orders'),
         fields: [
@@ -108,17 +116,26 @@ function show_work_order_dialog(frm) {
                     // When item is selected, update Work Order filter
                     let item = dialog.get_value('item_to_manufacture');
                     dialog.fields_dict.work_order_name.get_query = function() {
+                        // Use the cut_plan_type passed from the parent function
+                        
                         let filters = {
-                            'status': ['not in', ['Completed', 'Stopped', 'Cancelled']],
                             'docstatus': 1
                         };
+                        
+                        // Set status filter based on cut_plan_type
+                        if (cut_plan_type === 'Finished Cut Plan') {
+                            filters['status'] = 'Completed';
+                        } else {
+                            filters['status'] = ['not in', ['Completed', 'Stopped', 'Cancelled']];
+                        }
+                        
                         if (item) {
                             filters.production_item = item;
                         }
                         return { filters: filters };
                     };
                     // Reload work orders when item changes
-                    load_work_orders(dialog);
+                    load_work_orders(dialog, cut_plan_type);
                 }
             },  
             {
@@ -143,7 +160,7 @@ function show_work_order_dialog(frm) {
                         dialog.set_df_property('work_order_name', 'read_only', 0);
                     }
                     // Reload work orders when RM changes
-                    load_work_orders(dialog);
+                    load_work_orders(dialog, cut_plan_type);
                 }
             },          
             {
@@ -154,10 +171,19 @@ function show_work_order_dialog(frm) {
                 description: __('Enter partial name to filter work orders'),
                 get_query: function() {
                     let item = dialog.get_value('item_to_manufacture');
+                    // Use the cut_plan_type passed from the parent function
+                    
                     let filters = {
-                        'status': ['not in', ['Completed', 'Stopped', 'Cancelled']],
                         'docstatus': 1
                     };
+                    
+                    // Set status filter based on cut_plan_type
+                    if (cut_plan_type === 'Finished Cut Plan') {
+                        filters['status'] = 'Completed';
+                    } else {
+                        filters['status'] = ['not in', ['Completed', 'Stopped', 'Cancelled']];
+                    }
+                    
                     if (item) {
                         filters.production_item = item;
                     }
@@ -165,7 +191,7 @@ function show_work_order_dialog(frm) {
                 },
                 onchange: function() {
                     // Load work orders when work order name changes
-                    load_work_orders(dialog);
+                    load_work_orders(dialog, cut_plan_type);
                 }
             },
             {
@@ -176,23 +202,23 @@ function show_work_order_dialog(frm) {
         ],
         primary_action_label: __('Get Selected Items'),
         primary_action: function(values) {
-            get_selected_work_orders(frm, dialog);
+            get_selected_work_orders(frm, dialog, cut_plan_type);
         }
     });
 
     // Add search functionality
     dialog.fields_dict.item_to_manufacture.$input.on('change', function() {
-        load_work_orders(dialog);
+        load_work_orders(dialog, cut_plan_type);
     });
 
     dialog.fields_dict.work_order_name.$input.on('input', function() {
-        load_work_orders(dialog);
+        load_work_orders(dialog, cut_plan_type);
     });
 
     // Also handle the awesomplete selection event
     dialog.fields_dict.work_order_name.$input.on('awesomplete-selectcomplete', function() {
         setTimeout(() => {
-            load_work_orders(dialog);
+            load_work_orders(dialog, cut_plan_type);
         }, 100);
     });
 
@@ -200,19 +226,31 @@ function show_work_order_dialog(frm) {
     
     // Load work orders initially
     setTimeout(() => {
-        load_work_orders(dialog);
+        load_work_orders(dialog, cut_plan_type);
     }, 100);
 }
 
-function load_work_orders(dialog) {
+function load_work_orders(dialog, cut_plan_type) {
     let item_to_manufacture = dialog.get_value('item_to_manufacture');
     let work_order_name = dialog.get_value('work_order_name');
     let rm_used = dialog.get_value('rm_used');
     
+    console.log('load_work_orders called with cut_plan_type:', cut_plan_type);
+    
     let filters = {
-        'status': ['not in', ['Completed', 'Stopped', 'Cancelled']],
         'docstatus': 1
     };
+    
+    // Set status filter based on cut_plan_type
+    if (cut_plan_type === 'Finished Cut Plan') {
+        // For Finished Cut Plan, show only completed work orders
+        filters['status'] = 'Completed';
+        console.log('Filtering for Completed work orders (Finished Cut Plan)');
+    } else {
+        // For Raw Material Cut Plan, show non-completed work orders
+        filters['status'] = ['not in', ['Completed', 'Stopped', 'Cancelled']];
+        console.log('Filtering for non-completed work orders (Raw Material Cut Plan)');
+    }
     
     if (item_to_manufacture) {
         filters['production_item'] = item_to_manufacture;
@@ -232,7 +270,7 @@ function load_work_orders(dialog) {
             },
             callback: function(r) {
                 if (r.message && r.message.length > 0) {
-                    render_work_orders_table(dialog, r.message);
+                    render_work_orders_table(dialog, r.message, cut_plan_type);
                 } else {
                     dialog.fields_dict.work_orders_html.$wrapper.html('<p>No Work Orders Found with selected Raw Material</p>');
                 }
@@ -242,22 +280,22 @@ function load_work_orders(dialog) {
     }
 
     // Regular call when no RM filter
-    get_filtered_work_orders(dialog, filters);
+    get_filtered_work_orders(dialog, filters, cut_plan_type);
 }
 
-function get_filtered_work_orders(dialog, filters) {
+function get_filtered_work_orders(dialog, filters, cut_plan_type) {
     frappe.call({
         method: 'frappe.client.get_list',
         args: {
             doctype: 'Work Order',
             filters: filters,
-            fields: ['name','production_item'],
+            fields: ['name','production_item', 'status'],
             order_by: 'creation desc',
             limit_page_length: 20
         },
         callback: function(r) {
             if (r.message) {
-                render_work_orders_table(dialog, r.message);
+                render_work_orders_table(dialog, r.message, cut_plan_type);
             }else {
                 // Clear HTML if no records found
                 dialog.fields_dict.work_orders_html.$wrapper.html('<p>No Work Orders Found</p>');
@@ -266,7 +304,7 @@ function get_filtered_work_orders(dialog, filters) {
     });
 }
 
-function render_work_orders_table(dialog, work_orders) {
+function render_work_orders_table(dialog, work_orders, cut_plan_type) {
     let html = `
         <div class="table-responsive">
             <table class="table table-striped">
@@ -275,6 +313,7 @@ function render_work_orders_table(dialog, work_orders) {
                         <th><input type="checkbox" id="select_all_wo"></th>
                         <th>Work Order</th>
                         <th>Production Item</th>
+                        <th>Status</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -287,6 +326,7 @@ function render_work_orders_table(dialog, work_orders) {
                 <td><input type="checkbox" class="work-order-checkbox" data-name="${wo.name}" data-item="${wo.production_item}" data-qty="${pending_qty}"></td>
                 <td>${wo.name}</td>
                 <td>${wo.production_item}</td>
+                <td><span class="badge badge-${wo.status === 'Completed' ? 'success' : 'warning'}">${wo.status}</span></td>
             </tr>
         `;
     });
@@ -305,7 +345,7 @@ function render_work_orders_table(dialog, work_orders) {
     });
 }
 
-function get_selected_work_orders(frm, dialog) {
+function get_selected_work_orders(frm, dialog, cut_plan_type) {
     let selected_work_orders = [];
     
     $('.work-order-checkbox:checked').each(function() {
@@ -322,41 +362,92 @@ function get_selected_work_orders(frm, dialog) {
     }
 
     // Process selected work orders and add to cutting plan
-    process_selected_work_orders(frm, selected_work_orders);
+    process_selected_work_orders(frm, selected_work_orders, cut_plan_type);
     dialog.hide();
 }
 
-function process_selected_work_orders(frm, selected_work_orders) {
-    frappe.call({
-        method: 'madhav.api.get_work_order_details',
-        args: {
-            work_orders: selected_work_orders
-        },
-        callback: function(r) {
-            if (r.message) {
-                                
-                r.message.forEach(function(item) {
-                    let child = frm.add_child('cut_plan_detail');
-                    child.item_code = item.item_code;
-                    child.item_name = item.item_name;
-                    child.source_warehouse = item.source_warehouse;
-                    child.wo_qty = item.qty;
-                    child.basic_rate = item.basic_rate;
-                    child.work_order_reference =  item.work_order_reference;
+function process_selected_work_orders(frm, selected_work_orders, cut_plan_type) {
+    if (cut_plan_type === 'Finished Cut Plan') {
+        // Build list of work order names
+        const wo_names = (selected_work_orders || []).map(w => w.work_order).filter(Boolean);
+        if (wo_names.length === 0) {
+            frappe.msgprint(__('Please select at least one Work Order'));
+            return;
+        }
+        frappe.call({
+            method: 'madhav.api.get_finished_cut_plan_from_mtm',
+            args: { work_orders: wo_names },
+            callback: function(r) {
+                if (!r.message) return;
+                const detail_rows = r.message.detail_rows || [];
+                const finish_rows = r.message.finish_rows || [];
+
+                // Append consolidated rows to cut_plan_detail
+                detail_rows.forEach(function(d) {
+                    let row = frm.add_child('cut_plan_detail');
+                    row.item_code = d.item_code;
+                    row.item_name = d.item_name;
+                    row.source_warehouse = d.source_warehouse;
+                    row.qty = d.qty;
+                    row.pieces = d.pieces;
+                    row.length_size = d.length_size;
+                    row.section_weight = d.section_weight;
+                    row.batch = d.batch;
+                    row.work_order_reference = d.work_order_reference;
                 });
-                
+
+                // Append non-consolidated rows to cutting_plan_finish
+                finish_rows.forEach(function(f) {
+                    let row = frm.add_child('cutting_plan_finish');
+                    row.item = f.item;
+                    row.batch = f.batch;
+                    row.qty = f.qty;
+                    row.pieces = f.pieces;
+                    row.length_size = f.length_size;
+                    row.section_weight = f.section_weight;
+                    row.rm_reference_batch = f.rm_reference_batch;
+                    row.work_order_reference = f.work_order_reference;
+                    row.fg_item = f.fg_item;
+                });
+
                 frm.refresh_field('cut_plan_detail');
-                
-                // Setup FG item filter after adding work orders
+                frm.refresh_field('cutting_plan_finish');
                 setup_fg_item_filter(frm);
-                
+
                 frappe.show_alert({
-                    message: __('Items added successfully'),
+                    message: __('MTM items pulled into Cutting Plan'),
                     indicator: 'green'
                 });
             }
-        }
-    });
+        });
+    } else {
+        // Raw Material Cut Plan: existing behavior via WO required items
+        frappe.call({
+            method: 'madhav.api.get_work_order_details',
+            args: {
+                work_orders: selected_work_orders
+            },
+            callback: function(r) {
+                if (r.message) {
+                    r.message.forEach(function(item) {
+                        let child = frm.add_child('cut_plan_detail');
+                        child.item_code = item.item_code;
+                        child.item_name = item.item_name;
+                        child.source_warehouse = item.source_warehouse;
+                        child.wo_qty = item.qty;
+                        child.basic_rate = item.basic_rate;
+                        child.work_order_reference =  item.work_order_reference;
+                    });
+                    frm.refresh_field('cut_plan_detail');
+                    setup_fg_item_filter(frm);
+                    frappe.show_alert({
+                        message: __('Items added successfully'),
+                        indicator: 'green'
+                    });
+                }
+            }
+        });
+    }
 }
 
 // Child table events for cut_plan_detail
@@ -763,11 +854,24 @@ function calculate_qty(frm, cdt, cdn) {
           return;
     }
      let qty = row.pieces * row.length_size *row.section_weight;
-     let qty_in_tonne = (qty/1000).toFixed(2);
+     let qty_in_tonne = (qty/1000).toFixed(3);
      let total_length = row.pieces * row.length_size
      frappe.model.set_value(cdt, cdn, 'qty', qty_in_tonne);
      frappe.model.set_value(cdt, cdn, 'total_length_in_meter',total_length)
 }
+
+// Qty auto-calculation for Cut Plan Finish (second) table
+frappe.ui.form.on('Cutting plan Finish Second', {
+    pieces: function (frm, cdt, cdn) {
+        calculate_qty(frm, cdt, cdn);
+    },
+    length_size: function (frm, cdt, cdn) {
+        calculate_qty(frm, cdt, cdn);
+    },
+    section_weight: function (frm, cdt, cdn) {
+        calculate_qty(frm, cdt, cdn);
+    }
+});
 
 function update_total_cut_plan_qty(frm, cdt, cdn){
     let total_cut_plan_qty = 0;
