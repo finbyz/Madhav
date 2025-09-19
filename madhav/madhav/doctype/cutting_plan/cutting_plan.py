@@ -51,7 +51,7 @@ class CuttingPlan(Document):
             self.on_cut_plan_done()         
 
         if (self.has_value_changed("workflow_state") and 
-            self.workflow_state in ["Cut-plan Done", "Finished Cut Plan Done"]):
+            self.workflow_state in ["Cut-plan Done"]):
             update_finished_cut_plan_table(self)         
         
         # If stock entry reference was set/changed, update table immediately
