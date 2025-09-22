@@ -155,3 +155,33 @@ def adjust_piece_qty_sign(sle_doc, piece_qty):
 
     # Default: assume incoming
     return abs(piece_qty)
+
+# def cancel_piece_stock_ledger_entry(sle_doc, method):
+#     """Cancel corresponding Piece Stock Ledger Entry when Stock Ledger Entry is cancelled"""
+    
+#     # Check if item requires piece tracking
+#     if not frappe.db.get_value("Item", sle_doc.item_code, "required_stock_in_pieces"):
+#         return
+    
+#     # Find piece entries that match this SLE
+#     piece_entries = frappe.get_all("Piece Stock Ledger Entry", 
+#         filters={
+#             "voucher_type": sle_doc.voucher_type,
+#             "voucher_no": sle_doc.voucher_no,
+#             "item_code": sle_doc.item_code,
+#             "warehouse": sle_doc.warehouse,
+#             "docstatus": 1,
+#             "is_cancelled": 0
+#         },
+#         fields=["name"]
+#     )
+    
+#     frappe.log_error(f"SLE Cancel: Found {len(piece_entries)} piece entries to cancel for SLE {sle_doc.name}")
+    
+#     for entry in piece_entries:
+#         try:
+#             piece_doc = frappe.get_doc("Piece Stock Ledger Entry", entry.name)
+#             piece_doc.cancel()
+#             frappe.log_error(f"SLE Cancel: Successfully cancelled Piece Stock Ledger Entry {entry.name}")
+#         except Exception as e:
+#             frappe.log_error(f"SLE Cancel: Error cancelling Piece Stock Ledger Entry {entry.name}: {str(e)}")

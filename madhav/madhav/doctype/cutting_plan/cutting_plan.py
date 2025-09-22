@@ -590,27 +590,93 @@ def get_cutting_plan_entries_for_item(doc, item_code):
     return []
 
 def calculate_qty_for_cut_plan_finish(doc):
-    """Calculate qty and total_length_in_meter for rows in cut_plan_finish on save.
+    """Calculate derived fields for rows in cutting_plan_finish on save.
 
-    qty (in tonnes) = pieces × length_size × section_weight ÷ 1000
-    total_length_in_meter = pieces × length_size
+    Mirrors client-side formulas so uploads/back-end updates stay consistent.
+
+    - qty (tonnes) = pieces × length_size × section_weight ÷ 1000
+    - total_length_in_meter = pieces × length_size
+    - weight_per_length = section_weight × length_size
+    - remaining_weight = weight_per_length − (process_loss% of weight_per_length)
+    - semi_fg_length = remaining_weight ÷ Item.weight_per_meter (of fg_item)
+    - Also sets header cut_plan_total_qty = sum(child.qty)
     """
     try:
-        if hasattr(doc, 'cut_plan_finish') and doc.cut_plan_finish:
-            for row in doc.cut_plan_finish:
+        total_cut_plan_qty = 0.0
+
+        if hasattr(doc, 'cutting_plan_finish') and doc.cutting_plan_finish:
+            for row in doc.cutting_plan_finish:
                 pieces = float(getattr(row, 'pieces', 0) or 0)
                 length_size = float(getattr(row, 'length_size', 0) or 0)
                 section_weight = float(getattr(row, 'section_weight', 0) or 0)
 
+                # qty and total_length_in_meter
                 if pieces and length_size and section_weight:
                     qty_kg = pieces * length_size * section_weight
                     qty_tonnes = round(qty_kg / 1000.0, 3)
-                    total_length = pieces * length_size
+                    try:
+                        row.db_set('qty', qty_tonnes, update_modified=False)
+                    except Exception:
+                        row.qty = qty_tonnes
+                    total_cut_plan_qty += qty_tonnes
 
-                    row.qty = qty_tonnes
-                    # Some schemas may not have total_length_in_meter on this child; set if present
-                    if hasattr(row, 'total_length_in_meter'):
-                        row.total_length_in_meter = total_length
+                # Set total_length_in_meter if field exists
+                if hasattr(row, 'total_length_in_meter') and (pieces and length_size):
+                    total_length_val = pieces * length_size
+                    try:
+                        row.db_set('total_length_in_meter', total_length_val, update_modified=False)
+                    except Exception:
+                        row.total_length_in_meter = total_length_val
+
+                # weight_per_length = section_weight * length_size
+                if hasattr(row, 'weight_per_length') and (section_weight and length_size):
+                    wpl_val = section_weight * length_size
+                    try:
+                        row.db_set('weight_per_length', wpl_val, update_modified=False)
+                    except Exception:
+                        row.weight_per_length = wpl_val
+
+                # remaining_weight with optional process_loss%
+                process_loss = float(getattr(row, 'process_loss', 0) or 0)
+                if hasattr(row, 'remaining_weight'):
+                    if getattr(row, 'weight_per_length', None):
+                        base_wpl = float(row.weight_per_length)
+                    else:
+                        base_wpl = section_weight * length_size if (section_weight and length_size) else 0
+
+                    if base_wpl:
+                        remaining_val = base_wpl - (base_wpl * process_loss / 100.0)
+                        try:
+                            row.db_set('remaining_weight', remaining_val, update_modified=False)
+                        except Exception:
+                            row.remaining_weight = remaining_val
+
+                # semi_fg_length = remaining_weight / item.weight_per_meter (using fg_item)
+                if hasattr(row, 'semi_fg_length'):
+                    remaining_weight = float(getattr(row, 'remaining_weight', 0) or 0)
+                    fg_item = getattr(row, 'fg_item', None)
+                    if remaining_weight and fg_item:
+                        wpm = frappe.db.get_value("Item", fg_item, "weight_per_meter") or 0
+                        try:
+                            wpm = float(wpm or 0)
+                        except Exception:
+                            wpm = 0
+                        if wpm:
+                            semi_len_val = remaining_weight / wpm
+                            try:
+                                row.db_set('semi_fg_length', semi_len_val, update_modified=False)
+                            except Exception:
+                                row.semi_fg_length = semi_len_val
+
+        # Update header total
+        if hasattr(doc, 'cut_plan_total_qty'):
+            try:
+                doc.db_set('cut_plan_total_qty', round(total_cut_plan_qty, 3), update_modified=False)
+            except Exception:
+                doc.cut_plan_total_qty = round(total_cut_plan_qty, 3)
+
     except Exception as e:
-        frappe.log_error(title="Cut Plan Finish Qty Calc Error",
-                         message=f"Doc: {getattr(doc, 'name', '')} Error: {str(e)}")
+        frappe.log_error(
+            title="Cut Plan Finish Derived Fields Calc Error",
+            message=f"Doc: {getattr(doc, 'name', '')} Error: {str(e)}"
+        )

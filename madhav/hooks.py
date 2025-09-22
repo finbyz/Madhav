@@ -164,7 +164,7 @@ doc_events = {
         "before_validate": "madhav.doc_events.stock_entry.auto_calculation",
         "on_submit": "madhav.doc_events.stock_entry.after_submit",
         "before_submit": "madhav.doc_events.stock_entry.validation_section_weight",
-        # "validate": "madhav.doc_events.stock_entry.validate",
+        "before_cancel": "madhav.doc_events.stock_entry.cancel_linked_psles"
     },
     "Purchase Receipt": {
         "before_validate": [
@@ -172,7 +172,8 @@ doc_events = {
             "madhav.doc_events.purchase_receipt.create_qi"
             ],
         "before_submit": "madhav.doc_events.purchase_receipt.validation_section_weight",
-        "on_submit": "madhav.doc_events.purchase_receipt.after_submit"
+        "on_submit": "madhav.doc_events.purchase_receipt.after_submit",
+        "before_cancel": "madhav.doc_events.stock_entry.cancel_linked_psles"
     },
     "Batch Group":{
         "autoname":"madhav.doc_events.batch_group.autoname"
@@ -182,6 +183,15 @@ doc_events = {
     },
     "Sales Order":{
         "before_validate":"madhav.doc_events.sales_order.calculate_qty_in_tonne"
+    },
+    "Sales Invoice": {
+        "before_cancel": "madhav.doc_events.stock_entry.cancel_linked_psles"
+    },
+    "Delivery Note": {
+        "before_cancel": "madhav.doc_events.stock_entry.cancel_linked_psles"
+    },
+    "Purchase Invoice": {
+        "before_cancel": "madhav.doc_events.stock_entry.cancel_linked_psles"
     },
     "Attendance":{
       "validate":"madhav.doc_events.attendance.set_status",
@@ -258,6 +268,10 @@ item_variant.make_variant_item_code = custom_make_variant_item_code
 override_whitelisted_methods = {
     "erpnext.manufacturing.doctype.work_order.work_order.make_stock_entry": "madhav.madhav.override.work_order.make_stock_entry"
 }
+
+# after_migrate = [
+#     "madhav.madhav.monkey_patch.ignore_psle_links.setup_ignore_links"
+# ]
 #
 # each overriding function accepts a `data` argument;
 # generated from the base implementation of the doctype dashboard,
@@ -272,8 +286,8 @@ override_whitelisted_methods = {
 
 # Ignore links to specified DocTypes when deleting documents
 # -----------------------------------------------------------
-
 # ignore_links_on_delete = ["Communication", "ToDo"]
+ignore_links_on_delete = ["Piece Stock Ledger Entry"]
 
 # Request Events
 # ----------------
