@@ -73,6 +73,9 @@ class CuttingPlan(Document):
         
         # Always ensure qty is calculated for cut_plan_finish rows on save
         calculate_qty_for_cut_plan_finish(self)
+
+        # Validate that total Finish qty per Work Order does not exceed available qty from RM detail
+        validate_finish_qty_against_work_order(self)
     
     def validate_material_transfer_before_approve(self):
         """Check if linked Material Transfer Stock Entry is submitted"""
@@ -536,32 +539,59 @@ def update_finished_cut_plan_table(self):
                             plan_entry_index_by_item[item.item_code] = use_index + 1
                         no_of_sizes = getattr(plan_entry, "no_of_length_sizes", 0) or 1
                         max_slots = min(int(no_of_sizes), 5)
+                        # Resolve section_weight from fg_item's Item.weight_per_meter
+                        fg_item_code = getattr(item, "fg_item", None)
+                        section_weight_from_fg = frappe.db.get_value("Item", fg_item_code, "weight_per_meter") if fg_item_code else None
+                        root_radius_from_fg = frappe.db.get_value("Item", fg_item_code, "root_radius") if fg_item_code else None
                         for i in range(1, max_slots + 1):
                             pieces_field = f"pieces_{i}"
                             length_size_field = f"length_size_{i}"
                             pieces_value = getattr(plan_entry, pieces_field, None)
                             length_size_value = getattr(plan_entry, length_size_field, None)
                             if pieces_value or length_size_value:
+                                # Compute qty in tonnes when all inputs are available
+                                qty_tonnes_val = None
+                                try:
+                                    if pieces_value and length_size_value and section_weight_from_fg:
+                                        qty_kg = float(pieces_value) * float(length_size_value) * float(section_weight_from_fg)
+                                        qty_tonnes_val = round(qty_kg / 1000.0, 3)
+                                except Exception:
+                                    qty_tonnes_val = None
                                 self.append("cut_plan_finish", {
                                     "batch": item.batch_no,
                                     "item": item.item_code,
                                     "fg_item": getattr(item, "fg_item", None),
-                                    "section_weight": getattr(item, "section_weight", None),
+                                    "section_weight": section_weight_from_fg,
+                                    "root_radius": root_radius_from_fg,
                                     "semi_fg_length": getattr(item, "semi_fg_length", None),
                                     "pieces": pieces_value,
                                     "length_size": length_size_value,
+                                    "qty": qty_tonnes_val,
                                     "source_plan_entry": plan_entry.name if hasattr(plan_entry, 'name') else None,
                                     "work_order_reference": item.work_order_reference
                                 })
                             
                     else:
                         # If no cutting plan entries found, create a basic entry
+                        fg_item_code = getattr(item, "fg_item", None)
+                        section_weight_from_fg = frappe.db.get_value("Item", fg_item_code, "weight_per_meter") if fg_item_code else None
+                        root_radius_from_fg = frappe.db.get_value("Item", fg_item_code, "root_radius") if fg_item_code else None
+                        # Compute qty in tonnes when all inputs are available
+                        qty_tonnes_val = None
+                        try:
+                            # In this minimal entry, we don't have pieces/length from plan; leave qty None
+                            if False:
+                                pass
+                        except Exception:
+                            qty_tonnes_val = None
                         self.append("cut_plan_finish", {
                             "batch": item.batch_no,
                             "item": item.item_code,
                             "fg_item": getattr(item, "fg_item", None),
-                            "section_weight": getattr(item, "section_weight", None),
+                            "section_weight": section_weight_from_fg,
+                            "root_radius": root_radius_from_fg,
                             "semi_fg_length": getattr(item, "semi_fg_length", None),
+                            "qty": qty_tonnes_val,
                             "work_order_reference": item.work_order_reference
                         })
         
@@ -678,5 +708,51 @@ def calculate_qty_for_cut_plan_finish(doc):
     except Exception as e:
         frappe.log_error(
             title="Cut Plan Finish Derived Fields Calc Error",
+            message=f"Doc: {getattr(doc, 'name', '')} Error: {str(e)}"
+        )
+
+
+def validate_finish_qty_against_work_order(doc):
+    """Ensure that total qty in cutting_plan_finish per work_order_reference
+    does not exceed the total qty assigned to the same work order(s) in cut_plan_detail.
+
+    Both sides use qty in tonnes as per existing conventions.
+    """
+    try:
+        # Build allowed qty per WO from cut_plan_detail
+        allowed_by_wo = {}
+        if hasattr(doc, 'cut_plan_detail') and doc.cut_plan_detail:
+            for rm in doc.cut_plan_detail:
+                wo = getattr(rm, 'work_order_reference', None)
+                qty_val = float(getattr(rm, 'qty', 0) or 0)
+                if wo:
+                    allowed_by_wo[wo] = allowed_by_wo.get(wo, 0.0) + qty_val
+
+        if not allowed_by_wo:
+            return  # nothing to validate
+
+        # Sum produced/finish qty per WO from cutting_plan_finish
+        used_by_wo = {}
+        if hasattr(doc, 'cutting_plan_finish') and doc.cutting_plan_finish:
+            for fin in doc.cutting_plan_finish:
+                wo = getattr(fin, 'work_order_reference', None)
+                qty_val = float(getattr(fin, 'qty', 0) or 0)
+                if wo:
+                    used_by_wo[wo] = used_by_wo.get(wo, 0.0) + qty_val
+
+        # Check for exceedances
+        messages = []
+        for wo, used_qty in used_by_wo.items():
+            allowed_qty = allowed_by_wo.get(wo, 0.0)
+            if allowed_qty and used_qty > allowed_qty + 1e-9:
+                messages.append(
+                    _(f"Work Order {wo}: Finish qty {used_qty:.3f} exceeds allowed {allowed_qty:.3f} from RM Detail.")
+                )
+
+        if messages:
+            frappe.throw("<br>".join(messages))
+    except Exception as e:
+        frappe.log_error(
+            title="Cutting Plan WO Qty Validation Error",
             message=f"Doc: {getattr(doc, 'name', '')} Error: {str(e)}"
         )

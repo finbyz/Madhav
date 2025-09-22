@@ -1255,8 +1255,12 @@ function validate_cutting_plan_finish_row_constraints(frm, cdt, cdn) {
         let val = flt(row['length_size_' + i] || 0);
         total += val;
     }
-    if (total > semi) {
-        frappe.msgprint(__('Sum of Length Sizes must be less than Semi-FG Length.'));
+	// Allow equality; only error when total is strictly greater than semi (rounded to 3 dp)
+	const precision = 3;
+	const totalRounded = flt(total, precision);
+	const semiRounded = flt(semi, precision);
+	if (totalRounded > semiRounded) {
+		frappe.msgprint(__('Sum of Length Sizes must be less than Semi-FG Length.'));
         // Try to clear the last edited length_size if possible
         if (frm.__last_edited_length_field && frm.__last_edited_length_row === row.name) {
             frappe.model.set_value(cdt, cdn, frm.__last_edited_length_field, '');
