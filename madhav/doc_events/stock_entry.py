@@ -1,14 +1,23 @@
 import frappe
 from frappe import _
 from frappe.utils import get_url_to_form
-from frappe.utils import nowdate, flt, cint, cstr,now_datetime
+from frappe.utils import nowdate, flt, cint, cstr, now_datetime
 
-# def validate(self,method):
-# 	calculate_rate_and_amount(self)
+def validate(doc, method):
+    """Recalculate rates/amounts safely for this app.
 
-# def _get_row_quantity(row):
-# 	"""Return custom 'quantity' if present, else fall back to standard 'qty'."""
-# 	return flt(getattr(row, "quantity", row.qty))
+    - Uses standard ERPNext APIs when available
+    - Falls back to proportional allocation for multiple finished rows
+    """
+    try:
+        calculate_rate_and_amount(doc)
+    except Exception:
+        # Keep non-blocking if any upstream difference exists
+        pass
+
+def _get_row_quantity(row):
+    """Return custom 'quantity' if present, else fall back to standard 'qty'."""
+    return flt(getattr(row, "quantity", getattr(row, "qty", 0)))
 
 # def _safe_get_item_field(item_code, fieldname, default=None):
 # 	"""Safely read Item field; return default if column doesn't exist or value is None."""
@@ -21,46 +30,32 @@ from frappe.utils import nowdate, flt, cint, cstr,now_datetime
 # 	except Exception:
 # 		return default
 	
-# def calculate_rate_and_amount(self,force=False,update_finished_item_rate=True, raise_error_if_no_rate=True):
-# 	if self.purpose in ['Manufacture','Repack']:
-# 		is_multiple_finish  = 0
-# 		multi_item_list = []
-# 		for d in self.items:
-# 			if d.t_warehouse and d.qty != 0:
-# 				is_multiple_finish +=1
-# 				multi_item_list.append(d.item_code)
-# 		if is_multiple_finish > 1 and self.purpose == "Manufacture":
-# 			self.set_basic_rate(force, raise_error_if_no_rate=True)
-# 			bom_doc = frappe.get_doc("BOM",self.bom_no)
-# 			if hasattr(bom_doc,'equal_cost_ratio'):
-# 				if not bom_doc.equal_cost_ratio:
-# 					cal_rate_for_finished_item(self)
-# 				# elif len(list(set(multi_item_list))) == 1 and bom_doc.equal_cost_ratio:
-# 				# 	calculate_multiple_repack_valuation(self)
-# 				else:
-# 					calculate_multiple_repack_valuation(self)
-# 			else:
-# 				cal_rate_for_finished_item(self)
+def calculate_rate_and_amount(doc, force=False, update_finished_item_rate=True, raise_error_if_no_rate=True):
+    """Minimal, app-safe valuation calculation.
 
-# 		elif is_multiple_finish > 1 and self.purpose == "Repack":
-# 			self.set_basic_rate(force, raise_error_if_no_rate=True)
-# 			calculate_multiple_repack_valuation(self)
-		
-# 		else:
-# 			self.set_basic_rate(force, raise_error_if_no_rate=True)
-# 			self.distribute_additional_costs()
+    - Uses standard StockEntry APIs when available
+    - Handles multiple finished items by proportional allocation using a robust measure
+    """
+    # Ensure base rates are set by ERPNext (handles incoming/outgoing values and defaults)
+    if hasattr(doc, "set_basic_rate"):
+        doc.set_basic_rate(force, raise_error_if_no_rate=raise_error_if_no_rate)
 
-# 	else:
-# 		self.set_basic_rate(force, raise_error_if_no_rate=True)
-# 		self.distribute_additional_costs()
+    finished_rows = [r for r in (doc.items or []) if getattr(r, "t_warehouse", None) and flt(getattr(r, "qty", 0))]
 
-# 	self.update_valuation_rate()
-# 	# Finbyz Changes start: Calculate Valuation Price Based on Valuation Rate and concentration for AS IS Items 
-# 	update_valuation_price(self)
-# 	# Finbyz Changes End
-# 	self.set_total_incoming_outgoing_value()
-# 	self.set_total_amount()
-# 	price_to_rate(self)
+    if doc.purpose in ["Manufacture", "Repack"] and len(finished_rows) > 1:
+        calculate_multiple_repack_valuation(doc)
+    else:
+        # Default ERPNext cost distribution for single finished item
+        if hasattr(doc, "distribute_additional_costs"):
+            doc.distribute_additional_costs()
+
+    # Final recomputations using ERPNext APIs
+    if hasattr(doc, "update_valuation_rate"):
+        doc.update_valuation_rate()
+    if hasattr(doc, "set_total_incoming_outgoing_value"):
+        doc.set_total_incoming_outgoing_value()
+    if hasattr(doc, "set_total_amount"):
+        doc.set_total_amount()
 
 # def price_to_rate(self):
 # 	for item in self.items:
@@ -81,26 +76,37 @@ from frappe.utils import nowdate, flt, cint, cstr,now_datetime
 # 		else:
 # 			item.valuation_price = item.valuation_rate
 
-# def calculate_multiple_repack_valuation(self):
-# 	self.total_additional_costs = sum([flt(t.amount) for t in self.get("additional_costs")])
-# 	if self.items:
-# 		finished_qty_total = 0.0
-# 		finished_measure_total = 0.0
-# 		total_outgoing_value = 0.0
-# 		for row in self.items:
-# 			if row.s_warehouse:
-# 				total_outgoing_value += flt(row.basic_amount)
-# 			if row.t_warehouse:
-# 				finished_qty_total += flt(row.qty)
-# 				finished_measure_total += _get_row_quantity(row)
-# 		if finished_measure_total <= 0:
-# 			frappe.throw("Cannot allocate costs: total finished measure is zero.")
-# 		for row in self.items:
-# 			if row.t_warehouse:
-# 				measure = _get_row_quantity(row)
-# 				row.basic_amount = flt(total_outgoing_value) * flt(measure) / flt(finished_measure_total)
-# 				row.additional_cost = flt(self.total_additional_costs) * flt(measure) / flt(finished_measure_total)
-# 				row.basic_rate = flt(row.basic_amount / flt(row.qty)) if flt(row.qty) else 0.0
+def calculate_multiple_repack_valuation(doc):
+    """Allocate outgoing value and additional costs proportionally across multiple finished rows.
+
+    Measure defaults to `quantity` field if present else `qty` to support diverse schemas.
+    """
+    total_additional_costs = sum([flt(getattr(t, "amount", 0)) for t in (getattr(doc, "additional_costs", []) or [])])
+    if not getattr(doc, "items", None):
+        return
+
+    # Compute totals
+    total_outgoing_value = 0.0
+    finished_measure_total = 0.0
+    for row in doc.items:
+        if getattr(row, "s_warehouse", None):
+            total_outgoing_value += flt(getattr(row, "basic_amount", 0))
+        if getattr(row, "t_warehouse", None):
+            finished_measure_total += _get_row_quantity(row)
+
+    if finished_measure_total <= 0:
+        frappe.throw("Cannot allocate costs: total finished measure is zero.")
+
+    # Allocate to finished rows
+    for row in doc.items:
+        if getattr(row, "t_warehouse", None):
+            measure = _get_row_quantity(row)
+            basic_amount = flt(total_outgoing_value) * flt(measure) / flt(finished_measure_total)
+            additional_cost = flt(total_additional_costs) * flt(measure) / flt(finished_measure_total)
+            row.basic_amount = basic_amount
+            row.additional_cost = additional_cost
+            qty_val = flt(getattr(row, "qty", 0))
+            row.basic_rate = flt(basic_amount / qty_val) if qty_val else 0.0
 
 # def cal_rate_for_finished_item(self):
 

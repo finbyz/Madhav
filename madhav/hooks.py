@@ -164,7 +164,8 @@ doc_events = {
         "before_validate": "madhav.doc_events.stock_entry.auto_calculation",
         "on_submit": "madhav.doc_events.stock_entry.after_submit",
         "before_submit": "madhav.doc_events.stock_entry.validation_section_weight",
-        "before_cancel": "madhav.doc_events.stock_entry.cancel_linked_psles"
+        "before_cancel": "madhav.doc_events.stock_entry.cancel_linked_psles",
+        "validate": "madhav.doc_events.stock_entry.validate"
     },
     "Purchase Receipt": {
         "before_validate": [
