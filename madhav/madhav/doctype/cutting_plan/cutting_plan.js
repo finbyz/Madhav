@@ -718,9 +718,14 @@ frappe.ui.form.on('Cutting Plan Finish', {
         } 
         if (row.rm_reference_batch) {
             let batch_totals = calculate_batch_totals(frm, row.rm_reference_batch);
-            row.pieces = batch_totals.total_pieces || 0;
-            row.length_size = batch_totals.total_length || 0;
-
+            if (frm.doc.cut_plan_type == "Finished Cut Plan"){
+                row.pieces = batch_totals.total_pieces || 0;
+                row.length_size = batch_totals.total_length || 0;
+            } else{
+                row.pieces = batch_totals.total_pieces || 0;
+                row.length_size_inch = batch_totals.total_length || 0;
+            }
+            
             // Check first occurrence logic only if both values exist
             if (batch_totals.total_pieces && batch_totals.total_length) {
             console.log("Checking if this is first occurrence of batch:", row.rm_reference_batch);
@@ -739,7 +744,11 @@ frappe.ui.form.on('Cutting Plan Finish', {
                 // This is the first occurrence of this batch
                 console.log("First occurrence of batch - setting full length");
                 let total_meter_length = batch_totals.total_pieces * batch_totals.total_length;
-                frappe.model.set_value(cdt, cdn, 'total_length_in_meter', total_meter_length);
+                if (frm.doc.cut_plan_type == "Finished Cut Plan"){
+                    frappe.model.set_value(cdt, cdn, 'total_length_in_meter', total_meter_length);
+                }else{
+                    frappe.model.set_value(cdt, cdn, 'total_length_in_meter_inch', total_meter_length);
+                }
             } else {
                 // This batch already exists, calculate remaining length
                 console.log("Batch already exists - calculating remaining length");
@@ -836,14 +845,14 @@ function auto_fill_remaining_length(frm, cdt, cdn) {
         
         // Use setTimeout to ensure this runs after other field triggers
         setTimeout(() => {
-            frappe.model.set_value(cdt, cdn, 'total_length_in_meter', remaining_length);
+            frappe.model.set_value(cdt, cdn, 'total_length_in_meter_inch', remaining_length);
             console.log("frappe.model.set_value called with delay");
         }, 100);
         
     } else {
         console.log("Setting length_size to 0 (remaining_length <= 0)");
         setTimeout(() => {
-            frappe.model.set_value(cdt, cdn, 'length_size', 0);
+            frappe.model.set_value(cdt, cdn, 'length_size_inch', 0);
         }, 100);
         if (remaining_length < 0) {
             frappe.msgprint(`Warning: No remaining length available for batch ${row.rm_reference_batch}`);
@@ -897,16 +906,30 @@ function calculate_qty(frm, cdt, cdn) {
 }
 
 function calculate_qty_from_inch(frm, cdt, cdn) {
+    console.log("now in ...........")
     let row = locals[cdt][cdn];
 
-    if (!row.pieces || !row.length_size){
-          return;
+    if (frm.doc.cut_plan_type == "Finished Cut Plan") {
+        if (!row.pieces || !row.length_size){
+            return;
+        }
+        let qty = row.pieces * row.length_size *row.section_weight;
+        let qty_in_tonne = (qty/1000).toFixed(3);
+        let total_length = row.pieces * row.length_size
+        frappe.model.set_value(cdt, cdn, 'qty', qty_in_tonne);
+        frappe.model.set_value(cdt, cdn, 'total_length_in_meter',total_length)
+    } 
+    if (frm.doc.cut_plan_type == "Raw Material Cut Plan"){
+        if (!row.pieces || !row.length_size_inch){
+            return;
+         }
+        console.log("please check raw cut plan................")
+        let qty = row.pieces * row.length_size_inch/39.37 *row.section_weight;
+        let qty_in_tonne = (qty/1000).toFixed(3);
+        let total_length = row.pieces * row.length_size_inch
+        frappe.model.set_value(cdt, cdn, 'qty', qty_in_tonne);
+        frappe.model.set_value(cdt, cdn, 'total_length_in_meter_inch',total_length) 
     }
-     let qty = row.pieces * row.length_size/39.37 *row.section_weight;
-     let qty_in_tonne = (qty/1000).toFixed(3);
-     let total_length = row.pieces * row.length_size
-     frappe.model.set_value(cdt, cdn, 'qty', qty_in_tonne);
-     frappe.model.set_value(cdt, cdn, 'total_length_in_meter',total_length)
 }
 
 // Qty auto-calculation for Cut Plan Finish (second) table

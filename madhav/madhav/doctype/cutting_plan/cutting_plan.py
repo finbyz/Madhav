@@ -651,7 +651,7 @@ def calculate_qty_for_cut_plan_finish(doc):
         if hasattr(doc, 'cutting_plan_finish') and doc.cutting_plan_finish:
             for row in doc.cutting_plan_finish:
                 pieces = float(getattr(row, 'pieces', 0) or 0)
-                length_size = float(getattr(row, 'length_size', 0) or 0)
+                length_size = float(getattr(row, 'length_size_inch', 0) or 0)
                 section_weight = float(getattr(row, 'section_weight', 0) or 0)
 
                 # qty and total_length_in_meter
@@ -666,7 +666,7 @@ def calculate_qty_for_cut_plan_finish(doc):
 
                 # Set total_length_in_meter if field exists
                 if hasattr(row, 'total_length_in_meter') and (pieces and length_size):
-                    total_length_val = pieces * length_size/39.37
+                    total_length_val = pieces * length_size
                     try:
                         row.db_set('total_length_in_meter', total_length_val, update_modified=False)
                     except Exception:
