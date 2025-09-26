@@ -125,6 +125,9 @@ class CuttingPlan(Document):
 
             # Update cutting plan with stock entry reference
             self.db_set('stock_entry_reference', stock_entry.name, update_modified=False)
+            
+            # Call update_finished_cut_plan_table since db_set bypasses on_update/validate
+            update_finished_cut_plan_table(self)
 
             
             frappe.msgprint(
@@ -143,7 +146,8 @@ class CuttingPlan(Document):
             )
 
             frappe.throw(_("Error creating Repack Stock Entry: {0}").format(str(e)))
-            
+
+          
 def validate_cut_plan_quantities(doc):
     
     if hasattr(doc, 'cut_plan_detail') and doc.cut_plan_detail:
@@ -471,7 +475,8 @@ def create_material_transfer_entry(self):
                         "t_warehouse": "Production Planning Yard - MS",
                         "batch_no": item.get('batch'),
                         "use_serial_batch_fields" : 1,
-                        "pieces": item.pieces
+                        "pieces": item.pieces,
+                        # "average_length": item.length_size_inch
                     })
             
             # Save the stock entry
