@@ -389,8 +389,9 @@ function process_selected_work_orders(frm, selected_work_orders, cut_plan_type) 
                     row.item_name = d.item_name;
                     row.source_warehouse = d.source_warehouse;
                     row.qty = d.qty;
-                    row.pieces = d.pieces;
-                    row.length_size = d.length_size;
+                    // row.pieces = d.pieces;
+                    // row.length_size_inch = d.length_size;
+                    // row.length_size = d.length_size/39.37;
                     row.section_weight = d.section_weight;
                     row.batch = d.batch;
                     row.work_order_reference = d.work_order_reference;
@@ -551,10 +552,25 @@ function update_total_qty_and_amount(frm, cdt, cdn) {
     let total_qty = 0;
     let total_amount = 0;
 
-    // Step 1: Calculate total_length_in_meter
-    frm.doc.cut_plan_detail.forEach(item => {
+	// Step 1: Calculate totals and set inch conversions on each RM row
+	const METER_TO_INCH = 39.37;
+	frm.doc.cut_plan_detail.forEach(item => {
         let qty = flt(item.qty);
         let basic_amount = flt(item.basic_amount);
+
+		// Derive and set inch-based fields for Cut Plan Detail
+		let length_size_inch = flt(item.length_size) ? flt(item.length_size) * METER_TO_INCH : 0;
+		let section_weight_inch = flt(item.section_weight) ? flt(item.section_weight) / METER_TO_INCH : 0;
+		let total_length_in_meter = flt(item.total_length_in_meter);
+		if (!total_length_in_meter && flt(item.pieces) && flt(item.length_size)) {
+			total_length_in_meter = flt(item.pieces) * flt(item.length_size);
+			frappe.model.set_value('Cut Plan Detail', item.name, 'total_length_in_meter', flt(total_length_in_meter, 3));
+		}
+		let total_length_in_inch = total_length_in_meter ? total_length_in_meter * METER_TO_INCH : 0;
+
+		frappe.model.set_value('Cut Plan Detail', item.name, 'length_size_inch', flt(length_size_inch, 3));
+		frappe.model.set_value('Cut Plan Detail', item.name, 'section_weight_inch', flt(section_weight_inch, 6));
+		frappe.model.set_value('Cut Plan Detail', item.name, 'total_length_in_inch', flt(total_length_in_inch, 3));
 
         if (qty) {
             total_qty += qty;
@@ -566,7 +582,7 @@ function update_total_qty_and_amount(frm, cdt, cdn) {
     });
 
     frm.set_value("total_qty", total_qty.toFixed(3));
-    frm.set_value("amount", total_amount.toFixed(2));
+    // frm.set_value("amount", total_amount.toFixed(2));
 
 }
 
@@ -584,7 +600,7 @@ frappe.ui.form.on('Cutting Plan Finish', {
         }
     },
     pieces: function (frm, cdt, cdn) {
-        calculate_qty(frm, cdt, cdn);
+        calculate_qty_from_inch(frm, cdt, cdn);
         update_total_cut_plan_qty(frm, cdt, cdn);
         // Validate batch quantity after qty calculation
         validate_batch_qty_consumption(frm, cdt, cdn);
@@ -594,7 +610,7 @@ frappe.ui.form.on('Cutting Plan Finish', {
         auto_fill_scrap_transfer_table(frm);
     },
     length_size: function (frm, cdt, cdn) {
-        calculate_qty(frm, cdt, cdn);
+        calculate_qty_from_inch(frm, cdt, cdn);
         update_total_cut_plan_qty(frm, cdt, cdn);
         // Validate batch quantity after qty calculation
         validate_batch_qty_consumption(frm, cdt, cdn);
@@ -604,7 +620,7 @@ frappe.ui.form.on('Cutting Plan Finish', {
         auto_fill_scrap_transfer_table(frm);
         let row = locals[cdt][cdn];
         if (row.length_size && row.section_weight) {
-            frappe.model.set_value(cdt, cdn, 'weight_per_length', row.section_weight * row.length_size);
+            frappe.model.set_value(cdt, cdn, 'weight_per_length', row.section_weight * row.length_size/39.37);
         }
         // Validate finish row constraints in real-time
         validate_cutting_plan_finish_row_constraints(frm, cdt, cdn);
@@ -764,7 +780,27 @@ frappe.ui.form.on('Cutting Plan Finish', {
         frm.__last_edited_length_row = cdn;
         validate_cutting_plan_finish_row_constraints(frm, cdt, cdn);
     },
+    lot_no_type: function(frm, cdt, cdn) {
+        update_lot_no_from_parts(frm, cdt, cdn);
+    },
+    lot_number: function(frm, cdt, cdn) {
+        update_lot_no_from_parts(frm, cdt, cdn);
+    }
 });
+
+function update_lot_no_from_parts(frm, cdt, cdn) {
+    let row = locals[cdt][cdn];
+    const typePart = (row.lot_no_type || '').trim();
+    const numberPart = (row.lot_number || '').trim();
+    const combined = [typePart, numberPart].filter(Boolean).join('-');
+    console.log("checking for combined lot_no", combined);
+    if (combined) {
+        frappe.model.set_value(cdt, cdn, 'lot_no', combined);
+    } else {
+        // Clear when both empty
+        frappe.model.set_value(cdt, cdn, 'lot_no', '');
+    }
+}
 
 // Updated helper function to auto-fill remaining length
 function auto_fill_remaining_length(frm, cdt, cdn) {
@@ -825,7 +861,7 @@ function calculate_batch_totals(frm, selected_batch) {
         frm.doc.cut_plan_detail.forEach(function(detail_row) {
             if (detail_row.batch === selected_batch) {
                 total_pieces += flt(detail_row.pieces) || 0;
-                batch_length_size = detail_row.length_size || 0; // fixed length size
+                batch_length_size = detail_row.length_size_inch || 0; // fixed length size
                 matching_rows++;
             }
         });
@@ -854,6 +890,19 @@ function calculate_qty(frm, cdt, cdn) {
           return;
     }
      let qty = row.pieces * row.length_size *row.section_weight;
+     let qty_in_tonne = (qty/1000).toFixed(3);
+     let total_length = row.pieces * row.length_size
+     frappe.model.set_value(cdt, cdn, 'qty', qty_in_tonne);
+     frappe.model.set_value(cdt, cdn, 'total_length_in_meter',total_length)
+}
+
+function calculate_qty_from_inch(frm, cdt, cdn) {
+    let row = locals[cdt][cdn];
+
+    if (!row.pieces || !row.length_size){
+          return;
+    }
+     let qty = row.pieces * row.length_size/39.37 *row.section_weight;
      let qty_in_tonne = (qty/1000).toFixed(3);
      let total_length = row.pieces * row.length_size
      frappe.model.set_value(cdt, cdn, 'qty', qty_in_tonne);

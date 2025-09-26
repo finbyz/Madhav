@@ -2,6 +2,14 @@ import frappe
 from frappe import _
 from erpnext.manufacturing.doctype.production_plan.production_plan import ProductionPlan as ERPNextProductionPlan
 
+INCHES_PER_METER = 39.37
+
+def meters_to_inches(value):
+    try:
+        return float(value) * INCHES_PER_METER if value not in (None, "") else 0.0
+    except Exception:
+        return 0.0
+
 class CustomProductionPlan(ERPNextProductionPlan):
 
     def validate(self):
@@ -31,7 +39,10 @@ class CustomProductionPlan(ERPNextProductionPlan):
                 )
                 if so_item:
                     row.pieces = so_item.pieces or 0
-                    row.length = so_item.length_size or 0.0   # ✅ float, no strip
+                    row.length = so_item.length_size or 0.0   # ✅ float meters from SOI
+                    # Convert and store in inches as required for po_items
+                    if row.length:
+                        row.length = meters_to_inches(row.length)
                 
                 # Get customer information from Sales Order
                 so_details = frappe.db.get_value(

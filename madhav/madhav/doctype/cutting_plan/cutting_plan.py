@@ -20,7 +20,7 @@ class CuttingPlan(Document):
             if doc.company == "MADHAV UDYOG PRIVATE LIMITED":
                 doc.naming_series = "MU.-FGCUT.-"
             elif doc.company == "MADHAV STELCO PRIVATE LIMITED":
-                doc.naming_series = "MS.-FGCUT.-"
+                doc.naming_series = "MS.-FGCUT.-"   
 
         # Actually generate the name using the selected naming_series
         doc.name = make_autoname(doc.naming_series)
@@ -34,7 +34,7 @@ class CuttingPlan(Document):
             create_material_transfer_entry(self)
             
         if (self.has_value_changed("workflow_state") and 
-            self.workflow_state == "Cut plan pending"):
+            self.workflow_state in ["Cut plan pending", "Finished Cut Plan Pending"]):
             if self.cutting_plan_scrap_transfer:
                 for row in self.cutting_plan_scrap_transfer:
                     if not row.item_code:
@@ -76,6 +76,10 @@ class CuttingPlan(Document):
 
         # Validate that total Finish qty per Work Order does not exceed available qty from RM detail
         validate_finish_qty_against_work_order(self)
+
+        # On save: update header totals for Finished Cut Plan
+        if getattr(self, 'cut_plan_type', None) == "Finished Cut Plan":
+            update_header_totals_for_finished_cut_plan(self)
     
     def validate_material_transfer_before_approve(self):
         """Check if linked Material Transfer Stock Entry is submitted"""
@@ -106,7 +110,7 @@ class CuttingPlan(Document):
         
     def on_cut_plan_done(self):
 
-        # set_cutting_reference(self)
+        set_cutting_reference(self)
 
 		
         """Auto create Repack Stock Entry when Cutting Plan is submitted"""
@@ -248,6 +252,7 @@ def create_repack_stock_entry(cutting_plan_doc):
             target_entry.pieces = finish_item.pieces
             target_entry.average_length = finish_item.length_size
             target_entry.section_weight = finish_item.section_weight
+            target_entry.lot_no = finish_item.lot_no
             target_entry.return_to_stock = finish_item.return_to_stock
             target_entry.semi_fg_length = finish_item.semi_fg_length
             target_entry.fg_item = finish_item.fg_item
@@ -573,7 +578,8 @@ def update_finished_cut_plan_table(self):
                                     "length_size": length_size_value,
                                     "qty": qty_tonnes_val,
                                     "source_plan_entry": plan_entry.name if hasattr(plan_entry, 'name') else None,
-                                    "work_order_reference": item.work_order_reference
+                                    "work_order_reference": item.work_order_reference,
+                                    "lot_no": item.lot_no
                                 })
                             
                     else:
@@ -597,7 +603,8 @@ def update_finished_cut_plan_table(self):
                             "root_radius": root_radius_from_fg,
                             "semi_fg_length": getattr(item, "semi_fg_length", None),
                             "qty": qty_tonnes_val,
-                            "work_order_reference": item.work_order_reference
+                            "work_order_reference": item.work_order_reference,
+                            "lot_no": item.lot_no
                         })
         
         # Save the document to persist changes
@@ -636,6 +643,8 @@ def calculate_qty_for_cut_plan_finish(doc):
     - semi_fg_length = remaining_weight ÷ Item.weight_per_meter (of fg_item)
     - Also sets header cut_plan_total_qty = sum(child.qty)
     """
+    if doc.cut_plan_type == "Finished Cut Plan":
+        return
     try:
         total_cut_plan_qty = 0.0
 
@@ -647,7 +656,7 @@ def calculate_qty_for_cut_plan_finish(doc):
 
                 # qty and total_length_in_meter
                 if pieces and length_size and section_weight:
-                    qty_kg = pieces * length_size * section_weight
+                    qty_kg = pieces * length_size/39.37 * section_weight
                     qty_tonnes = round(qty_kg / 1000.0, 3)
                     try:
                         row.db_set('qty', qty_tonnes, update_modified=False)
@@ -657,7 +666,7 @@ def calculate_qty_for_cut_plan_finish(doc):
 
                 # Set total_length_in_meter if field exists
                 if hasattr(row, 'total_length_in_meter') and (pieces and length_size):
-                    total_length_val = pieces * length_size
+                    total_length_val = pieces * length_size/39.37
                     try:
                         row.db_set('total_length_in_meter', total_length_val, update_modified=False)
                     except Exception:
@@ -665,7 +674,7 @@ def calculate_qty_for_cut_plan_finish(doc):
 
                 # weight_per_length = section_weight * length_size
                 if hasattr(row, 'weight_per_length') and (section_weight and length_size):
-                    wpl_val = section_weight * length_size
+                    wpl_val = section_weight * length_size/39.37
                     try:
                         row.db_set('weight_per_length', wpl_val, update_modified=False)
                     except Exception:
@@ -677,7 +686,7 @@ def calculate_qty_for_cut_plan_finish(doc):
                     if getattr(row, 'weight_per_length', None):
                         base_wpl = float(row.weight_per_length)
                     else:
-                        base_wpl = section_weight * length_size if (section_weight and length_size) else 0
+                        base_wpl = section_weight * length_size/39.37  if (section_weight and length_size) else 0
 
                     if base_wpl:
                         remaining_val = base_wpl - (base_wpl * process_loss / 100.0)
@@ -723,6 +732,9 @@ def validate_finish_qty_against_work_order(doc):
 
     Both sides use qty in tonnes as per existing conventions.
     """
+    if doc.cut_plan_type == "Finished Cut Plan":
+        return
+    
     try:
         # Build allowed qty per WO from cut_plan_detail
         allowed_by_wo = {}
@@ -759,5 +771,61 @@ def validate_finish_qty_against_work_order(doc):
     except Exception as e:
         frappe.log_error(
             title="Cutting Plan WO Qty Validation Error",
+            message=f"Doc: {getattr(doc, 'name', '')} Error: {str(e)}"
+        )
+
+
+def update_header_totals_for_finished_cut_plan(doc):
+    """Calculate and update header totals when cut_plan_type == 'Finished Cut Plan'.
+
+    - total_qty: sum of qty in `cut_plan_detail`
+    - cut_plan_total_qty: sum of qty in `cutting_plan_finish`
+    """
+    try:
+        total_qty_detail = 0.0
+        if hasattr(doc, 'cut_plan_detail') and doc.cut_plan_detail:
+            for row in doc.cut_plan_detail:
+                total_qty_detail += float(getattr(row, 'qty', 0) or 0)
+
+        total_qty_finish = 0.0
+        if hasattr(doc, 'cutting_plan_finish') and doc.cutting_plan_finish:
+            for row in doc.cutting_plan_finish:
+                total_qty_finish += float(getattr(row, 'qty', 0) or 0)
+
+        # Set header fields (rounded to 3 decimals to match UI behavior)
+        try:
+            doc.db_set('total_qty', round(total_qty_detail, 3), update_modified=False)
+        except Exception:
+            doc.total_qty = round(total_qty_detail, 3)
+
+        try:
+            doc.db_set('cut_plan_total_qty', round(total_qty_finish, 3), update_modified=False)
+        except Exception:
+            doc.cut_plan_total_qty = round(total_qty_finish, 3)
+
+        # Also update first row of cutting_plan_scrap_transfer.scrap_qty
+        # scrap_qty = total_qty - cut_plan_total_qty
+        try:
+            scrap_qty = round((total_qty_detail - total_qty_finish), 3)
+            if scrap_qty == 0:
+                # Clear the entire scrap transfer table if zero
+                doc.cutting_plan_scrap_transfer = []
+            else:
+                # Ensure child table exists; create first row if missing
+                if not getattr(doc, 'cutting_plan_scrap_transfer', None):
+                    doc.cutting_plan_scrap_transfer = []
+                if len(doc.cutting_plan_scrap_transfer) == 0:
+                    row = doc.append('cutting_plan_scrap_transfer', {})
+                else:
+                    row = doc.cutting_plan_scrap_transfer[0]
+                try:
+                    row.db_set('scrap_qty', scrap_qty, update_modified=False)
+                except Exception:
+                    row.scrap_qty = scrap_qty
+        except Exception:
+            pass
+    except Exception as e:
+        frappe.log_error(
+            title="Cutting Plan Header Totals Error",
             message=f"Doc: {getattr(doc, 'name', '')} Error: {str(e)}"
         )

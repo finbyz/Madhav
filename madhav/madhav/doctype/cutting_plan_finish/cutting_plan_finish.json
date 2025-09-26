@@ -43,6 +43,11 @@
   "length_size_4",
   "length_size_5",
   "section_break_s4cm",
+  "lot_no_type",
+  "column_break_inuu",
+  "lot_number",
+  "lot_no",
+  "section_break_0vyg",
   "remarks"
  ],
  "fields": [
@@ -86,7 +91,7 @@
    "fieldname": "length_size",
    "fieldtype": "Float",
    "in_list_view": 1,
-   "label": "Length Size",
+   "label": "Length Size (inch)",
    "precision": "2"
   },
   {
@@ -133,7 +138,7 @@
    "fieldname": "total_length_in_meter",
    "fieldtype": "Float",
    "in_list_view": 1,
-   "label": "Total Length In Meter"
+   "label": "Total Length In Meter (inch)"
   },
   {
    "fieldname": "fg_item",
@@ -278,13 +283,38 @@
    "depends_on": "eval:parent.cut_plan_type == \"Raw Material Cut Plan\";",
    "fieldname": "section_break_s4cm",
    "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "lot_no_type",
+   "fieldtype": "Select",
+   "label": "Lot No Type",
+   "options": "\nIR\nPG\nNon PG"
+  },
+  {
+   "fieldname": "column_break_inuu",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "lot_number",
+   "fieldtype": "Data",
+   "label": "Lot Number"
+  },
+  {
+   "fieldname": "lot_no",
+   "fieldtype": "Data",
+   "label": "Lot No.",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_0vyg",
+   "fieldtype": "Section Break"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2025-09-17 14:26:39.243861",
+ "modified": "2025-09-26 14:28:01.212155",
  "modified_by": "Administrator",
  "module": "Madhav",
  "name": "Cutting Plan Finish",

@@ -21,7 +21,6 @@
   "cut_plan_detail",
   "section_break_at2n",
   "total_qty",
-  "amount",
   "section_break_2gpb",
   "cutting_plan_finish",
   "cut_plan_total_qty",
@@ -116,12 +115,6 @@
    "read_only": 1
   },
   {
-   "fieldname": "amount",
-   "fieldtype": "Float",
-   "label": "Amount",
-   "read_only": 1
-  },
-  {
    "fieldname": "section_break_2gpb",
    "fieldtype": "Section Break"
   },
@@ -143,10 +136,9 @@
   },
   {
    "fieldname": "stock_entry_reference",
-   "fieldtype": "Link",
+   "fieldtype": "Data",
    "label": "Repack Stock Entry Reference",
-   "no_copy": 1,
-   "options": "Stock Entry"
+   "no_copy": 1
   },
   {
    "fieldname": "cut_plan_total_qty",
@@ -216,6 +208,7 @@
    "fieldtype": "Percent",
    "label": "Material Transfer Tolerance (%)",
    "placeholder": "10",
+   "read_only": 1,
    "reqd": 1
   },
   {
@@ -245,7 +238,7 @@
    "link_fieldname": "cutting_plan_reference"
   }
  ],
- "modified": "2025-09-18 17:36:33.005447",
+ "modified": "2025-09-25 16:40:44.546621",
  "modified_by": "Administrator",
  "module": "Madhav",
  "name": "Cutting Plan",

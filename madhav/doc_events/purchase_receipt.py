@@ -82,13 +82,13 @@ def create_batch_group(purchase_receipt):
     batch_group.reference_document_name = purchase_receipt.name
     batch_group.total_length_in_meter = purchase_receipt.total_length_in_meter
 
-    weight_received_kg = purchase_receipt.weight_received * 1000 if purchase_receipt.weight_received else 0
+    tolerance_weight_kg = purchase_receipt.tolerance_weight * 1000 if purchase_receipt.tolerance_weight else 0
 
     # Check if weight is zero or invalid
-    if weight_received_kg == 0:
+    if tolerance_weight_kg == 0:
         return
     
-    batch_group.section_weight = round(weight_received_kg/purchase_receipt.total_length_in_meter, 2)
+    batch_group.section_weight = round(tolerance_weight_kg/purchase_receipt.total_length_in_meter, 2)
 
     for batch in batch_list:
         batch_group.append("batch_details", {
@@ -140,13 +140,13 @@ def auto_calculation(doc, method):
         doc.weight_demand = 0
 
 def validation_section_weight(doc, method):
-    if not doc.items or not doc.weight_received or not doc.total_length_in_meter:
+    if not doc.items or not doc.tolerance_weight or not doc.total_length_in_meter:
         return
 
     # Compute receipt-level received section weight from total weight and length
     try:
-        weight_received_kg = float(doc.weight_received) * 1000
-        received_section_weight = round(weight_received_kg / doc.total_length_in_meter, 2)
+        tolerance_weight_kg = float(doc.tolerance_weight) * 1000
+        received_section_weight = round(tolerance_weight_kg / doc.total_length_in_meter, 2)
     except ZeroDivisionError:
         frappe.throw(_("Total Length in Meter cannot be zero."))
 
