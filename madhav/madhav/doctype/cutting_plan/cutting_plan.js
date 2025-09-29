@@ -406,6 +406,7 @@ function process_selected_work_orders(frm, selected_work_orders, cut_plan_type) 
                     row.pieces = f.pieces;
                     row.length_size = f.length_size;
                     row.section_weight = f.section_weight;
+                    row.lot_no = f.lot_no;
                     row.rm_reference_batch = f.rm_reference_batch;
                     row.work_order_reference = f.work_order_reference;
                     row.fg_item = f.fg_item;
@@ -619,9 +620,25 @@ frappe.ui.form.on('Cutting Plan Finish', {
         // Auto-fill scrap transfer table
         auto_fill_scrap_transfer_table(frm);
         let row = locals[cdt][cdn];
-        if (row.length_size && row.section_weight) {
-            frappe.model.set_value(cdt, cdn, 'weight_per_length', row.section_weight * row.length_size/39.37);
+        if (row.length_size_inch && row.section_weight) {
+                frappe.model.set_value(cdt, cdn, 'weight_per_length', row.section_weight * row.length_size);
         }
+        // Validate finish row constraints in real-time
+        validate_cutting_plan_finish_row_constraints(frm, cdt, cdn);
+    },
+    length_size_inch: function (frm, cdt, cdn) {
+        calculate_qty_from_inch(frm, cdt, cdn);
+        update_total_cut_plan_qty(frm, cdt, cdn);
+        // Validate batch quantity after qty calculation
+        validate_batch_qty_consumption(frm, cdt, cdn);
+        // Update scrap quantity in RM Plan Detail
+        // update_scrap_qty_for_all_batches(frm);
+        // Auto-fill scrap transfer table
+        auto_fill_scrap_transfer_table(frm);
+        let row = locals[cdt][cdn];
+        if (row.length_size_inch && row.section_weight) {
+                frappe.model.set_value(cdt, cdn, 'weight_per_length', row.section_weight * row.length_size_inch/39.37);
+            }
         // Validate finish row constraints in real-time
         validate_cutting_plan_finish_row_constraints(frm, cdt, cdn);
     },

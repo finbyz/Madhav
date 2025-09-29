@@ -467,6 +467,7 @@ def get_items_from_cut_plan(work_order):
             "pieces",
             "length_size as average_length",
             "section_weight",
+            "lot_no",
             "fg_item",
             "semi_fg_length",
             "work_order_reference",
@@ -545,6 +546,7 @@ def get_finished_cut_plan_from_mtm(work_orders):
                 "pieces",
                 "average_length",
                 "section_weight",
+                "lot_no"
             ],
             order_by="idx asc",
         )
@@ -565,6 +567,7 @@ def get_finished_cut_plan_from_mtm(work_orders):
                     "pieces": 0.0,
                     "length_size": it.get("average_length"),
                     "section_weight": it.get("section_weight"),
+                    "lot_no": it.get("lot_no"),
                     "batch": batch_no,
                     "work_order_reference": se.get("work_order"),
                 }
@@ -587,6 +590,7 @@ def get_finished_cut_plan_from_mtm(work_orders):
                 "pieces": it.get("pieces"),
                 "length_size": it.get("average_length"),
                 "section_weight": it.get("section_weight"),
+                "lot_no": it.get("lot_no"),
                 "rm_reference_batch": batch_no,
                 "work_order_reference": se.get("work_order"),
                 "fg_item": wo_to_fg.get(se.get("work_order")),

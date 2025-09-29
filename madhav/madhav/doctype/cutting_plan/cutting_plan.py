@@ -221,7 +221,7 @@ def create_repack_stock_entry(cutting_plan_doc):
             source_entry.item_code = source_item.item_code
             source_entry.qty = source_item.qty
             source_entry.pieces = source_item.pieces
-            source_entry.average_length = source_item.length_size
+            source_entry.average_length = source_item.length_size_inch
             source_entry.section_weight = source_item.section_weight
             source_entry.s_warehouse = source_item.get('source_warehouse')
             source_entry.uom = source_item.get('uom') or get_item_stock_uom(source_item.item_code)
@@ -245,13 +245,18 @@ def create_repack_stock_entry(cutting_plan_doc):
                 default_target_warehouse = cutting_plan_doc.get('default_unplanned_warehouse')
             else:
                 default_target_warehouse = cutting_plan_doc.get('default_finished_goods_warehouse')
+
+            if cutting_plan_doc.cut_plan_type == "Finished Cut Plan":
+                section_weight = frappe.db.get_value("Item", finish_item.fg_item, "weight_per_meter")
+            else:
+                section_weight = frappe.db.get_value("Item", finish_item.item, "weight_per_meter")
             
             target_entry = stock_entry.append("items", {})
             target_entry.item_code = finish_item.item if cutting_plan_doc.cut_plan_type == "Raw Material Cut Plan" else finish_item.fg_item
             target_entry.qty = finish_item.qty
             target_entry.pieces = finish_item.pieces
-            target_entry.average_length = finish_item.length_size
-            target_entry.section_weight = finish_item.section_weight
+            target_entry.average_length = finish_item.length_size_inch if cutting_plan_doc.cut_plan_type == "Raw Material Cut Plan" else finish_item.length_size
+            target_entry.section_weight = section_weight
             target_entry.lot_no = finish_item.lot_no
             target_entry.return_to_stock = finish_item.return_to_stock
             target_entry.semi_fg_length = finish_item.semi_fg_length
@@ -481,7 +486,7 @@ def create_material_transfer_entry(self):
                         "batch_no": item.get('batch'),
                         "use_serial_batch_fields" : 1,
                         "pieces": item.pieces,
-                        # "average_length": item.length_size_inch
+                        "average_length": item.length_size_inch
                     })
             
             # Save the stock entry

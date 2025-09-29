@@ -136,9 +136,10 @@
   },
   {
    "fieldname": "stock_entry_reference",
-   "fieldtype": "Data",
+   "fieldtype": "Link",
    "label": "Repack Stock Entry Reference",
-   "no_copy": 1
+   "no_copy": 1,
+   "options": "Stock Entry"
   },
   {
    "fieldname": "cut_plan_total_qty",
@@ -238,7 +239,7 @@
    "link_fieldname": "cutting_plan_reference"
   }
  ],
- "modified": "2025-09-25 16:40:44.546621",
+ "modified": "2025-09-29 12:36:49.470701",
  "modified_by": "Administrator",
  "module": "Madhav",
  "name": "Cutting Plan",
