@@ -397,7 +397,7 @@ function process_selected_work_orders(frm, selected_work_orders, cut_plan_type) 
                     row.work_order_reference = d.work_order_reference;
                 });
 
-                // Append non-consolidated rows to cutting_plan_finish
+                //Append non-consolidated rows to cutting_plan_finish
                 finish_rows.forEach(function(f) {
                     let row = frm.add_child('cutting_plan_finish');
                     row.item = f.item;
@@ -738,6 +738,12 @@ frappe.ui.form.on('Cutting Plan Finish', {
             if (frm.doc.cut_plan_type == "Finished Cut Plan"){
                 row.pieces = batch_totals.total_pieces || 0;
                 row.length_size = batch_totals.total_length || 0;
+                frappe.db.get_value("Item", row.fg_item, "weight_per_meter").then(r => {
+                    if (r && r.message) {
+                        console.log("checking for section weight for FG..........",r.message)
+                        frappe.model.set_value(cdt, cdn, "section_weight", r.message.weight_per_meter || 0);
+                    }
+                });
             } else{
                 row.pieces = batch_totals.total_pieces || 0;
                 row.length_size_inch = batch_totals.total_length || 0;

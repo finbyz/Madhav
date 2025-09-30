@@ -94,8 +94,7 @@
    "fieldname": "length_size",
    "fieldtype": "Float",
    "in_list_view": 1,
-   "label": "Length Size (m)",
-   "precision": "2"
+   "label": "Length Size (m)"
   },
   {
    "fetch_from": "rm_reference_batch.section_weight",
@@ -318,8 +317,7 @@
    "fieldname": "length_size_inch",
    "fieldtype": "Float",
    "in_list_view": 1,
-   "label": "Length Size (inch)",
-   "precision": "2"
+   "label": "Length Size (inch)"
   },
   {
    "depends_on": "eval: parent.cut_plan_type == \"Raw Material Cut Plan\";",
@@ -333,7 +331,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2025-09-29 12:33:44.010530",
+ "modified": "2025-09-29 15:18:54.679781",
  "modified_by": "Administrator",
  "module": "Madhav",
  "name": "Cutting Plan Finish",
