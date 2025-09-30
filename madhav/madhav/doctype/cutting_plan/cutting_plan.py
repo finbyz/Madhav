@@ -79,6 +79,8 @@ class CuttingPlan(Document):
 
         # On save: update header totals for Finished Cut Plan
         if getattr(self, 'cut_plan_type', None) == "Finished Cut Plan":
+            set_qty_cut_plan_detail(self)
+            set_fgsection_weight(self)
             update_header_totals_for_finished_cut_plan(self)
     
     def validate_material_transfer_before_approve(self):
@@ -834,3 +836,15 @@ def update_header_totals_for_finished_cut_plan(doc):
             title="Cutting Plan Header Totals Error",
             message=f"Doc: {getattr(doc, 'name', '')} Error: {str(e)}"
         )
+
+def set_fgsection_weight(doc):
+    for row in doc.cutting_plan_finish:
+        if row.fg_item:  
+                        
+            section_weight = frappe.db.get_value("Item",row.fg_item,"weight_per_meter")
+            row.db_set('section_weight', section_weight, update_modified=False)
+
+def set_qty_cut_plan_detail(doc):
+    for row in doc.cut_plan_detail:
+        cal_qty =  row.pieces * row.length_size * row.section_weight
+        row.db_set('qty', cal_qty/1000, update_modified=False)
