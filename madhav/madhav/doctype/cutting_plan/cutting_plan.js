@@ -984,6 +984,9 @@ function update_total_cut_plan_qty(frm, cdt, cdn){
 
 // Function to validate batch quantity consumption
 function validate_batch_qty_consumption(frm, cdt, cdn) {
+    if (frm.doc.cut_plan_type == "Finished Cut Plan"){
+        return;
+    }
     console.log("yesy we are cekin gfor quality validation............")
     let current_row = locals[cdt][cdn];
     
