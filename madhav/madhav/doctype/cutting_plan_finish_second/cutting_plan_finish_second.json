@@ -22,6 +22,7 @@
   "total_length_in_meter",
   "semi_fg_length",
   "work_order_reference",
+  "sales_order",
   "lot_no",
   "section_break_rfhy",
   "remarks"
@@ -126,8 +127,10 @@
   },
   {
    "fieldname": "work_order_reference",
-   "fieldtype": "Data",
-   "label": "Work Order Reference"
+   "fieldtype": "Link",
+   "label": "Work Order Reference",
+   "options": "Work Order",
+   "read_only": 1
   },
   {
    "fieldname": "qty",
@@ -140,13 +143,22 @@
    "fieldtype": "Data",
    "label": "Lot No",
    "read_only": 1
+  },
+  {
+   "fetch_from": "work_order_reference.sales_order",
+   "fetch_if_empty": 1,
+   "fieldname": "sales_order",
+   "fieldtype": "Link",
+   "label": "Sales Order",
+   "options": "Sales Order",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2025-09-26 13:57:47.172556",
+ "modified": "2025-10-01 13:29:27.321320",
  "modified_by": "Administrator",
  "module": "Madhav",
  "name": "Cutting plan Finish Second",

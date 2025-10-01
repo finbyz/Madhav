@@ -366,7 +366,8 @@ def get_work_order_details(work_orders):
             'source_warehouse': wo_items.source_warehouse,
             'qty': wo_items.get('required_qty', 0),
             'basic_rate': wo_items.get('basic_rate', 0),
-            'work_order_reference':work_order_name
+            'work_order_reference':work_order_name,
+            'sales_order': work_order.sales_order
             })
     return items
 

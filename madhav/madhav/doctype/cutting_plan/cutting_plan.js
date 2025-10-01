@@ -439,6 +439,7 @@ function process_selected_work_orders(frm, selected_work_orders, cut_plan_type) 
                         child.wo_qty = item.qty;
                         child.basic_rate = item.basic_rate;
                         child.work_order_reference =  item.work_order_reference;
+                        child.sales_order =  item.sales_order
                     });
                     frm.refresh_field('cut_plan_detail');
                     setup_fg_item_filter(frm);
