@@ -173,7 +173,7 @@ doc_events = {
             "madhav.doc_events.purchase_receipt.auto_calculation",
             "madhav.doc_events.purchase_receipt.create_qi"
             ],
-        # "before_submit": "madhav.doc_events.purchase_receipt.validation_section_weight",
+        "before_submit": "madhav.doc_events.purchase_receipt.validation_section_weight",
         "on_submit": "madhav.doc_events.purchase_receipt.after_submit",
         "before_cancel": "madhav.doc_events.stock_entry.cancel_linked_psles"
     },
