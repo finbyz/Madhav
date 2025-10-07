@@ -456,10 +456,12 @@ def get_items_from_cut_plan(work_order):
     
     if not work_order:
         return []
+
+    cut_plan_ref = frappe.get_doc("Work Order", work_order).cutting_plan_reference
     fg_item = frappe.get_doc("Work Order", work_order).production_item
     rows = frappe.get_all(
         "Cutting plan Finish Second",
-        filters={"work_order_reference": work_order, "fg_item": fg_item},
+        filters={"work_order_reference": work_order, "fg_item": fg_item,"parent":cut_plan_ref},
         fields=[
             "item as item_code",
             "batch as batch_no",
