@@ -602,3 +602,117 @@ def get_finished_cut_plan_from_mtm(work_orders):
 
     detail_rows = list(detail_key_to_row.values())
     return {"detail_rows": detail_rows, "finish_rows": finish_rows}
+
+
+@frappe.whitelist()
+def get_finished_cut_plan_from_manufacturing(work_orders):
+    """
+    For Finished Cut Plan: gather finished items from submitted Manufacture Stock Entries
+    linked to given Work Orders and prepare rows to append into `cut_plan_detail`.
+
+    - Only finished item rows are considered (FG lines). We identify them as rows where
+      the `item_code` matches the Work Order's `production_item` and the row has a
+      target warehouse (t_warehouse). These are the produced outputs.
+    - Rows are consolidated by (item_code, batch_no, t_warehouse) so that "batch * qty"
+      is represented as one row per batch with total qty.
+
+    Parameters
+    ----------
+    work_orders: list[str] | str
+        List of Work Order names, or a JSON-encoded list.
+    """
+    import json
+
+    if isinstance(work_orders, str):
+        work_orders = json.loads(work_orders)
+
+    if not work_orders:
+        return {"detail_rows": [], "finish_rows": []}
+
+    # Pre-fetch WO -> FG item map
+    wo_to_fg = {}
+    for wo_name in work_orders:
+        try:
+            wo_to_fg[wo_name] = frappe.db.get_value("Work Order", wo_name, "production_item")
+        except Exception:
+            wo_to_fg[wo_name] = None
+
+    # Fetch submitted Manufacture Stock Entries for provided WOs
+    se_list = frappe.get_all(
+        "Stock Entry",
+        filters={
+            "docstatus": 1,
+            "work_order": ["in", work_orders],
+            "stock_entry_type": "Manufacture",
+        },
+        fields=["name", "work_order", "posting_date", "posting_time"],
+        order_by="posting_date asc, posting_time asc, name asc",
+    )
+
+    detail_key_to_row = {}
+    finish_rows = []
+
+    for se in se_list:
+        work_order_name = se.get("work_order")
+        fg_item_code = wo_to_fg.get(work_order_name)
+
+        # Get items on this Stock Entry
+        items = frappe.get_all(
+            "Stock Entry Detail",
+            filters={"parent": se["name"]},
+            fields=[
+                "item_code",
+                "item_name",
+                "s_warehouse",
+                "t_warehouse",
+                "qty",
+                "batch_no",
+                # optional/custom fields used in UI
+                "pieces",
+                "average_length",
+                "lot_no",
+            ],
+            order_by="idx asc",
+        )
+
+        for it in items:
+            item_code = it.get("item_code")
+            batch_no = it.get("batch_no")
+            t_wh = it.get("t_warehouse")
+
+            # FINISHED rows: only FG item with incoming qty (t_warehouse present)
+            if fg_item_code and item_code == fg_item_code and t_wh:
+                key = (item_code or "", batch_no or "", t_wh or "")
+                if key not in detail_key_to_row:
+                    detail_key_to_row[key] = {
+                        "item_code": item_code,
+                        "item_name": it.get("item_name"),
+                        # For Finished items, use t_warehouse as the source for subsequent planning
+                        "source_warehouse": t_wh,
+                        "qty": 0.0,
+                        "batch": batch_no,
+                        "work_order_reference": work_order_name,
+                        # Use FG item's section weight if available
+                        "section_weight": frappe.db.get_value("Item", fg_item_code, "weight_per_meter"),
+                    }
+                row = detail_key_to_row[key]
+                row["qty"] = float(row.get("qty") or 0) + float(it.get("qty") or 0)
+                continue
+
+            # NON-FINISHED rows: append to finish_rows for Cutting Plan Finish table
+            finish_rows.append({
+                "item": item_code,
+                "batch": batch_no,
+                "qty": it.get("qty"),
+                "pieces": it.get("pieces"),
+                "length_size": it.get("average_length"),
+                "lot_no": it.get("lot_no"),
+                "rm_reference_batch": batch_no,
+                "work_order_reference": work_order_name,
+                "fg_item": fg_item_code,
+                # For consumed components, use source warehouse
+                "warehouse": it.get("s_warehouse"),
+            })
+
+    detail_rows = list(detail_key_to_row.values())
+    return {"detail_rows": detail_rows, "finish_rows": finish_rows}

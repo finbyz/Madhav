@@ -9,9 +9,9 @@ frappe.ui.form.on('Cutting Plan', {
         }
 
         // Disable add/remove rows in scrap_transfer child table
-        frm.fields_dict["cutting_plan_scrap_transfer"].grid.cannot_add_rows = true;
-        frm.fields_dict["cutting_plan_scrap_transfer"].grid.only_sortable = true;
-        frm.fields_dict["cutting_plan_scrap_transfer"].refresh();
+        // frm.fields_dict["cutting_plan_scrap_transfer"].grid.cannot_add_rows = true;
+        // frm.fields_dict["cutting_plan_scrap_transfer"].grid.only_sortable = true;
+        // frm.fields_dict["cutting_plan_scrap_transfer"].refresh();
 
         // Check if we have a source warehouse stored and this is a new doc
         if (frm.is_new() && window.source_warehouse_for_cutting_plan) {
