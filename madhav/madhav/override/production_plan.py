@@ -39,10 +39,10 @@ class CustomProductionPlan(ERPNextProductionPlan):
                 )
                 if so_item:
                     row.pieces = so_item.pieces or 0
-                    row.length = so_item.length_size or 0.0   # ✅ float meters from SOI
                     # Convert and store in inches as required for po_items
-                    if row.length:
-                        row.length = meters_to_inches(row.length)
+                    if  so_item.length_size:
+                        row.length = meters_to_inches(so_item.length_size)
+                        row.length_size_m = so_item.length_size or 0.0
                 
                 # Get customer information from Sales Order
                 so_details = frappe.db.get_value(

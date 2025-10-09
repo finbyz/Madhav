@@ -89,14 +89,14 @@ def create_batch_group(purchase_receipt):
         return
     
     batch_group.section_weight = round(weight_received_kg/purchase_receipt.total_length_in_meter, 2)
+    batch_group.section_weight = round(batch_group.section_weight/39.37, 2)
 
     for batch in batch_list:
         batch_group.append("batch_details", {
             "batch": batch.name,
             "lengthpieces": batch.pieces,
             "weight_received": batch.weight_received,
-            "length_size": batch.average_length,
-            # "length_weight_in_kg": batch.length_weight_in_kg,
+            "length_size": batch.average_length,    
             "section_weight": batch.section_weight,
         })
 
@@ -127,7 +127,7 @@ def auto_calculation(doc, method):
         first_item_code = doc.items[0].item_code
         weight_str = frappe.db.get_value("Item", first_item_code, "weight_per_meter") or "0"
         try:
-            weight_per_meter = float(weight_str)
+            weight_per_meter = float(weight_str)*39.37
         except ValueError:
             frappe.throw(f"Invalid weight_per_meter for item {first_item_code}: '{weight_str}'")
 
@@ -143,14 +143,15 @@ def validation_section_weight(doc, method):
     if not doc.items or not doc.weight_received or not doc.total_length_in_meter:
         return
 
-    # Compute receipt-level received section weight from total weight and length
     try:
+        # Convert total received weight from tons to grams (if needed)
         weight_received_kg = float(doc.weight_received) * 1000
+        # Compute section weight in grams per meter, then convert to kg/inch if required
         received_section_weight = round(weight_received_kg / doc.total_length_in_meter, 2)
+        received_section_weight = round(received_section_weight / 39.37, 2)
     except ZeroDivisionError:
         frappe.throw(_("Total Length in Meter cannot be zero."))
 
-    # Validate each item against its own tolerance and standard section weight
     violations = []
     missing_standard = []
 
@@ -169,15 +170,19 @@ def validation_section_weight(doc, method):
         except (TypeError, ValueError):
             tolerance_pct = 1.5
 
-        lower_bound = received_section_weight * (1 - tolerance_pct / 100.0)
-        upper_bound = received_section_weight * (1 + tolerance_pct / 100.0)
+        # ✅ Calculate tolerance based on STANDARD section weight
+        lower_bound = round(float(standard_section_weight) * (1 - tolerance_pct / 100.0), 2)
+        upper_bound = round(float(standard_section_weight) * (1 + tolerance_pct / 100.0), 2)
 
-        if float(standard_section_weight) < lower_bound or float(standard_section_weight) > upper_bound:
+        # ✅ Compare RECEIVED section weight against STANDARD tolerance range
+        if received_section_weight < lower_bound or received_section_weight > upper_bound:
             violations.append({
                 "item_code": d.item_code,
                 "tolerance": tolerance_pct,
                 "received_section_weight": received_section_weight,
                 "standard_section_weight": float(standard_section_weight),
+                "lower_bound": lower_bound,
+                "upper_bound": upper_bound
             })
 
     if missing_standard:
@@ -186,11 +191,11 @@ def validation_section_weight(doc, method):
     if violations:
         lines = []
         for v in violations:
-            lines.append(_("Item {0}: standard {1} outside ±{2}% of received {3}.<br>").format(
-                v["item_code"], v["standard_section_weight"], round(v["tolerance"], 2), v["received_section_weight"]
+            lines.append(_(
+                "Item {0}: Received weight {1} is outside ±{2}% tolerance range ({3} - {4}) of standard {5}.<br>"
+            ).format(
+                v["item_code"], v["received_section_weight"], round(v["tolerance"], 2),
+                v["lower_bound"], v["upper_bound"], v["standard_section_weight"]
             ))
-        message = "\n".join(lines) + "\n" + _("This Purchase Receipt is subject to approval and cannot be submitted.")
+        message = "\n".join(lines)
         frappe.throw(message)
-
-    
-    
