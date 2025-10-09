@@ -59,8 +59,7 @@
    "fieldname": "qty",
    "fieldtype": "Float",
    "in_list_view": 1,
-   "label": "Qty",
-   "precision": "3"
+   "label": "Qty"
   },
   {
    "fieldname": "basic_rate",
@@ -85,18 +84,15 @@
    "label": "Pieces"
   },
   {
-   "fetch_from": "batch.average_length",
    "fieldname": "length_size",
    "fieldtype": "Float",
    "label": "Length Size (m)",
    "read_only": 1
   },
   {
-   "fetch_from": "batch.section_weight",
    "fieldname": "section_weight",
    "fieldtype": "Float",
    "label": "Section Weight (wpm)",
-   "precision": "2",
    "read_only": 1
   },
   {
@@ -141,8 +137,7 @@
    "fieldname": "scrap_qty",
    "fieldtype": "Float",
    "hidden": 1,
-   "label": "Scrap Qty",
-   "precision": "3"
+   "label": "Scrap Qty"
   },
   {
    "fieldname": "column_break_wnln",
@@ -166,22 +161,27 @@
    "fieldname": "wo_qty",
    "fieldtype": "Float",
    "label": "WO Qty",
-   "precision": "3",
    "read_only": 1
   },
   {
+   "depends_on": "eval: parent.cut_plan_type == \"Raw Material Cut Plan\";",
    "fieldname": "total_length_in_inch",
    "fieldtype": "Float",
    "label": "Total Length In Inch",
    "read_only": 1
   },
   {
+   "fetch_from": "batch.average_length",
+   "fetch_if_empty": 1,
    "fieldname": "length_size_inch",
    "fieldtype": "Float",
    "label": "Length Size (inch)",
    "read_only": 1
   },
   {
+   "depends_on": "eval: parent.cut_plan_type == \"Raw Material Cut Plan\";",
+   "fetch_from": "batch.section_weight",
+   "fetch_if_empty": 1,
    "fieldname": "section_weight_inch",
    "fieldtype": "Float",
    "label": "Section Weight (wpinch)",
@@ -201,7 +201,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2025-10-01 13:58:18.991115",
+ "modified": "2025-10-09 14:35:33.615072",
  "modified_by": "Administrator",
  "module": "Madhav",
  "name": "Cut Plan Detail",

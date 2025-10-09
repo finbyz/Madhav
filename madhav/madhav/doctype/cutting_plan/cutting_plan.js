@@ -561,8 +561,8 @@ function update_total_qty_and_amount(frm, cdt, cdn) {
         let basic_amount = flt(item.basic_amount);
 
 		// Derive and set inch-based fields for Cut Plan Detail
-		let length_size_inch = flt(item.length_size) ? flt(item.length_size) * METER_TO_INCH : 0;
-		let section_weight_inch = flt(item.section_weight) ? flt(item.section_weight) / METER_TO_INCH : 0;
+		let length_size = flt(item.length_size_inch) ? flt(item.length_size_inch) / METER_TO_INCH : 0;
+		let section_weight = flt(item.section_weight_inch) ? flt(item.section_weight_inch) *  METER_TO_INCH : 0;
 		let total_length_in_meter = flt(item.total_length_in_meter);
 		if (!total_length_in_meter && flt(item.pieces) && flt(item.length_size)) {
 			total_length_in_meter = flt(item.pieces) * flt(item.length_size);
@@ -570,8 +570,8 @@ function update_total_qty_and_amount(frm, cdt, cdn) {
 		}
 		let total_length_in_inch = total_length_in_meter ? total_length_in_meter * METER_TO_INCH : 0;
 
-		frappe.model.set_value('Cut Plan Detail', item.name, 'length_size_inch', flt(length_size_inch, 3));
-		frappe.model.set_value('Cut Plan Detail', item.name, 'section_weight_inch', flt(section_weight_inch, 6));
+		frappe.model.set_value('Cut Plan Detail', item.name, 'length_size', flt(length_size, 3));
+		frappe.model.set_value('Cut Plan Detail', item.name, 'section_weight', flt(section_weight, 3));
 		frappe.model.set_value('Cut Plan Detail', item.name, 'total_length_in_inch', flt(total_length_in_inch, 3));
 
         if (qty) {

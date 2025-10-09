@@ -15,7 +15,7 @@ def create_batch(self):
 		dct.update({
 			"pieces": data.get("pieces"),
 			"weight_received": data.get("qty"),
-			"average_length":data.get("average_length"),
+			"average_length":data.get("length_size_inch") if data.get("length_size_inch") else data.get("average_length"),
 			# "length_weight_in_kg": data.get("length_weight_in_kg"),
 			"section_weight": data.get("section_weight"),
 			"lot_no": data.get("lot_no") if data.get("lot_no") else None,

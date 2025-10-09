@@ -11,6 +11,10 @@
   "column_break_bicg",
   "company",
   "section_break_rylt",
+  "ng",
+  "insp_yard_mt",
+  "kvah",
+  "section_break_d2sm",
   "default_source_warehouse",
   "target_qty",
   "material_transfer_tolerance",
@@ -224,6 +228,25 @@
    "label": "Cut Plan Type",
    "options": "\nRaw Material Cut Plan\nFinished Cut Plan",
    "reqd": 1
+  },
+  {
+   "fieldname": "ng",
+   "fieldtype": "Int",
+   "label": "NG"
+  },
+  {
+   "fieldname": "insp_yard_mt",
+   "fieldtype": "Float",
+   "label": "INSP + YARD (Mt)"
+  },
+  {
+   "fieldname": "kvah",
+   "fieldtype": "Int",
+   "label": "KVAH"
+  },
+  {
+   "fieldname": "section_break_d2sm",
+   "fieldtype": "Section Break"
   }
  ],
  "grid_page_length": 50,
@@ -239,7 +262,7 @@
    "link_fieldname": "cutting_plan_reference"
   }
  ],
- "modified": "2025-09-29 12:36:49.470701",
+ "modified": "2025-10-08 12:11:20.778843",
  "modified_by": "Administrator",
  "module": "Madhav",
  "name": "Cutting Plan",
