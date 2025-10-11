@@ -663,7 +663,7 @@ def calculate_qty_for_cut_plan_finish(doc):
 
                 # qty and total_length_in_meter
                 if pieces and length_size and section_weight:
-                    qty_kg = pieces * length_size/39.37 * section_weight
+                    qty_kg = pieces * length_size/39.37 * section_weight*39.37
                     qty_tonnes = round(qty_kg / 1000.0, 3)
                     try:
                         row.db_set('qty', qty_tonnes, update_modified=False)

@@ -948,7 +948,7 @@ function calculate_qty_from_inch(frm, cdt, cdn) {
             return;
          }
         console.log("please check raw cut plan................")
-        let qty = row.pieces * row.length_size_inch/39.37 *row.section_weight;
+        let qty = row.pieces * row.length_size_inch/39.37 *row.section_weight*39.37;
         let qty_in_tonne = (qty/1000).toFixed(3);
         let total_length = row.pieces * row.length_size_inch
         frappe.model.set_value(cdt, cdn, 'qty', qty_in_tonne);
