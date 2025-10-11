@@ -230,16 +230,19 @@
    "reqd": 1
   },
   {
+   "depends_on": "eval: doc.cut_plan_type == \"Finished Cut Plan\";",
    "fieldname": "ng",
    "fieldtype": "Int",
    "label": "NG"
   },
   {
+   "depends_on": "eval: doc.cut_plan_type == \"Finished Cut Plan\";",
    "fieldname": "insp_yard_mt",
    "fieldtype": "Float",
    "label": "INSP + YARD (Mt)"
   },
   {
+   "depends_on": "eval: doc.cut_plan_type == \"Finished Cut Plan\";",
    "fieldname": "kvah",
    "fieldtype": "Int",
    "label": "KVAH"
@@ -262,7 +265,7 @@
    "link_fieldname": "cutting_plan_reference"
   }
  ],
- "modified": "2025-10-08 12:11:20.778843",
+ "modified": "2025-10-11 10:07:03.403882",
  "modified_by": "Administrator",
  "module": "Madhav",
  "name": "Cutting Plan",
