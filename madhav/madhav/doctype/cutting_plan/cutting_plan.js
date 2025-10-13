@@ -622,7 +622,7 @@ frappe.ui.form.on('Cutting Plan Finish', {
         auto_fill_scrap_transfer_table(frm);
         let row = locals[cdt][cdn];
         if (row.length_size_inch && row.section_weight) {
-                frappe.model.set_value(cdt, cdn, 'weight_per_length', row.section_weight * row.length_size);
+                frappe.model.set_value(cdt, cdn, 'weight_per_length', row.section_weight * row.length_size_inch);
         }
         // Validate finish row constraints in real-time
         validate_cutting_plan_finish_row_constraints(frm, cdt, cdn);
@@ -638,7 +638,7 @@ frappe.ui.form.on('Cutting Plan Finish', {
         auto_fill_scrap_transfer_table(frm);
         let row = locals[cdt][cdn];
         if (row.length_size_inch && row.section_weight) {
-                frappe.model.set_value(cdt, cdn, 'weight_per_length', row.section_weight * row.length_size_inch/39.37);
+                frappe.model.set_value(cdt, cdn, 'weight_per_length', row.section_weight * row.length_size_inch);
             }
         // Validate finish row constraints in real-time
         validate_cutting_plan_finish_row_constraints(frm, cdt, cdn);
@@ -710,9 +710,9 @@ frappe.ui.form.on('Cutting Plan Finish', {
     },
     section_weight: function (frm, cdt, cdn) {
         let row = locals[cdt][cdn];
-        if (row.length_size && row.section_weight) {
-            frappe.model.set_value(cdt, cdn, 'weight_per_length', row.section_weight * row.length_size);
-        }
+        // if (row.length_size && row.section_weight) {
+        //     frappe.model.set_value(cdt, cdn, 'weight_per_length', row.section_weight*39.37 * row.length_size/39.37);
+        // }
     },
         //  
     // Add validation for RM reference batch
