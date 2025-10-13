@@ -62,7 +62,8 @@ class CuttingPlan(Document):
         # Auto-set customer if field exists and is empty
         # set_customer_on_cutting_plan(self)
         if self.workflow_state in ["RM Allocated( Material Transfer Submitted)", "Cut plan pending", "Cut-plan Done",]:
-            self.validate_material_transfer_before_approve() 
+            self.validate_material_transfer_before_approve()
+            validate_finish_qty_by_rm_batch(self)
 
         if self.workflow_state == "Cut-plan Done":
             update_finished_cut_plan_table(self)       
@@ -811,6 +812,57 @@ def validate_finish_qty_against_work_order(doc):
             message=f"Doc: {getattr(doc, 'name', '')} Error: {str(e)}"
         )
 
+
+def validate_finish_qty_by_rm_batch(doc):
+    """Ensure that total qty in cutting_plan_finish per rm_reference_batch
+    does not exceed the total qty available for the same batch in cut_plan_detail.
+
+    Both sides use qty in tonnes as per existing conventions.
+    """
+    if doc.cut_plan_type == "Finished Cut Plan":
+        return
+
+    try:
+        # Build allowed qty per RM batch from cut_plan_detail
+        allowed_by_batch = {}
+        if hasattr(doc, 'cut_plan_detail') and doc.cut_plan_detail:
+            for rm in doc.cut_plan_detail:
+                batch_no = getattr(rm, 'batch', None)
+                qty_val = float(getattr(rm, 'qty', 0) or 0)
+                if batch_no:
+                    allowed_by_batch[batch_no] = allowed_by_batch.get(batch_no, 0.0) + qty_val
+
+        if not allowed_by_batch:
+            return  # nothing to validate
+
+        # Sum produced/finish qty per RM reference batch from cutting_plan_finish
+        used_by_batch = {}
+        if hasattr(doc, 'cutting_plan_finish') and doc.cutting_plan_finish:
+            for fin in doc.cutting_plan_finish:
+                ref_batch = getattr(fin, 'rm_reference_batch', None)
+                qty_val = float(getattr(fin, 'qty', 0) or 0)
+                if ref_batch:
+                    used_by_batch[ref_batch] = used_by_batch.get(ref_batch, 0.0) + qty_val
+
+        if not used_by_batch:
+            return
+
+        # Check for exceedances
+        messages = []
+        for batch_no, used_qty in used_by_batch.items():
+            allowed_qty = allowed_by_batch.get(batch_no, 0.0)
+            if allowed_qty and used_qty > allowed_qty + 1e-9:
+                messages.append(
+                    _(f"RM Batch {batch_no}: Finish qty {used_qty:.3f} exceeds available {allowed_qty:.3f} from RM Detail. Please adjust quantities.")
+                )
+
+        if messages:
+            frappe.throw("<br>".join(messages))
+    except Exception as e:
+        frappe.log_error(
+            title="Cutting Plan RM Batch Qty Validation Error",
+            message=f"Doc: {getattr(doc, 'name', '')} Error: {str(e)}"
+        )
 
 def update_header_totals_for_finished_cut_plan(doc):
     """Calculate and update header totals when cut_plan_type == 'Finished Cut Plan'.
