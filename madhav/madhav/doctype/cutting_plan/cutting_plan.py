@@ -63,7 +63,6 @@ class CuttingPlan(Document):
         # set_customer_on_cutting_plan(self)
         if self.workflow_state in ["RM Allocated( Material Transfer Submitted)", "Cut plan pending", "Cut-plan Done",]:
             self.validate_material_transfer_before_approve()
-            validate_finish_qty_by_rm_batch(self)
 
         if self.workflow_state == "Cut-plan Done":
             update_finished_cut_plan_table(self)       
@@ -77,6 +76,9 @@ class CuttingPlan(Document):
 
         # Validate that total Finish qty per Work Order does not exceed available qty from RM detail
         validate_finish_qty_against_work_order(self)
+        
+        # Validate that finish qty per rm_reference_batch does not exceed RM batch qty
+        validate_finish_qty_by_rm_batch(self)
 
         # On save: update header totals for Finished Cut Plan
         if getattr(self, 'cut_plan_type', None) == "Finished Cut Plan":
