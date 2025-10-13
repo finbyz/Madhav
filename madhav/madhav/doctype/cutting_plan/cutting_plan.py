@@ -672,16 +672,16 @@ def calculate_qty_for_cut_plan_finish(doc):
                     total_cut_plan_qty += qty_tonnes
 
                 # Set total_length_in_meter if field exists
-                if hasattr(row, 'total_length_in_meter') and (pieces and length_size):
+                if hasattr(row, 'total_length_in_meter_inch') and (pieces and length_size):
                     total_length_val = pieces * length_size
                     try:
-                        row.db_set('total_length_in_meter', total_length_val, update_modified=False)
+                        row.db_set('total_length_in_meter_inch', total_length_val, update_modified=False)
                     except Exception:
-                        row.total_length_in_meter = total_length_val
+                        row.total_length_in_meter_inch = total_length_val
 
                 # weight_per_length = section_weight * length_size
                 if hasattr(row, 'weight_per_length') and (section_weight and length_size):
-                    wpl_val = section_weight * length_size/39.37
+                    wpl_val = section_weight * length_size
                     try:
                         row.db_set('weight_per_length', wpl_val, update_modified=False)
                     except Exception:
@@ -693,7 +693,7 @@ def calculate_qty_for_cut_plan_finish(doc):
                     if getattr(row, 'weight_per_length', None):
                         base_wpl = float(row.weight_per_length)
                     else:
-                        base_wpl = section_weight * length_size/39.37  if (section_weight and length_size) else 0
+                        base_wpl = section_weight * length_size  if (section_weight and length_size) else 0
 
                     if base_wpl:
                         remaining_val = base_wpl - (base_wpl * process_loss / 100.0)
