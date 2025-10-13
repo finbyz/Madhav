@@ -727,6 +727,35 @@ def calculate_qty_for_cut_plan_finish(doc):
             except Exception:
                 doc.cut_plan_total_qty = round(total_cut_plan_qty, 3)
 
+        # Also set scrap qty in scrap transfer table as (total_qty - cut_plan_total_qty)
+        try:
+            # Compute total_qty from cut_plan_detail
+            total_qty_detail = 0.0
+            if hasattr(doc, 'cut_plan_detail') and doc.cut_plan_detail:
+                for rm_row in doc.cut_plan_detail:
+                    total_qty_detail += float(getattr(rm_row, 'qty', 0) or 0)
+
+            # Use the freshly computed total_cut_plan_qty
+            scrap_qty = round((total_qty_detail - (float(getattr(doc, 'cut_plan_total_qty', 0) or 0))), 3)
+
+            if scrap_qty == 0:
+                # Clear the entire scrap transfer table if zero
+                doc.cutting_plan_scrap_transfer = []
+            else:
+                # Ensure child table exists; create first row if missing
+                if not getattr(doc, 'cutting_plan_scrap_transfer', None):
+                    doc.cutting_plan_scrap_transfer = []
+                if len(doc.cutting_plan_scrap_transfer) == 0:
+                    row = doc.append('cutting_plan_scrap_transfer', {})
+                else:
+                    row = doc.cutting_plan_scrap_transfer[0]
+                try:
+                    row.db_set('scrap_qty', scrap_qty, update_modified=False)
+                except Exception:
+                    row.scrap_qty = scrap_qty
+        except Exception:
+            pass
+
     except Exception as e:
         frappe.log_error(
             title="Cut Plan Finish Derived Fields Calc Error",
