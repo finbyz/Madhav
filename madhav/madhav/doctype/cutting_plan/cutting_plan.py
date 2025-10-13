@@ -689,6 +689,7 @@ def calculate_qty_for_cut_plan_finish(doc):
 
                 # remaining_weight with optional process_loss%
                 process_loss = float(getattr(row, 'process_loss', 0) or 0)
+                
                 if hasattr(row, 'remaining_weight'):
                     if getattr(row, 'weight_per_length', None):
                         base_wpl = float(row.weight_per_length)
