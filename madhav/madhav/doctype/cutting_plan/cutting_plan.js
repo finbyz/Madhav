@@ -38,7 +38,8 @@ frappe.ui.form.on('Cutting Plan', {
                     filters: {
                         item_code: row.item_code,
                         warehouse: row.source_warehouse,
-                        include_expired: 1
+                        include_expired: 1,
+                        supplier_name: row.supplier_name
                     }
                 };
             } else {
@@ -1245,7 +1246,8 @@ function set_batch_filter_for_cutting_plan(frm, cdt, cdn) {
             filters: {
                 item_code: child.item_code,
                 warehouse: child.source_warehouse,
-                include_expired: 1
+                include_expired: 1,
+                supplier_name: child.supplier_name
             }
         };
     });

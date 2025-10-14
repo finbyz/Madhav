@@ -293,6 +293,7 @@ def get_cutting_plan_batches(doctype, txt, searchfield, start, page_len, filters
 
     item_code = filters.get("item_code")
     warehouse = filters.get("warehouse")
+    supplier_name = (filters.get("supplier_name") or "").strip()
     include_expired = cint(filters.get("include_expired") or 0)
 
     conditions = []
@@ -308,6 +309,17 @@ def get_cutting_plan_batches(doctype, txt, searchfield, start, page_len, filters
     if conditions:
         where_clause = " AND ".join(conditions) + " AND "
     
+    # Optional supplier filter via PR linkage
+    supplier_join = ""
+    supplier_condition = ""
+    if supplier_name:
+        supplier_join = """
+            LEFT JOIN `tabPurchase Receipt` pr
+                ON pr.name = b.reference_name
+                AND b.reference_doctype = 'Purchase Receipt'
+        """
+        supplier_condition = " AND (pr.supplier_name = %(supplier_name)s OR pr.supplier = %(supplier_name)s) "
+
     return frappe.db.sql(f"""
         SELECT
             b.name,
@@ -319,6 +331,7 @@ def get_cutting_plan_batches(doctype, txt, searchfield, start, page_len, filters
                 IFNULL(b.batch_group_reference, 'N/A')
             ) AS custom_label
         FROM `tabBatch` b
+        {supplier_join}
         WHERE
             {where_clause}
             EXISTS (
@@ -331,6 +344,7 @@ def get_cutting_plan_batches(doctype, txt, searchfield, start, page_len, filters
                   AND sb_entry.qty > 0
             )
             AND b.name LIKE %(txt)s
+            {supplier_condition}
         ORDER BY b.name
         LIMIT %(page_len)s OFFSET %(start)s
     """, {
@@ -338,7 +352,8 @@ def get_cutting_plan_batches(doctype, txt, searchfield, start, page_len, filters
         "start": start,
         "page_len": page_len,
         "item_code": item_code,
-        "warehouse": warehouse
+        "warehouse": warehouse,
+        "supplier_name": supplier_name
     })
 
 @frappe.whitelist()    

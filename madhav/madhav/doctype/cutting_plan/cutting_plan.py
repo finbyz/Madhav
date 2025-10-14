@@ -470,6 +470,9 @@ def set_customer_on_cutting_plan(doc):
 def create_material_transfer_entry(self):
         """Create Stock Entry of type Material Transfer"""
         try:
+            # Validate per-row requested qty vs available batch qty in the specified warehouse
+            _validate_rm_batch_availability(self)
+
             # Create new Stock Entry
             stock_entry = frappe.new_doc("Stock Entry")
             stock_entry.stock_entry_type = "Material Transfer"
@@ -518,6 +521,77 @@ def create_material_transfer_entry(self):
             )
 
             frappe.throw(_("Failed to create Material Transfer Entry: {0}").format(str(e)))    
+
+
+def _get_available_tonnes_for_batch_warehouse(batch_id: str, warehouse: str) -> float:
+    """Compute available quantity in tonnes for a given Batch in a specific warehouse.
+
+    Uses piece counts from Serial and Batch Entries at the warehouse and converts to tonnes
+    using Batch's average_length and section_weight.
+    """
+    if not batch_id or not warehouse:
+        return 0.0
+
+    # Fetch batch physical parameters
+    batch_vals = frappe.db.get_value(
+        "Batch",
+        batch_id,
+        ["average_length", "section_weight"],
+        as_dict=True,
+    )
+    if not batch_vals:
+        return 0.0
+
+    avg_len = float(batch_vals.get("average_length") or 0)
+    sec_wt = float(batch_vals.get("section_weight") or 0)
+    if not (avg_len and sec_wt):
+        return 0.0
+
+    # Sum available pieces in the given warehouse
+    row = frappe.db.sql(
+        """
+            SELECT COALESCE(SUM(sbe.qty), 0)
+            FROM `tabPiece Stock Ledger Entry` sle
+            JOIN `tabSerial and Batch Bundle` sbb ON sbb.name = sle.serial_and_batch_bundle
+            JOIN `tabSerial and Batch Entry` sbe ON sbe.parent = sbb.name
+            WHERE sbe.batch_no = %(batch)s
+              AND sle.warehouse = %(warehouse)s
+        """,
+        {"batch": batch_id, "warehouse": warehouse},
+    )
+    pieces_available = float((row and row[0] and row[0][0]) or 0) if row else 0.0
+    if pieces_available <= 0:
+        return 0.0
+
+    # Convert to tonnes: pieces × avg_len(m) × section_weight(kg/m) / 1000
+    kg = pieces_available * avg_len * sec_wt
+    return round(kg / 1000.0, 6)
+
+
+def _validate_rm_batch_availability(doc):
+    """Ensure each RM row does not request more than available batch qty in that warehouse."""
+    if not getattr(doc, "cut_plan_detail", None):
+        return
+
+    messages = []
+    for row in doc.cut_plan_detail:
+        batch_id = getattr(row, "batch", None)
+        warehouse = getattr(row, "source_warehouse", None)
+        requested_tonnes = float(getattr(row, "qty", 0) or 0)
+        if not (batch_id and warehouse and requested_tonnes):
+            continue
+
+        available_tonnes = _get_available_tonnes_for_batch_warehouse(batch_id, warehouse)
+        # allow tiny epsilon
+        if requested_tonnes > available_tonnes + 1e-6:
+            messages.append(
+                _(
+                    f"Row {getattr(row, 'idx', '')}: Requested qty {requested_tonnes:.3f} MT for Batch {batch_id} in {warehouse} exceeds available {available_tonnes:.3f} MT."
+                )
+            )
+
+    if messages:
+        raise frappe.ValidationError("<br>".join(messages))
 
 def update_finished_cut_plan_table(self):
     if self.stock_entry_reference:
