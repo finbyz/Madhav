@@ -664,6 +664,19 @@ def calculate_qty_for_cut_plan_finish(doc):
                 length_size = float(getattr(row, 'length_size_inch', 0) or 0)
                 section_weight = float(getattr(row, 'section_weight', 0) or 0)
 
+                # Set lot_no as "lot_no_type - lot_number" when available
+                try:
+                    lot_no_type_val = getattr(row, 'lot_no_type', None)
+                    lot_number_val = getattr(row, 'lot_number', None)
+                    if hasattr(row, 'lot_no') and lot_no_type_val and lot_number_val:
+                        composed_lot_no = f"{lot_no_type_val} - {lot_number_val}"
+                        try:
+                            row.db_set('lot_no', composed_lot_no, update_modified=False)
+                        except Exception:
+                            row.lot_no = composed_lot_no
+                except Exception:
+                    pass
+
                 # qty and total_length_in_meter
                 if pieces and length_size and section_weight:
                     qty_kg = pieces * length_size/39.37 * section_weight*39.37

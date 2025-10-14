@@ -32,6 +32,10 @@ frappe.ui.form.on('Stock Entry', {
                 // Clear existing items before appending new ones
                 frm.clear_table('items');
 
+                // Set default from_warehouse on the document
+                frm.set_value('from_warehouse', 'Planned Cutting RM - MS');
+                frm.set_value('to_warehouse', 'Semi Finished Goods - MS');
+
                 items.forEach(function(d) {
                     frm.add_child('items', {
                         item_code: d.item_code,
