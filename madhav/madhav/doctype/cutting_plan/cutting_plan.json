@@ -213,7 +213,6 @@
    "fieldtype": "Percent",
    "label": "Material Transfer Tolerance (%)",
    "placeholder": "10",
-   "read_only": 1,
    "reqd": 1
   },
   {
@@ -265,7 +264,7 @@
    "link_fieldname": "cutting_plan_reference"
   }
  ],
- "modified": "2025-10-11 10:07:03.403882",
+ "modified": "2025-10-16 11:01:38.741426",
  "modified_by": "Administrator",
  "module": "Madhav",
  "name": "Cutting Plan",
