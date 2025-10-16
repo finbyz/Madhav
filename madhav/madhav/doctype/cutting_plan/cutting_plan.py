@@ -471,7 +471,7 @@ def create_material_transfer_entry(self):
         """Create Stock Entry of type Material Transfer"""
         try:
             # Validate per-row requested qty vs available batch qty in the specified warehouse
-            _validate_rm_batch_availability(self)
+            # _validate_rm_batch_availability(self)
 
             # Create new Stock Entry
             stock_entry = frappe.new_doc("Stock Entry")
