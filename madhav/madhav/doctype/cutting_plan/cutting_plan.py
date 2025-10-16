@@ -30,7 +30,7 @@ class CuttingPlan(Document):
         # Only proceed if workflow state actually changed to "RM Planned"
         if (self.has_value_changed("workflow_state") and 
             self.workflow_state == "RM Allocation pending( Rm Not Allocated yet)"):
-            # validate_cut_plan_quantities(self)
+            validate_cut_plan_quantities(self)
             create_material_transfer_entry(self)
             
         if (self.has_value_changed("workflow_state") and 
