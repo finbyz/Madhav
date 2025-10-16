@@ -24,6 +24,7 @@
   "section_weight",
   "batch",
   "qty",
+  "manual_qty",
   "warehouse",
   "column_break_dcba",
   "rm_reference_batch",
@@ -55,6 +56,7 @@
  ],
  "fields": [
   {
+   "depends_on": "eval: parent.cut_plan_type == \"Raw Material Cut Plan\";",
    "fetch_from": "rm_reference_batch.item",
    "fieldname": "item",
    "fieldtype": "Link",
@@ -75,7 +77,8 @@
    "fieldtype": "Float",
    "in_list_view": 1,
    "label": "Qty",
-   "precision": "3"
+   "precision": "3",
+   "read_only": 1
   },
   {
    "fieldname": "warehouse",
@@ -110,6 +113,7 @@
    "fieldtype": "Column Break"
   },
   {
+   "depends_on": "eval: parent.cut_plan_type == \"Raw Material Cut Plan\";",
    "fieldname": "rm_reference_batch",
    "fieldtype": "Link",
    "label": "RM Reference Batch",
@@ -184,6 +188,7 @@
   },
   {
    "fetch_from": "fg_item.root_radius",
+   "fetch_if_empty": 1,
    "fieldname": "root_radius",
    "fieldtype": "Float",
    "label": "Root Radius",
@@ -338,13 +343,20 @@
    "label": "Sales Order",
    "options": "Sales Order",
    "read_only": 1
+  },
+  {
+   "depends_on": "eval: parent.cut_plan_type == \"Finished Cut Plan\";",
+   "fieldname": "manual_qty",
+   "fieldtype": "Float",
+   "label": "Manual Qty",
+   "precision": "3"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2025-10-16 17:10:23.024948",
+ "modified": "2025-10-16 18:53:45.672338",
  "modified_by": "Administrator",
  "module": "Madhav",
  "name": "Cutting Plan Finish",
