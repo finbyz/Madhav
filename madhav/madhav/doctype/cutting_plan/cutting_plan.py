@@ -468,11 +468,12 @@ def set_customer_on_cutting_plan(doc):
             return
             
 def create_material_transfer_entry(self):
+        # Validate per-row requested qty vs available batch qty in the specified warehouse
+        _validate_rm_batch_availability(self)
+        
         """Create Stock Entry of type Material Transfer"""
         try:
-            # Validate per-row requested qty vs available batch qty in the specified warehouse
-            # _validate_rm_batch_availability(self)
-
+            
             # Create new Stock Entry
             stock_entry = frappe.new_doc("Stock Entry")
             stock_entry.stock_entry_type = "Material Transfer"
@@ -581,7 +582,7 @@ def _validate_rm_batch_availability(cutting_plan):
 def _get_available_tonnes_for_batch_warehouse(batch_id: str, warehouse: str) -> float:
     """Get available quantity (in tonnes) for a given Batch in a specific warehouse.
 
-    Uses submitted Stock Ledger Entries (docstatus = 1) and excludes cancelled ones.
+    Uses Serial and Batch Bundle to get accurate batch quantities.
     """
     if not batch_id or not warehouse:
         return 0.0
@@ -592,25 +593,28 @@ def _get_available_tonnes_for_batch_warehouse(batch_id: str, warehouse: str) -> 
         if not item_code:
             return 0.0
 
-        # Fetch available stock directly from Stock Ledger Entry
+        # Fetch available stock using Serial and Batch Bundle
         result = frappe.db.sql("""
-            SELECT COALESCE(SUM(actual_qty), 0) AS available_qty
-            FROM `tabStock Ledger Entry`
-            WHERE item_code = %(item_code)s
-              AND warehouse = %(warehouse)s
-              AND batch_no = %(batch_no)s
-              AND is_cancelled = 0
-              AND docstatus = 1
+            SELECT ROUND(COALESCE(SUM(sbbe.qty), 0), 3) AS available_qty
+            FROM `tabSerial and Batch Entry` sbbe
+            INNER JOIN `tabSerial and Batch Bundle` sbb 
+                ON sbbe.parent = sbb.name
+            WHERE sbbe.batch_no = %(batch_no)s
+              AND sbbe.warehouse = %(warehouse)s
+              AND sbb.item_code = %(item_code)s
+              AND sbb.docstatus = 1
+              AND sbb.is_cancelled = 0
         """, {
             "item_code": item_code,
             "warehouse": warehouse,
             "batch_no": batch_id
         }, as_dict=True)
-        frappe.throw("checking fro rsult"+str(result))
-        available_qty = float(result[0].available_qty or 0.0)
-        frappe.throw("Lets check or batch qty"+str(available_qty))
-        # Round for clean output
-        return round(available_qty, 3)
+        
+        if result and len(result) > 0:
+            available_qty = float(result[0].available_qty or 0.0)
+            return max(available_qty, 0.0)  # Ensure non-negative
+        else:
+            return 0.0
 
     except Exception as e:
         frappe.log_error(
