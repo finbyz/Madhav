@@ -692,6 +692,15 @@ frappe.ui.form.on('Cutting Plan Finish', {
                     }
                 });
         }
+        if (frm.doc.cut_plan_type == "Finished Cut Plan"){
+            frappe.db.get_value("Item", row.fg_item, "weight_per_meter")
+                .then(r => {
+                    if (r && r.message && r.message.weight_per_meter) {
+                        let wpm = r.message.weight_per_meter;
+                        frappe.model.set_value(cdt, cdn, 'section_weight', wpm);
+                    }
+                });
+        }
     },
     cutting_plan_finish_remove: function(frm, cdt, cdn) {
         update_total_cut_plan_qty(frm, cdt, cdn);    
