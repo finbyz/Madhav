@@ -1040,6 +1040,11 @@ def set_fgsection_weight(doc):
                         
             section_weight = frappe.db.get_value("Item",row.fg_item,"weight_per_meter")
             row.db_set('section_weight', section_weight, update_modified=False)
+            
+            cal_qty =  row.pieces * row.length_size * float(row.section_weight)
+           
+            row.db_set('qty', cal_qty/1000, update_modified=False)
+
 
 def set_qty_cut_plan_detail(doc):
     for row in doc.cut_plan_detail:
@@ -1047,9 +1052,3 @@ def set_qty_cut_plan_detail(doc):
         
         cal_qty =  row.pieces * row.length_size * row.section_weight
         row.db_set('qty', cal_qty/1000, update_modified=False)
-
-    for row in doc.cutting_plan_finish:
-                
-        cal_qty =  row.pieces * row.length_size * row.section_weight
-        row.db_set('qty', cal_qty/1000, update_modified=False)
-        row.db_set('manual_qty', cal_qty/1000, update_modified=False)

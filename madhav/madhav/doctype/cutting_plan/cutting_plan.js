@@ -701,6 +701,12 @@ frappe.ui.form.on('Cutting Plan Finish', {
         auto_fill_scrap_transfer_table(frm);
     },
     qty: function(frm, cdt, cdn) {
+        if(frm.doc.cut_plan_type == "Finished Cut Plan"){
+            let row = locals[cdt][cdn];
+            if (row.qty){
+                frappe.model.set_value(cdt, cdn, 'manual_qty', row.qty);
+            }            
+        }
         // Validate batch quantity when qty is directly changed
         validate_batch_qty_consumption(frm, cdt, cdn);
         update_total_cut_plan_qty(frm, cdt, cdn);
@@ -942,6 +948,7 @@ function calculate_qty_from_inch(frm, cdt, cdn) {
         let qty_in_tonne = (qty/1000).toFixed(3);
         let total_length = row.pieces * row.length_size
         frappe.model.set_value(cdt, cdn, 'qty', qty_in_tonne);
+        frappe.model.set_value(cdt, cdn, 'manual_qty', qty_in_tonne);
         frappe.model.set_value(cdt, cdn, 'total_length_in_meter',total_length)
     } 
     if (frm.doc.cut_plan_type == "Raw Material Cut Plan"){
@@ -972,9 +979,15 @@ frappe.ui.form.on('Cutting plan Finish Second', {
 
 function update_total_cut_plan_qty(frm, cdt, cdn){
     let total_cut_plan_qty = 0;
+    let qty = 0;
 
     frm.doc.cutting_plan_finish.forEach(item => {
-        let qty = flt(item.qty);
+        if(frm.doc.cut_plan_type == "Finished Cut Plan"){
+            qty = flt(item.manual_qty);    
+        }
+        if(frm.doc.cut_plan_type == "Raw Material Cut Plan"){
+            qty = flt(item.qty);
+        }
 
         if (qty) {
             total_cut_plan_qty += qty;
