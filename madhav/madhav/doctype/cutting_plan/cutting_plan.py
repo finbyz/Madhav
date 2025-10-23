@@ -296,6 +296,8 @@ def create_repack_stock_entry(cutting_plan_doc):
                 scrap_entry.is_finished_item = 0
                 scrap_entry.is_scrap_item = 1
                 scrap_entry.qty = scrap_item.scrap_qty
+                scrap_entry.pieces = scrap_item.pieces
+                scrap_entry.average_length = scrap_item.length_size
                 scrap_entry.t_warehouse = scrap_item.target_scrap_warehouse
                 scrap_entry.uom = scrap_item.get('uom') or get_item_stock_uom(scrap_item.item_code)
                 # scrap_entry.basic_rate = scrap_item.get('basic_rate') or 0
@@ -667,6 +669,9 @@ def update_finished_cut_plan_table(self):
                         fg_item_code = getattr(item, "fg_item", None)
                         section_weight_from_fg = frappe.db.get_value("Item", fg_item_code, "weight_per_meter") if fg_item_code else None
                         root_radius_from_fg = frappe.db.get_value("Item", fg_item_code, "root_radius") if fg_item_code else None
+                        # Get the pieces value from cutting_plan_finish (plan_entry)
+                        # This is the total_pcs we want to use
+                        total_pcs_value = getattr(plan_entry, "pieces", None)
                         for i in range(1, max_slots + 1):
                             pieces_field = f"pieces_{i}"
                             length_size_field = f"length_size_{i}"
@@ -676,8 +681,8 @@ def update_finished_cut_plan_table(self):
                                 # Compute qty in tonnes when all inputs are available
                                 qty_tonnes_val = None
                                 try:
-                                    if pieces_value and length_size_value and section_weight_from_fg:
-                                        qty_kg = float(pieces_value) * float(length_size_value) * float(section_weight_from_fg)
+                                    if pieces_value and length_size_value and section_weight_from_fg and total_pcs_value:
+                                        qty_kg = float(pieces_value) * float(length_size_value) * float(section_weight_from_fg) * float(total_pcs_value)
                                         qty_tonnes_val = round(qty_kg / 1000.0, 3)
                                 except Exception:
                                     qty_tonnes_val = None
@@ -689,6 +694,7 @@ def update_finished_cut_plan_table(self):
                                     "root_radius": root_radius_from_fg,
                                     "semi_fg_length": getattr(item, "semi_fg_length", None),
                                     "pieces": pieces_value,
+                                    "total_pcs": total_pcs_value, 
                                     "length_size": length_size_value,
                                     "qty": qty_tonnes_val,
                                     "source_plan_entry": plan_entry.name if hasattr(plan_entry, 'name') else None,
@@ -717,6 +723,7 @@ def update_finished_cut_plan_table(self):
                             "root_radius": root_radius_from_fg,
                             "semi_fg_length": getattr(item, "semi_fg_length", None),
                             "qty": qty_tonnes_val,
+                            "total_pcs": None, 
                             "work_order_reference": item.work_order_reference,
                             "lot_no": item.lot_no
                         })
