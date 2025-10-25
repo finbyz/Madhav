@@ -671,7 +671,7 @@ def update_finished_cut_plan_table(self):
                         root_radius_from_fg = frappe.db.get_value("Item", fg_item_code, "root_radius") if fg_item_code else None
                         # Get the pieces value from cutting_plan_finish (plan_entry)
                         # This is the total_pcs we want to use
-                        # total_pcs_value = getattr(plan_entry, "pieces", None)
+                        total_pcs_value = getattr(plan_entry, "pieces", None)
                         for i in range(1, max_slots + 1):
                             pieces_field = f"pieces_{i}"
                             length_size_field = f"length_size_{i}"
@@ -682,7 +682,7 @@ def update_finished_cut_plan_table(self):
                                 qty_tonnes_val = None
                                 try:
                                     if pieces_value and length_size_value and section_weight_from_fg:
-                                        qty_kg = float(pieces_value) * float(length_size_value) * float(section_weight_from_fg) 
+                                        qty_kg = float(pieces_value) * float(length_size_value) * float(section_weight_from_fg)*float(total_pcs_value)
                                         qty_tonnes_val = round(qty_kg / 1000.0, 3)
                                 except Exception:
                                     qty_tonnes_val = None
@@ -694,7 +694,7 @@ def update_finished_cut_plan_table(self):
                                     "root_radius": root_radius_from_fg,
                                     "semi_fg_length": getattr(item, "semi_fg_length", None),
                                     "pieces": pieces_value,
-                                    # "total_pcs": total_pcs_value, 
+                                    "total_pcs": total_pcs_value, 
                                     "length_size": length_size_value,
                                     "qty": qty_tonnes_val,
                                     "source_plan_entry": plan_entry.name if hasattr(plan_entry, 'name') else None,
