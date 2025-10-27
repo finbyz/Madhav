@@ -404,6 +404,7 @@ function process_selected_work_orders(frm, selected_work_orders, cut_plan_type) 
                     row.item = f.item;
                     row.batch = f.batch;
                     row.qty = f.qty;
+                    row.manual_qty = f.qty
                     row.pieces = f.pieces;
                     row.length_size = f.length_size;
                     row.section_weight = f.section_weight;
