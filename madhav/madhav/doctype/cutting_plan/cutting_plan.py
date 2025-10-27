@@ -82,7 +82,7 @@ class CuttingPlan(Document):
 
         # On save: update header totals for Finished Cut Plan
         if getattr(self, 'cut_plan_type', None) == "Finished Cut Plan":
-            set_qty_cut_plan_detail(self)
+            # set_qty_cut_plan_detail(self)
             set_fgsection_weight(self)
             update_header_totals_for_finished_cut_plan(self)
     
