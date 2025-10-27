@@ -246,10 +246,10 @@ def create_repack_stock_entry(cutting_plan_doc):
         if finish_item.item and finish_item.qty > 0:
             # Create new batch for finished item
             # batch_doc = create_batch_for_finish_item(cutting_plan_doc, finish_item)
-            # if finish_item.return_to_stock:
-            #     default_target_warehouse = cutting_plan_doc.get('default_unplanned_warehouse')
-            # else:
-            default_target_warehouse = cutting_plan_doc.get('default_finished_goods_warehouse')
+            if finish_item.return_to_stock:
+                default_target_warehouse = finish_item.get('warehouse')
+            else:
+                default_target_warehouse = cutting_plan_doc.get('default_finished_goods_warehouse')
 
             if cutting_plan_doc.cut_plan_type == "Finished Cut Plan":
                 section_weight = frappe.db.get_value("Item", finish_item.fg_item, "weight_per_meter")
@@ -266,7 +266,7 @@ def create_repack_stock_entry(cutting_plan_doc):
             target_entry.return_to_stock = finish_item.return_to_stock
             target_entry.semi_fg_length = finish_item.semi_fg_length
             target_entry.fg_item = finish_item.fg_item
-            target_entry.t_warehouse = finish_item.get('warehouse') or default_target_warehouse
+            target_entry.t_warehouse = default_target_warehouse
             # target_entry.uom = finish_item.get('uom') or get_item_stock_uom(finish_item.item_code)
             # target_entry.batch_no = batch_doc.name
             # target_entry.basic_rate = finish_item.get('rate') or 0
