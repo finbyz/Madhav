@@ -243,11 +243,11 @@ def create_repack_stock_entry(cutting_plan_doc):
         
     # Add TARGET items (Items being produced from cut_plan_finish)
     for finish_item in cutting_plan_doc.cutting_plan_finish:
-        if finish_item.item and finish_item.qty > 0:
+        if finish_item.item or finish_item.fg_item and finish_item.qty > 0:
             # Create new batch for finished item
             # batch_doc = create_batch_for_finish_item(cutting_plan_doc, finish_item)
             if finish_item.return_to_stock:
-                default_target_warehouse = finish_item.get('warehouse')
+                default_target_warehouse = cutting_plan_doc.get('default_unplanned_warehouse')
             else:
                 default_target_warehouse = cutting_plan_doc.get('default_finished_goods_warehouse')
 
@@ -266,7 +266,7 @@ def create_repack_stock_entry(cutting_plan_doc):
             target_entry.return_to_stock = finish_item.return_to_stock
             target_entry.semi_fg_length = finish_item.semi_fg_length
             target_entry.fg_item = finish_item.fg_item
-            target_entry.t_warehouse = default_target_warehouse
+            target_entry.t_warehouse = finish_item.get('warehouse') or default_target_warehouse
             # target_entry.uom = finish_item.get('uom') or get_item_stock_uom(finish_item.item_code)
             # target_entry.batch_no = batch_doc.name
             # target_entry.basic_rate = finish_item.get('rate') or 0
