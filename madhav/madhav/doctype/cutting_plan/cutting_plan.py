@@ -296,8 +296,8 @@ def create_repack_stock_entry(cutting_plan_doc):
                 scrap_entry.is_finished_item = 0
                 scrap_entry.is_scrap_item = 1
                 scrap_entry.qty = scrap_item.scrap_qty
-                # scrap_entry.pieces = scrap_item.pieces
-                # scrap_entry.average_length = scrap_item.length_size
+                scrap_entry.pieces = scrap_item.pieces
+                scrap_entry.average_length = scrap_item.length_size
                 scrap_entry.t_warehouse = scrap_item.target_scrap_warehouse
                 scrap_entry.uom = scrap_item.get('uom') or get_item_stock_uom(scrap_item.item_code)
                 # scrap_entry.basic_rate = scrap_item.get('basic_rate') or 0
