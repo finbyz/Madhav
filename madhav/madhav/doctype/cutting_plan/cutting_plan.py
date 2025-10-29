@@ -642,6 +642,7 @@ def validate_completed_wo(self):
         if not work_orders:
             return  # nothing to validate
         
+        
         # Check status of each work order
         incomplete_wos = []
         for wo in work_orders:
