@@ -180,7 +180,7 @@ function show_work_order_dialog(frm) {
                     
                     // Set status filter based on cut_plan_type
                     if (cut_plan_type === 'Finished Cut Plan') {
-                        filters['status'] = 'Completed';
+                        filters['status'] = 'In Process';
                     } else {
                         filters['status'] = ['not in', ['Completed', 'Stopped', 'Cancelled']];
                     }
@@ -245,7 +245,7 @@ function load_work_orders(dialog, cut_plan_type) {
     // Set status filter based on cut_plan_type
     if (cut_plan_type === 'Finished Cut Plan') {
         // For Finished Cut Plan, show only completed work orders
-        filters['status'] = 'Completed';
+        filters['status'] = 'In Process';
         console.log('Filtering for Completed work orders (Finished Cut Plan)');
     } else {
         // For Raw Material Cut Plan, show non-completed work orders
@@ -404,7 +404,7 @@ function process_selected_work_orders(frm, selected_work_orders, cut_plan_type) 
                     row.item = f.item;
                     row.batch = f.batch;
                     row.qty = f.qty;
-                    row.manual_qty = f.qty
+                    row.manual_qty = f.qty 
                     row.pieces = f.pieces;
                     row.length_size = f.length_size;
                     row.section_weight = f.section_weight;
@@ -836,6 +836,18 @@ frappe.ui.form.on('Cutting Plan Finish', {
     lot_number: function(frm, cdt, cdn) {
         update_lot_no_from_parts(frm, cdt, cdn);
     }
+});
+
+frappe.ui.form.on('Cutting Plan Scrap Transfer', {
+    cutting_plan_scrap_transfer_add: function(frm, cdt, cdn) {
+       
+    },
+    pieces: function (frm, cdt, cdn) {
+        calculate_qty_from_inch(frm, cdt, cdn);
+    },
+    length_size: function (frm, cdt, cdn) {
+        calculate_qty_from_inch(frm, cdt, cdn);
+    },
 });
 
 function update_lot_no_from_parts(frm, cdt, cdn) {

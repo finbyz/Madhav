@@ -52,7 +52,11 @@ class CuttingPlan(Document):
 
         if (self.has_value_changed("workflow_state") and 
             self.workflow_state in ["Cut-plan Done"]):
-            update_finished_cut_plan_table(self)         
+            update_finished_cut_plan_table(self) 
+
+        if (self.has_value_changed("workflow_state") and 
+            self.workflow_state in ["Finished Cut Plan Done"]):
+            validate_completed_wo(self)        
         
         # If stock entry reference was set/changed, update table immediately
         if self.has_value_changed("stock_entry_reference"):
@@ -624,6 +628,40 @@ def _get_available_tonnes_for_batch_warehouse(batch_id: str, warehouse: str) -> 
             message=f"Error getting available quantity for batch {batch_id} in warehouse {warehouse}: {str(e)}\n{frappe.get_traceback()}"
         )
         return 0.0
+
+def validate_completed_wo(self):
+    try:
+        # Collect unique work order references from cut_plan_detail
+        work_orders = set()
+        if hasattr(self, 'cut_plan_detail') and self.cut_plan_detail:
+            for rm in self.cut_plan_detail:
+                wo = getattr(rm, 'work_order_reference', None)
+                if wo:
+                    work_orders.add(wo)
+        
+        if not work_orders:
+            return  # nothing to validate
+        
+        # Check status of each work order
+        incomplete_wos = []
+        for wo in work_orders:
+            wo_doc = frappe.get_doc("Work Order", wo)
+            if wo_doc.status != "Completed":
+                incomplete_wos.append(
+                    _(f"Work Order {wo} has status '{wo_doc.status}' (must be 'Completed')")
+                )
+        
+        if incomplete_wos:
+            frappe.throw("<br>".join(incomplete_wos))
+            
+    except frappe.DoesNotExistError as e:
+        frappe.throw(_(f"Work Order not found: {str(e)}"))
+    except Exception as e:
+        frappe.log_error(
+            title="Cutting Plan WO Completion Validation Error",
+            message=f"Doc: {getattr(self, 'name', '')} Error: {str(e)}"
+        )
+        frappe.throw(_("Error validating work order completion. Please check error logs."))
 
 def update_finished_cut_plan_table(self):
     if self.stock_entry_reference:

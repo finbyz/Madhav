@@ -9,6 +9,7 @@
   "item_code",
   "pieces",
   "length_size",
+  "section_weight",
   "scrap_qty",
   "target_scrap_warehouse",
   "batch"
@@ -52,13 +53,19 @@
    "fieldname": "length_size",
    "fieldtype": "Float",
    "label": "Length Size"
+  },
+  {
+   "fetch_from": "item_code.weight_per_meter",
+   "fieldname": "section_weight",
+   "fieldtype": "Float",
+   "label": "Section Weight"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2025-10-20 16:41:36.904835",
+ "modified": "2025-10-29 13:12:46.859905",
  "modified_by": "Administrator",
  "module": "Madhav",
  "name": "Cutting Plan Scrap Transfer",
