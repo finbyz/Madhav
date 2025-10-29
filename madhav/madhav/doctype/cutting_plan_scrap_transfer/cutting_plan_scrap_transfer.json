@@ -52,7 +52,7 @@
   {
    "fieldname": "length_size",
    "fieldtype": "Float",
-   "label": "Length Size"
+   "label": "Length Size (inch)"
   },
   {
    "fetch_from": "item_code.weight_per_meter",
@@ -65,7 +65,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2025-10-29 13:12:46.859905",
+ "modified": "2025-10-29 17:49:54.440716",
  "modified_by": "Administrator",
  "module": "Madhav",
  "name": "Cutting Plan Scrap Transfer",

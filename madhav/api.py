@@ -572,7 +572,7 @@ def get_finished_cut_plan_from_mtm(work_orders):
         for it in items:
             item_code = it.get("item_code")
             batch_no = it.get("batch_no")
-            s_wh = it.get("s_warehouse")
+            s_wh = it.get("t_warehouse")
 
             # Consolidated key for detail table
             key = (item_code or "", batch_no or "", s_wh or "")

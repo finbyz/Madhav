@@ -842,13 +842,45 @@ frappe.ui.form.on('Cutting Plan Scrap Transfer', {
     cutting_plan_scrap_transfer_add: function(frm, cdt, cdn) {
        
     },
+    item_code: function(frm, cdt, cdn) {
+        let row = locals[cdt][cdn];
+        if (row.item_code) {
+            set_section_weight(frm, cdt, cdn, row.item_code);
+        }
+    },
     pieces: function (frm, cdt, cdn) {
-        calculate_qty_from_inch(frm, cdt, cdn);
+        let row = locals[cdt][cdn];
+    
+        if (!row.pieces || !row.length_size){
+            return;
+        }
+        let qty = row.pieces * row.length_size *row.section_weight;
+        let qty_in_tonne = (qty/1000).toFixed(3);
+        
+        frappe.model.set_value(cdt, cdn, 'qty', qty_in_tonne);     
     },
     length_size: function (frm, cdt, cdn) {
-        calculate_qty_from_inch(frm, cdt, cdn);
+        let row = locals[cdt][cdn];
+    
+        if (!row.pieces || !row.length_size){
+            return;
+        }
+        let qty = row.pieces * row.length_size *row.section_weight;
+        let qty_in_tonne = (qty/1000).toFixed(3);
+        
+        frappe.model.set_value(cdt, cdn, 'scrap_qty', qty_in_tonne);
     },
 });
+
+// Helper function to set section weight
+function set_section_weight(frm, cdt, cdn, item_code) {
+    frappe.db.get_value('Item', item_code, 'weight_per_unit')
+        .then(res => {
+            if (res && res.message && res.message.weight_per_unit) {
+                frappe.model.set_value(cdt, cdn, 'section_weight', res.message.weight_per_unit);
+            }
+        });
+}
 
 function update_lot_no_from_parts(frm, cdt, cdn) {
     let row = locals[cdt][cdn];

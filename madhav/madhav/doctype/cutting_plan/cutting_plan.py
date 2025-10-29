@@ -1029,59 +1029,127 @@ def validate_finish_qty_by_rm_batch(doc):
             message=f"Doc: {getattr(doc, 'name', '')} Error: {str(e)}"
         )
 
+# def update_header_totals_for_finished_cut_plan(doc):
+#     """Calculate and update header totals when cut_plan_type == 'Finished Cut Plan'.
+
+#     - total_qty: sum of qty in `cut_plan_detail`
+#     - cut_plan_total_qty: sum of qty in `cutting_plan_finish`
+#     """
+#     try:
+#         total_qty_detail = 0.0
+#         if hasattr(doc, 'cut_plan_detail') and doc.cut_plan_detail:
+#             for row in doc.cut_plan_detail:
+#                 total_qty_detail += float(getattr(row, 'qty', 0) or 0)
+
+#         total_qty_finish = 0.0
+#         if hasattr(doc, 'cutting_plan_finish') and doc.cutting_plan_finish:
+#             for row in doc.cutting_plan_finish:
+#                 total_qty_finish += float(getattr(row, 'manual_qty', 0) or 0)
+
+#         # Set header fields (rounded to 3 decimals to match UI behavior)
+#         try:
+#             doc.db_set('total_qty', round(total_qty_detail, 3), update_modified=False)
+#         except Exception:
+#             doc.total_qty = round(total_qty_detail, 3)
+
+#         try:
+#             doc.db_set('cut_plan_total_qty', round(total_qty_finish, 3), update_modified=False)
+#         except Exception:
+#             doc.cut_plan_total_qty = round(total_qty_finish, 3)
+
+#         # Also update first row of cutting_plan_scrap_transfer.scrap_qty
+#         # scrap_qty = total_qty - cut_plan_total_qty
+#         try:
+#             scrap_qty = round((total_qty_detail - total_qty_finish), 3)
+#             if scrap_qty == 0:
+#                 # Clear the entire scrap transfer table if zero
+#                 doc.cutting_plan_scrap_transfer = []
+#             else:
+#                 # Ensure child table exists; create first row if missing
+#                 if not getattr(doc, 'cutting_plan_scrap_transfer', None):
+#                     doc.cutting_plan_scrap_transfer = []
+#                 if len(doc.cutting_plan_scrap_transfer) == 0:
+#                     row = doc.append('cutting_plan_scrap_transfer', {})
+#                 else:
+#                     row = doc.cutting_plan_scrap_transfer[0]
+#                 try:
+#                     row.db_set('scrap_qty', scrap_qty, update_modified=False)
+#                 except Exception:
+#                     row.scrap_qty = scrap_qty
+#         except Exception:
+#             pass
+#     except Exception as e:
+#         frappe.log_error(
+#             title="Cutting Plan Header Totals Error",
+#             message=f"Doc: {getattr(doc, 'name', '')} Error: {str(e)}"
+#         )
+
 def update_header_totals_for_finished_cut_plan(doc):
     """Calculate and update header totals when cut_plan_type == 'Finished Cut Plan'.
 
     - total_qty: sum of qty in `cut_plan_detail`
-    - cut_plan_total_qty: sum of qty in `cutting_plan_finish`
+    - cut_plan_total_qty: sum of manual_qty in `cutting_plan_finish`
+    - scrap_qty: difference (total_qty - cut_plan_total_qty) minus sum of qty from rows 2+ in first row of `cutting_plan_scrap_transfer`
     """
     try:
+        # Calculate total qty from cut_plan_detail
         total_qty_detail = 0.0
         if hasattr(doc, 'cut_plan_detail') and doc.cut_plan_detail:
             for row in doc.cut_plan_detail:
                 total_qty_detail += float(getattr(row, 'qty', 0) or 0)
 
+        # Calculate total qty from cutting_plan_finish
         total_qty_finish = 0.0
         if hasattr(doc, 'cutting_plan_finish') and doc.cutting_plan_finish:
             for row in doc.cutting_plan_finish:
                 total_qty_finish += float(getattr(row, 'manual_qty', 0) or 0)
 
-        # Set header fields (rounded to 3 decimals to match UI behavior)
-        try:
-            doc.db_set('total_qty', round(total_qty_detail, 3), update_modified=False)
-        except Exception:
-            doc.total_qty = round(total_qty_detail, 3)
+        # Round to 3 decimals
+        total_qty_detail = round(total_qty_detail, 3)
+        total_qty_finish = round(total_qty_finish, 3)
+        
+        # Calculate base scrap qty
+        base_scrap_qty = round(total_qty_detail - total_qty_finish, 3)
 
-        try:
-            doc.db_set('cut_plan_total_qty', round(total_qty_finish, 3), update_modified=False)
-        except Exception:
-            doc.cut_plan_total_qty = round(total_qty_finish, 3)
+        # Update header fields
+        if doc.docstatus == 0:  # Draft
+            doc.total_qty = total_qty_detail
+            doc.cut_plan_total_qty = total_qty_finish
+        else:  # Submitted or Cancelled
+            doc.db_set('total_qty', total_qty_detail, update_modified=False)
+            doc.db_set('cut_plan_total_qty', total_qty_finish, update_modified=False)
 
-        # Also update first row of cutting_plan_scrap_transfer.scrap_qty
-        # scrap_qty = total_qty - cut_plan_total_qty
-        try:
-            scrap_qty = round((total_qty_detail - total_qty_finish), 3)
-            if scrap_qty == 0:
-                # Clear the entire scrap transfer table if zero
-                doc.cutting_plan_scrap_transfer = []
-            else:
-                # Ensure child table exists; create first row if missing
-                if not getattr(doc, 'cutting_plan_scrap_transfer', None):
-                    doc.cutting_plan_scrap_transfer = []
-                if len(doc.cutting_plan_scrap_transfer) == 0:
-                    row = doc.append('cutting_plan_scrap_transfer', {})
-                else:
-                    row = doc.cutting_plan_scrap_transfer[0]
-                try:
-                    row.db_set('scrap_qty', scrap_qty, update_modified=False)
-                except Exception:
-                    row.scrap_qty = scrap_qty
-        except Exception:
-            pass
+        # Update scrap transfer table
+        # Initialize table if it doesn't exist
+        if not hasattr(doc, 'cutting_plan_scrap_transfer'):
+            doc.cutting_plan_scrap_transfer = []
+
+        # Calculate sum of scrap_qty from rows 2 onwards (index 1+)
+        other_rows_scrap_total = 0.0
+        if len(doc.cutting_plan_scrap_transfer) > 1:
+            for i in range(1, len(doc.cutting_plan_scrap_transfer)):
+                row = doc.cutting_plan_scrap_transfer[i]
+                other_rows_scrap_total += float(getattr(row, 'scrap_qty', 0) or 0)
+        
+        # Calculate final scrap qty for first row
+        final_scrap_qty = round(base_scrap_qty - other_rows_scrap_total, 3)
+
+        # Ensure at least one row exists
+        if len(doc.cutting_plan_scrap_transfer) == 0:
+            row = doc.append('cutting_plan_scrap_transfer', {})
+        else:
+            row = doc.cutting_plan_scrap_transfer[0]
+
+        # Update scrap_qty in first row
+        if doc.docstatus == 0:  # Draft
+            row.scrap_qty = final_scrap_qty if final_scrap_qty > 0 else 0
+        else:  # Submitted or Cancelled
+            row.db_set('scrap_qty', final_scrap_qty if final_scrap_qty > 0 else 0, update_modified=False)
+
     except Exception as e:
         frappe.log_error(
             title="Cutting Plan Header Totals Error",
-            message=f"Doc: {getattr(doc, 'name', '')} Error: {str(e)}"
+            message=f"Doc: {getattr(doc, 'name', '')} Error: {str(e)}\n{frappe.get_traceback()}"
         )
 
 def set_fgsection_weight(doc):
