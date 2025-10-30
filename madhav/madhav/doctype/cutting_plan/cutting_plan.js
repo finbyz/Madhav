@@ -857,7 +857,7 @@ frappe.ui.form.on('Cutting Plan Scrap Transfer', {
         let qty = row.pieces * row.length_size *row.section_weight;
         let qty_in_tonne = (qty/1000).toFixed(3);
         
-        frappe.model.set_value(cdt, cdn, 'qty', qty_in_tonne);     
+        frappe.model.set_value(cdt, cdn, 'scrap_qty', qty_in_tonne);     
     },
     length_size: function (frm, cdt, cdn) {
         let row = locals[cdt][cdn];
