@@ -13,6 +13,7 @@
   "item_name",
   "description",
   "uom",
+  "is_finished_item",
   "section_break_4rwo",
   "batch",
   "pieces",
@@ -203,13 +204,19 @@
    "label": "Supplier Name",
    "no_copy": 1,
    "options": "Supplier"
+  },
+  {
+   "default": "0",
+   "fieldname": "is_finished_item",
+   "fieldtype": "Check",
+   "label": "Is Finished Item"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2025-10-14 17:19:02.960759",
+ "modified": "2025-11-01 10:37:48.826434",
  "modified_by": "Administrator",
  "module": "Madhav",
  "name": "Cut Plan Detail",

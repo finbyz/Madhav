@@ -37,6 +37,10 @@ class CuttingPlan(Document):
             self.workflow_state in ["Cut plan pending", "Finished Cut Plan Pending"]):
             if self.cutting_plan_scrap_transfer:
                 for row in self.cutting_plan_scrap_transfer:
+                     # Skip validation if qty is zero or not set
+                    if not row.scrap_qty or row.scrap_qty == 0:
+                        continue
+
                     if not row.item_code:
                         frappe.throw(
                             _("Row #{0}: Item is mandatory for scrap transfer.").format(row.idx)
@@ -225,25 +229,47 @@ def create_repack_stock_entry(cutting_plan_doc):
     # Add SOURCE items (Items being consumed from cut_plan_detail)
     for source_item in cutting_plan_doc.cut_plan_detail:
         default_source_warehouse = cutting_plan_doc.get('default_source_warehouse')
-        if source_item.item_code and source_item.qty > 0:
-            source_entry = stock_entry.append("items", {})
-            source_entry.item_code = source_item.item_code
-            source_entry.qty = source_item.qty
-            source_entry.pieces = source_item.pieces
-            source_entry.average_length = source_item.length_size_inch
-            source_entry.section_weight = source_item.section_weight
-            source_entry.s_warehouse = source_item.get('source_warehouse')
-            source_entry.uom = source_item.get('uom') or get_item_stock_uom(source_item.item_code)
-            # source_entry.basic_rate = source_item.basic_rate
-            source_entry.use_serial_batch_fields = 1
+        if cutting_plan_doc.cut_plan_type == "Finished Cut Plan":
+            if source_item.item_code and source_item.qty > 0 and source_item.is_finished_item:
+                source_entry = stock_entry.append("items", {})
+                source_entry.item_code = source_item.item_code
+                source_entry.qty = source_item.qty
+                source_entry.pieces = source_item.pieces
+                source_entry.average_length = source_item.length_size_inch
+                source_entry.section_weight = source_item.section_weight
+                source_entry.s_warehouse = source_item.get('source_warehouse')
+                source_entry.uom = source_item.get('uom') or get_item_stock_uom(source_item.item_code)
+                # source_entry.basic_rate = source_item.basic_rate
+                source_entry.use_serial_batch_fields = 1
 
-            # Add existing batch if available
-            if source_item.get('batch'):
-                source_entry.batch_no = source_item.batch
+                # Add existing batch if available
+                if source_item.get('batch'):
+                    source_entry.batch_no = source_item.batch
 
-            # Add serial and batch bundle if exists
-            if source_item.get('serial_and_batch_bundle'):
-                source_entry.serial_and_batch_bundle = source_item.serial_and_batch_bundle
+                # Add serial and batch bundle if exists
+                if source_item.get('serial_and_batch_bundle'):
+                    source_entry.serial_and_batch_bundle = source_item.serial_and_batch_bundle
+
+        if cutting_plan_doc.cut_plan_type == "Raw Material Cut Plan":
+            if source_item.item_code and source_item.qty > 0:
+                source_entry = stock_entry.append("items", {})
+                source_entry.item_code = source_item.item_code
+                source_entry.qty = source_item.qty
+                source_entry.pieces = source_item.pieces
+                source_entry.average_length = source_item.length_size_inch
+                source_entry.section_weight = source_item.section_weight
+                source_entry.s_warehouse = source_item.get('source_warehouse')
+                source_entry.uom = source_item.get('uom') or get_item_stock_uom(source_item.item_code)
+                # source_entry.basic_rate = source_item.basic_rate
+                source_entry.use_serial_batch_fields = 1
+
+                # Add existing batch if available
+                if source_item.get('batch'):
+                    source_entry.batch_no = source_item.batch
+
+                # Add serial and batch bundle if exists
+                if source_item.get('serial_and_batch_bundle'):
+                    source_entry.serial_and_batch_bundle = source_item.serial_and_batch_bundle
         
     # Add TARGET items (Items being produced from cut_plan_finish)
     for finish_item in cutting_plan_doc.cutting_plan_finish:
@@ -1096,7 +1122,8 @@ def update_header_totals_for_finished_cut_plan(doc):
         total_qty_detail = 0.0
         if hasattr(doc, 'cut_plan_detail') and doc.cut_plan_detail:
             for row in doc.cut_plan_detail:
-                total_qty_detail += float(getattr(row, 'qty', 0) or 0)
+                if row.is_finished_item != 1:
+                    total_qty_detail += float(getattr(row, 'qty', 0) or 0)
 
         # Calculate total qty from cutting_plan_finish
         total_qty_finish = 0.0

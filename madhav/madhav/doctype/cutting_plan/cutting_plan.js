@@ -180,7 +180,7 @@ function show_work_order_dialog(frm) {
                     
                     // Set status filter based on cut_plan_type
                     if (cut_plan_type === 'Finished Cut Plan') {
-                        filters['status'] = 'In Process';
+                        filters['status'] = 'Completed';
                     } else {
                         filters['status'] = ['not in', ['Completed', 'Stopped', 'Cancelled']];
                     }
@@ -245,7 +245,7 @@ function load_work_orders(dialog, cut_plan_type) {
     // Set status filter based on cut_plan_type
     if (cut_plan_type === 'Finished Cut Plan') {
         // For Finished Cut Plan, show only completed work orders
-        filters['status'] = 'In Process';
+        filters['status'] = 'Completed';
         console.log('Filtering for Completed work orders (Finished Cut Plan)');
     } else {
         // For Raw Material Cut Plan, show non-completed work orders
@@ -376,7 +376,7 @@ function process_selected_work_orders(frm, selected_work_orders, cut_plan_type) 
             return;
         }
         frappe.call({
-            method: 'madhav.api.get_finished_cut_plan_from_mtm',
+            method: 'madhav.api.get_finished_cut_plan_from_manufacturing',
             args: { work_orders: wo_names },
             callback: function(r) {
                 if (!r.message) return;
@@ -384,6 +384,21 @@ function process_selected_work_orders(frm, selected_work_orders, cut_plan_type) 
                 const finish_rows = r.message.finish_rows || [];
 
                 // Append consolidated rows to cut_plan_detail
+                finish_rows.forEach(function(f) {
+                    let row = frm.add_child('cut_plan_detail');
+                    row.item_code = f.item;
+                    row.batch = f.batch;
+                    row.qty = f.qty;
+                    row.manual_qty = f.qty 
+                    // row.pieces = f.pieces;
+                    // row.length_size = f.length_size;
+                    // row.section_weight = f.section_weight;
+                    row.lot_no = f.lot_no;
+                    row.rm_reference_batch = f.rm_reference_batch;
+                    row.work_order_reference = f.work_order_reference;
+                    row.fg_item = f.fg_item;
+                });
+
                 detail_rows.forEach(function(d) {
                     let row = frm.add_child('cut_plan_detail');
                     row.item_code = d.item_code;
@@ -396,6 +411,7 @@ function process_selected_work_orders(frm, selected_work_orders, cut_plan_type) 
                     row.section_weight = d.section_weight;
                     row.batch = d.batch;
                     row.work_order_reference = d.work_order_reference;
+                    row.is_finished_item = 1
                 });
 
                 //Append non-consolidated rows to cutting_plan_finish
@@ -689,7 +705,7 @@ frappe.ui.form.on('Cutting Plan Finish', {
                     if (r && r.message && r.message.weight_per_meter) {
                         let wpm = r.message.weight_per_meter;
                         let semi_length = row.remaining_weight / wpm;
-                        frappe.model.set_value(cdt, cdn, 'semi_fg_length', semi_length);
+                        frappe.model.set_value(cdt, cdn, ' ', semi_length);
                     }
                 });
         }
