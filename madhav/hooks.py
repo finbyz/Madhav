@@ -55,7 +55,8 @@ doctype_js = {
 }
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
 doctype_list_js = {
-    "Attendance" : "public/js/attendance_list.js"
+    "Attendance" : "public/js/attendance_list.js",
+    "Purchase Order" : "public/js/purchase_order.js"
 }
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
 # doctype_calendar_js = {"doctype" : "public/js/doctype_calendar.js"}
@@ -202,7 +203,12 @@ doc_events = {
     },
     "Production Plan": {
         "before_save":"madhav.doc_events.production_plan.consolidate_assembly_items"
-        }    
+        }   ,
+    "Payment Entry": {
+        "validate": "madhav.doc_events.payment_entry.validate_cash_limit",
+        "on_submit": "madhav.doc_events.payment_entry.validate_cash_limit",
+        
+    } 
 }
 
 from erpnext.stock.serial_batch_bundle import SerialBatchCreation

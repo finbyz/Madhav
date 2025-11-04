@@ -731,3 +731,36 @@ def get_finished_cut_plan_from_manufacturing(work_orders):
 
     detail_rows = list(detail_key_to_row.values())
     return {"detail_rows": detail_rows, "finish_rows": finish_rows}
+
+
+@frappe.whitelist()
+def get_material_request_for_item(item_code):
+    # You can safely use ignore_permissions=True here
+    res = frappe.db.get_value("Material Request Item", {"item_code": item_code}, "parent", as_dict=True)
+    return res
+
+
+@frappe.whitelist()
+def get_items_with_material_request(doctype, txt, searchfield, start, page_len, filters):
+    allowed_groups = filters.get("item_groups", [])
+    if isinstance(allowed_groups, str):
+        allowed_groups = frappe.parse_json(allowed_groups)
+
+    return frappe.db.sql("""
+        SELECT DISTINCT i.name, i.item_name
+        FROM `tabItem` i
+        INNER JOIN `tabMaterial Request Item` mri ON mri.item_code = i.name
+        INNER JOIN `tabMaterial Request` mr ON mr.name = mri.parent
+        WHERE i.item_group IN %(groups)s
+          AND mr.docstatus = 1
+          AND (i.name LIKE %(txt)s OR i.item_name LIKE %(txt)s)
+        ORDER BY i.name
+        LIMIT %(start)s, %(page_len)s
+    """, {
+        "groups": tuple(allowed_groups),
+        "txt": f"%{txt}%",
+        "start": start,
+        "page_len": page_len
+    })
+
+
