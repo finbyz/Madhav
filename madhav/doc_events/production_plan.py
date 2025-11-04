@@ -1,6 +1,38 @@
 import frappe
 from frappe import _
 
+
+def duplicate_po_items_to_assembly_items_without_consolidate(doc, method):
+    """Duplicate current po_items rows to assembly_items_without_consolidate without altering po_items."""
+    # Reset target table to avoid duplication on subsequent saves
+    doc.set("assembly_items_without_consolidate", [])
+
+    if not getattr(doc, "po_items", None):
+        return
+
+    fields_to_copy = [
+        "item_code",
+        "bom_no",
+        "planned_qty",
+        "pending_qty",
+        "pieces",
+        "length",
+        "length_size_m",
+        "stock_uom",
+        "warehouse",
+        "planned_start_date",
+        "product_bundle_item",
+        "sales_order",
+        "sales_order_item",
+        "description",
+        "customer",
+        "customer_name",
+    ]
+
+    for row in doc.get("po_items"):
+        new_row = {key: getattr(row, key, None) for key in fields_to_copy}
+        doc.append("assembly_items_without_consolidate", new_row)
+
 def consolidate_assembly_items(doc, method):
 
     if not doc.po_items:

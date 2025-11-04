@@ -202,8 +202,11 @@ doc_events = {
       "on_update_after_submit": "madhav.doc_events.attendance.set_short_leave_count"     
     },
     "Production Plan": {
-        "before_save":"madhav.doc_events.production_plan.consolidate_assembly_items"
-        }   ,
+        "before_save": [
+            "madhav.doc_events.production_plan.duplicate_po_items_to_assembly_items_without_consolidate",
+            "madhav.doc_events.production_plan.consolidate_assembly_items",
+        ]
+        },
     "Payment Entry": {
         "validate": "madhav.doc_events.payment_entry.validate_cash_limit",
         "on_submit": "madhav.doc_events.payment_entry.validate_cash_limit",

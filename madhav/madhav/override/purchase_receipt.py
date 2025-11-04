@@ -9,6 +9,24 @@ class PurchaseReceipt(_PurchaseReceipt):
     def validate(self):
         """Allow UOM different from Purchase Order by auto-setting conversion_factor/stock_qty."""
         super().validate()
+        # Allow using the same supplier_delivery_note if any previous PRs with that note are cancelled
+        if getattr(self, "supplier_delivery_note", None):
+            
+            existing = frappe.get_all(
+                "Purchase Receipt",
+                filters={
+                    "supplier_delivery_note": self.supplier_delivery_note,
+                    "docstatus": ["in", [0, 1]],  # Draft or Submitted block reuse
+                    "name": ["!=", self.name],
+                },
+                limit=1,
+            )
+            if existing:
+                frappe.throw(
+                    frappe._("Supplier Delivery Note {0} is already used in PR: {1} and cannot be reused.").format(
+                        self.supplier_delivery_note, existing[0].name
+                    )
+                )
         # for row in self.items or []:
            
         #     try:
