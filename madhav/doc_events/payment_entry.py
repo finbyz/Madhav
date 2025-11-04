@@ -2,13 +2,20 @@ import frappe
 from frappe.utils import getdate, flt
 
 def validate_cash_limit(doc, method):
-    # Check only for Supplier with Cash - MUPL
-    
-    if doc.party_type != "Supplier" or doc.paid_from != "Cash - MUPL":
+    # Run only for Supplier, Cash account, and Pay type
+    if doc.party_type != "Supplier" or doc.payment_type != "Pay":
         return
 
-    if not doc.party:
-        frappe.throw("Please select a Party before saving the Payment Entry.")
+    if not doc.paid_from or not doc.party:
+        frappe.throw("Please select both Party and Paid From account before saving the Payment Entry.")
+
+    # Get company-specific Cash and Creditors accounts
+    cash_account = frappe.db.get_value("Account", {"company": doc.company, "account_type": "Cash"})
+    creditors_account = frappe.db.get_value("Account", {"company": doc.company, "account_type": "Payable"})
+
+    # Ensure we only check if payment is from Cash
+    if doc.paid_from != cash_account:
+        return
 
     # Get is_transporter flag
     is_transporter = frappe.db.get_value("Supplier", doc.party, "is_transporter") or 0
@@ -19,19 +26,22 @@ def validate_cash_limit(doc, method):
         FROM `tabPayment Entry`
         WHERE 
             party_type = 'Supplier'
-            AND paid_to = 'Creditors - MUPL'
+            AND paid_from = %s
             AND party = %s
+            AND company = %s
             AND posting_date = %s
             AND name != %s
             AND docstatus < 2
-    """, (doc.party, getdate(doc.posting_date), doc.name))
+    """, (cash_account, doc.party, doc.company, getdate(doc.posting_date), doc.name))
+
     total_paid_today = flt(total_paid_today[0][0]) if total_paid_today and total_paid_today[0][0] else 0
     total_with_current = total_paid_today + flt(doc.paid_amount)
-    # Apply the proper limit
+
+    # Apply the limit
     limit = 35000 if is_transporter else 10000
 
     if total_with_current > limit:
         frappe.throw(
-            f"⚠️ Total Cash (Cash - MUPL) payments for Supplier '{doc.party}' on {getdate(doc.posting_date)} "
-            f"exceed ₹{limit:,}. (Total: ₹{total_with_current:,.2f})"
+            f"⚠️ Total Cash payments for Supplier '{doc.party}' in company '{doc.company}' "
+            f"on {getdate(doc.posting_date)} exceed ₹{limit:,})"
         )
