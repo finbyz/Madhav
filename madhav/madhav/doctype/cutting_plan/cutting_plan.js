@@ -1040,6 +1040,85 @@ function calculate_qty_from_inch(frm, cdt, cdn) {
     }
 }
 
+//here we are setting item code in cutting plan scrap transfer
+frappe.ui.form.on('Cutting Plan', {
+    setup: function(frm) {
+        // Cache SCRAP items
+        frm.scrap_items = [];
+        
+        // Fetch SCRAP items once when form loads
+        frappe.call({
+            method: 'frappe.client.get_list',
+            args: {
+                doctype: 'Item',
+                filters: {
+                    item_group: 'SCRAP'
+                },
+                fields: ['name'],
+                limit_page_length: 0
+            },
+            callback: function(r) {
+                if (r.message) {
+                    frm.scrap_items = r.message.map(item => item.name);
+                }
+            }
+        });
+        
+        frm.set_query('item_code', 'cutting_plan_scrap_transfer', function(doc, cdt, cdn) {
+            // Collect allowed items from cut_plan_detail
+            const allowed = [];
+            (doc.cut_plan_detail || []).forEach(r => {
+                if (r.work_order_reference && r.item_code && !allowed.includes(r.item_code)) {
+                    allowed.push(r.item_code);
+                }
+            });
+            
+            // Merge with SCRAP items
+            const all_allowed = [...allowed];
+            (frm.scrap_items || []).forEach(item => {
+                if (!all_allowed.includes(item)) {
+                    all_allowed.push(item);
+                }
+            });
+            
+            if (!all_allowed.length) {
+                return { 
+                    filters: { 
+                        item_group: 'SCRAP'
+                    } 
+                };
+            }
+            
+            return { 
+                filters: { 
+                    name: ['in', all_allowed],
+                    item_group: ['!=', 'FINISH GOODS']
+                } 
+            };
+        });
+    },
+    
+    refresh: function(frm) {
+        // Refresh SCRAP items cache on form refresh
+        frappe.call({
+            method: 'frappe.client.get_list',
+            args: {
+                doctype: 'Item',
+                filters: {
+                    item_group: 'SCRAP'
+                },
+                fields: ['name'],
+                limit_page_length: 0
+            },
+            callback: function(r) {
+                if (r.message) {
+                    frm.scrap_items = r.message.map(item => item.name);
+                }
+            }
+        });
+    }
+});
+
 // Qty auto-calculation for Cut Plan Finish (second) table
 frappe.ui.form.on('Cutting plan Finish Second', {
     pieces: function (frm, cdt, cdn) {
