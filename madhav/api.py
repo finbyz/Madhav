@@ -424,7 +424,7 @@ def get_work_orders_by_rm(rm_item, filters=None):
         filters = json.loads(filters)
 
     query = """
-        SELECT DISTINCT wo.name, wo.production_item
+        SELECT DISTINCT wo.name, wo.production_item, wo.item_name
         FROM `tabWork Order` wo
         INNER JOIN `tabWork Order Item` woi ON wo.name = woi.parent
         WHERE woi.item_code = %(rm_item)s
@@ -465,6 +465,53 @@ def get_work_orders_by_rm(rm_item, filters=None):
     frappe.log_error(f"Query: {query}\nParams: {params}", "get_work_orders_by_rm Debug")
 
     return frappe.db.sql(query, params, as_dict=True)
+
+
+@frappe.whitelist()
+@frappe.validate_and_sanitize_search_inputs
+def get_scrap_items(doctype, txt, searchfield, start, page_len, filters):
+    import json
+    
+    # Parse filters if it's a JSON string
+    if isinstance(filters, str):
+        filters = json.loads(filters)
+    
+    allowed_items = filters.get('allowed_items', []) if filters else []
+    
+    conditions = []
+    values = []
+    
+    # Search condition
+    if txt:
+        conditions.append(f"`tabItem`.`{searchfield}` LIKE %s")
+        values.append(f"%{txt}%")
+    
+    # Build OR condition for allowed items or SCRAP group
+    or_conditions = ["`tabItem`.`item_group` = %s"]
+    values.append('SCRAP')
+    
+    if allowed_items and len(allowed_items) > 0:
+        placeholders = ', '.join(['%s'] * len(allowed_items))
+        or_conditions.append(f"`tabItem`.`name` IN ({placeholders})")
+        values.extend(allowed_items)
+    
+    conditions.append(f"({' OR '.join(or_conditions)})")
+    
+    # Exclude FINISH GOODS
+    conditions.append("`tabItem`.`item_group` != %s")
+    values.append('FINISH GOODS')
+    
+    where_clause = ' AND '.join(conditions)
+    
+    return frappe.db.sql(f"""
+        SELECT `tabItem`.`name`, `tabItem`.`item_name`
+        FROM `tabItem`
+        WHERE {where_clause}
+        ORDER BY
+            CASE WHEN `tabItem`.`name` LIKE %s THEN 0 ELSE 1 END,
+            `tabItem`.`name`
+        LIMIT %s OFFSET %s
+    """, tuple(values + [f"{txt}%", page_len, start]))
 
 @frappe.whitelist()
 def get_items_from_cut_plan(work_order):

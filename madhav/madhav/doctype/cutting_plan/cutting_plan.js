@@ -224,6 +224,10 @@ function show_work_order_dialog(frm) {
     });
 
     dialog.show();
+    // Increase dialog width for better visibility
+    try {
+        dialog.$wrapper.find('.modal-dialog').css('max-width', '40%');
+    } catch (e) {}
     
     // Load work orders initially
     setTimeout(() => {
@@ -290,7 +294,7 @@ function get_filtered_work_orders(dialog, filters, cut_plan_type) {
         args: {
             doctype: 'Work Order',
             filters: filters,
-            fields: ['name','production_item', 'status'],
+            fields: ['name','production_item', 'item_name', 'status'],
             order_by: 'creation desc',
             limit_page_length: 20
         },
@@ -314,6 +318,7 @@ function render_work_orders_table(dialog, work_orders, cut_plan_type) {
                         <th><input type="checkbox" id="select_all_wo"></th>
                         <th>Work Order</th>
                         <th>Production Item</th>
+                        <th>Production Item Name</th>
                         <th>Status</th>
                     </tr>
                 </thead>
@@ -327,6 +332,7 @@ function render_work_orders_table(dialog, work_orders, cut_plan_type) {
                 <td><input type="checkbox" class="work-order-checkbox" data-name="${wo.name}" data-item="${wo.production_item}" data-qty="${pending_qty}"></td>
                 <td>${wo.name}</td>
                 <td>${wo.production_item}</td>
+                <td>${wo.item_name || ''}</td>
                 <td><span class="badge badge-${wo.status === 'Completed' ? 'success' : 'warning'}">${wo.status}</span></td>
             </tr>
         `;
@@ -885,7 +891,7 @@ frappe.ui.form.on('Cutting Plan Scrap Transfer', {
         let qty_in_tonne = (qty/1000).toFixed(3);
         
         frappe.model.set_value(cdt, cdn, 'scrap_qty', qty_in_tonne);
-    },
+    }
 });
 
 // Helper function to set section weight

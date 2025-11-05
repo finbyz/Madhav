@@ -18,6 +18,7 @@
   "default_source_warehouse",
   "target_qty",
   "material_transfer_tolerance",
+  "manual_qty_tolerance",
   "column_break_3kmq",
   "default_finished_goods_warehouse",
   "default_unplanned_warehouse",
@@ -249,6 +250,13 @@
   {
    "fieldname": "section_break_d2sm",
    "fieldtype": "Section Break"
+  },
+  {
+   "default": "2.5",
+   "depends_on": "eval: parent.cut_plan_type == \"Finished Cut Plan\";",
+   "fieldname": "manual_qty_tolerance",
+   "fieldtype": "Percent",
+   "label": "Manual Qty Tolerance (%)"
   }
  ],
  "grid_page_length": 50,
@@ -264,7 +272,7 @@
    "link_fieldname": "cutting_plan_reference"
   }
  ],
- "modified": "2025-10-16 11:01:38.741426",
+ "modified": "2025-11-05 15:43:51.105931",
  "modified_by": "Administrator",
  "module": "Madhav",
  "name": "Cutting Plan",

@@ -92,6 +92,8 @@ class CuttingPlan(Document):
         if getattr(self, 'cut_plan_type', None) == "Finished Cut Plan":
             # set_qty_cut_plan_detail(self)
             set_fgsection_weight(self)
+            set_difference_percentage_for_finished_rows(self)
+            validate_manual_qty_tolerance(self)
             update_header_totals_for_finished_cut_plan(self)
     
     def validate_material_transfer_before_approve(self):
@@ -1187,8 +1189,10 @@ def set_fgsection_weight(doc):
             row.db_set('section_weight', section_weight, update_modified=False)
             
             cal_qty =  row.pieces * row.length_size * float(row.section_weight)
+
+            qty_in_kg = round(cal_qty / 1000, 3)
            
-            row.db_set('qty', cal_qty/1000, update_modified=False)
+            row.db_set('qty', qty_in_kg, update_modified=False)
 
 
 def set_qty_cut_plan_detail(doc):
@@ -1197,3 +1201,82 @@ def set_qty_cut_plan_detail(doc):
         
         cal_qty =  row.pieces * row.length_size * row.section_weight
         row.db_set('qty', cal_qty/1000, update_modified=False)
+
+
+def set_difference_percentage_for_finished_rows(doc):
+    """For Finished Cut Plan: set difference_percentage per cutting_plan_finish row
+    as percentage difference of manual_qty with respect to qty.
+    difference_percentage = ((manual_qty - qty) / qty) * 100
+    """
+    try:
+        if getattr(doc, 'cut_plan_type', None) != "Finished Cut Plan":
+            return
+        if not hasattr(doc, 'cutting_plan_finish') or not doc.cutting_plan_finish:
+            return
+
+        for row in doc.cutting_plan_finish:
+            qty = float(getattr(row, 'qty', 0) or 0)
+            manual = float(getattr(row, 'manual_qty', 0) or 0)
+            
+            if qty > 0:
+                diff_pct = ((manual - qty) / qty) * 100.0
+            else:
+                # If qty is zero, set 0 to avoid divide-by-zero; adjust if you prefer 100 for any manual>0
+                diff_pct = 0.0
+
+            # Write with minimal side-effects
+            try:
+                row.db_set('difference', round(diff_pct, 2), update_modified=False)
+            except Exception:
+                row.difference = round(diff_pct, 2)
+    except Exception as e:
+        frappe.log_error(
+            title="Cutting Plan Difference % Calc Error",
+            message=f"Doc: {getattr(doc, 'name', '')} Error: {str(e)}\n{frappe.get_traceback()}"
+        )
+
+
+def validate_manual_qty_tolerance(doc):
+    """Ensure manual_qty stays within tolerance of qty for Finished Cut Plan.
+
+    Allowed range: qty * (1 - tol%) to qty * (1 + tol%) where tol% = manual_qty_tolerance / 100
+    If qty is zero, manual_qty must also be zero.
+    """
+    if getattr(doc, 'cut_plan_type', None) != "Finished Cut Plan":
+        return
+
+    try:
+        tol_percent = float(getattr(doc, 'manual_qty_tolerance', 0) or 0)
+        tol = tol_percent / 100.0
+
+        if not hasattr(doc, 'cutting_plan_finish') or not doc.cutting_plan_finish:
+            return
+
+        errors = []
+        for row in doc.cutting_plan_finish:
+            qty = float(getattr(row, 'qty', 0) or 0)
+            manual = float(getattr(row, 'manual_qty', 0) or 0)
+
+            if qty <= 0:
+                if abs(manual) > 1e-9:
+                    errors.append(
+                        _(f"Row #{row.idx}: Manual Qty {manual:.3f} must be 0 when Qty is 0.")
+                    )
+                continue
+
+            min_allowed = qty * (1.0 - tol)
+            max_allowed = qty * (1.0 + tol)
+
+            if not (min_allowed - 1e-9 <= manual <= max_allowed + 1e-9):
+                errors.append(
+                    _(f"Row #{row.idx}: Manual Qty {manual:.3f} must be within ±{tol_percent:.2f}% of Qty {qty:.3f}. "
+                      f"Allowed range: {min_allowed:.3f} to {max_allowed:.3f}.")
+                )
+
+        if errors:
+            frappe.throw("<br>".join(errors), title=_("Manual Qty Tolerance Exceeded"))
+    except Exception as e:
+        frappe.log_error(
+            title="Cutting Plan Manual Qty Tolerance Error",
+            message=f"Doc: {getattr(doc, 'name', '')} Error: {str(e)}\n{frappe.get_traceback()}"
+        )
