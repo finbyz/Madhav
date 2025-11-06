@@ -37,6 +37,8 @@
   "cutting_plan_scrap_transfer",
   "finished_cut_plan_for_reference_only_section",
   "cut_plan_finish",
+  "section_break_g9bv",
+  "burning_loss",
   "amended_from",
   "naming_series",
   "workflow_state"
@@ -257,6 +259,17 @@
    "fieldname": "manual_qty_tolerance",
    "fieldtype": "Percent",
    "label": "Manual Qty Tolerance (%)"
+  },
+  {
+   "depends_on": "eval: parent.cut_plan_type == \"Finished Cut Plan\";",
+   "fieldname": "burning_loss",
+   "fieldtype": "Float",
+   "label": "Burning Loss",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_g9bv",
+   "fieldtype": "Section Break"
   }
  ],
  "grid_page_length": 50,
@@ -272,7 +285,7 @@
    "link_fieldname": "cutting_plan_reference"
   }
  ],
- "modified": "2025-11-05 15:43:51.105931",
+ "modified": "2025-11-06 11:00:59.056285",
  "modified_by": "Administrator",
  "module": "Madhav",
  "name": "Cutting Plan",

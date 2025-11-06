@@ -61,6 +61,7 @@ class CuttingPlan(Document):
         if (self.has_value_changed("workflow_state") and 
             self.workflow_state in ["Finished Cut Plan Done"]):
             validate_completed_wo(self)        
+            set_burning_loss(self)
         
         # If stock entry reference was set/changed, update table immediately
         if self.has_value_changed("stock_entry_reference"):
@@ -1280,3 +1281,40 @@ def validate_manual_qty_tolerance(doc):
             title="Cutting Plan Manual Qty Tolerance Error",
             message=f"Doc: {getattr(doc, 'name', '')} Error: {str(e)}\n{frappe.get_traceback()}"
         )
+
+def set_burning_loss(self):
+
+    rm_qty = float(getattr(self, 'total_qty', 0) or 0)
+    fg_qty = float(getattr(self, 'cut_plan_total_qty', 0) or 0)
+
+     # Initialize scrap quantities
+    useable_scrap_qty = 0.0
+    cold_billet_scrap_qty = 0.0
+    overall_scrap_qty = 0.0
+    misroll_scrap_qty = 0.0
+
+    
+    for item in self.get('cutting_plan_scrap_transfer', []):  
+        target_warehouse = item.get('target_scrap_warehouse', '')
+        scrap_qty = float(item.get('scrap_qty', 0) or 0)
+
+        if target_warehouse == "Cutting Scrap - MS":
+            overall_scrap_qty += scrap_qty
+        elif target_warehouse == "Mis-Roll(Useable) - MS":
+            useable_scrap_qty += scrap_qty
+        elif target_warehouse == "Misroll(Cold Billet) - MS":
+            cold_billet_scrap_qty += scrap_qty
+        elif target_warehouse == "Misroll Scrap - MS":
+            misroll_scrap_qty += scrap_qty
+            
+    useable_scrap_qty = round(useable_scrap_qty, 3)
+    cold_billet_scrap_qty = round(cold_billet_scrap_qty, 3)
+    overall_scrap_qty = round(overall_scrap_qty, 3)
+    misroll_scrap_qty = round(misroll_scrap_qty, 3)
+    
+    actual_rm_qty = round(rm_qty - useable_scrap_qty - cold_billet_scrap_qty,3)
+    
+    burning_loss = round(actual_rm_qty - fg_qty, 3)
+    burning_loss = round(burning_loss - overall_scrap_qty - misroll_scrap_qty, 3)
+    
+    self.db_set("burning_loss",burning_loss)
