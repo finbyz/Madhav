@@ -2,6 +2,24 @@ import frappe
 from frappe import _
 from frappe.utils import get_url_to_form
 
+def set_actual_rate_per_kg(self, method):
+    """
+    Set actual_rate_per_kg on Purchase Receipt Item 
+    from its linked Purchase Order Item (before save).
+    """
+    for row in self.items:
+        if row.purchase_order_item:
+            rate_data = frappe.db.get_value(
+                "Purchase Order Item",
+                row.purchase_order_item,
+                "actual_rate_per_kg",
+                as_dict=True,
+                # ignore_permissions ensures no permission error
+            )
+
+            if rate_data and rate_data.get("actual_rate_per_kg") is not None:
+                row.rate_per_kg = rate_data.get("actual_rate_per_kg")
+
 def create_qi(self,method):
     
     created_quality_inspections = []
