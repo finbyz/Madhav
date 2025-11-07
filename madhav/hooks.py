@@ -170,6 +170,7 @@ doc_events = {
         "validate": "madhav.doc_events.stock_entry.validate"
     },
     "Purchase Receipt": {
+        "before_save": "madhav.doc_events.purchase_receipt.set_actual_rate_per_kg",
         "before_validate": [
             "madhav.doc_events.purchase_receipt.auto_calculation",
             "madhav.doc_events.purchase_receipt.create_qi"
