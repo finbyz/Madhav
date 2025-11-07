@@ -293,11 +293,11 @@
    "label": "Pieces"
   },
   {
-   "depends_on": "eval:parent.cut_plan_type == \"Raw Material Cut Plan\";",
    "fieldname": "section_break_s4cm",
    "fieldtype": "Section Break"
   },
   {
+   "depends_on": "eval: parent.cut_plan_type == \"Raw Material Cut Plan\";",
    "fieldname": "lot_no_type",
    "fieldtype": "Select",
    "label": "Lot No Type",
@@ -308,6 +308,7 @@
    "fieldtype": "Column Break"
   },
   {
+   "depends_on": "eval: parent.cut_plan_type == \"Raw Material Cut Plan\";",
    "fieldname": "lot_number",
    "fieldtype": "Data",
    "label": "Lot Number"
@@ -363,7 +364,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2025-11-05 14:45:06.502389",
+ "modified": "2025-11-07 11:06:30.382415",
  "modified_by": "Administrator",
  "module": "Madhav",
  "name": "Cutting Plan Finish",
