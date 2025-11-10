@@ -9,6 +9,7 @@
   "source_warehouse",
   "item_code",
   "supplier_name",
+  "supplier_detail",
   "column_break_gubp",
   "item_name",
   "description",
@@ -201,7 +202,7 @@
   {
    "fieldname": "supplier_name",
    "fieldtype": "Link",
-   "label": "Supplier Name",
+   "label": "Supplier ",
    "no_copy": 1,
    "options": "Supplier"
   },
@@ -210,13 +211,19 @@
    "fieldname": "is_finished_item",
    "fieldtype": "Check",
    "label": "Is Finished Item"
+  },
+  {
+   "fetch_from": "supplier_name.supplier_name",
+   "fieldname": "supplier_detail",
+   "fieldtype": "Data",
+   "label": "Supplier Name"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2025-11-01 10:37:48.826434",
+ "modified": "2025-11-10 11:35:36.503311",
  "modified_by": "Administrator",
  "module": "Madhav",
  "name": "Cut Plan Detail",
