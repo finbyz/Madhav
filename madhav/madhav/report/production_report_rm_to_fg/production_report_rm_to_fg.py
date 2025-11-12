@@ -175,7 +175,8 @@ def get_data(filters):
 			
 			# Add rows based on work_order_reference
 			work_order_ref = detail.get("work_order_reference")
-			if work_order_ref:
+			work_order_ref_doc = frappe.get_doc("Work Order", work_order_ref)
+			if work_order_ref and work_order_ref_doc.docstatus == 1:
 				# Get cutting_plan_reference from Work Order
 				cutting_plan_ref = frappe.db.get_value("Work Order", work_order_ref, "cutting_plan_reference")
 				
@@ -187,7 +188,7 @@ def get_data(filters):
 					
 					# Get cutting_plan_finish rows (Cutting plan Finish Second)
 					cutting_plan_finish_rows = frappe.get_all(
-						"Cutting plan Finish Second",
+						"Cutting Plan Finish",
 						filters={"parent": cutting_plan_ref},
 						fields=["lot_no", "remarks", "qty"],
 						order_by="idx"
