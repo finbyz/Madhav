@@ -176,7 +176,7 @@ def get_data(filters):
 			# Add rows based on work_order_reference
 			work_order_ref = detail.get("work_order_reference")
 			work_order_ref_doc = frappe.get_doc("Work Order", work_order_ref)
-			if work_order_ref and work_order_ref_doc.docstatus == 1:
+			if work_order_ref and work_order_ref_doc.docstatus == 1 and work_order_ref_doc.status == "Completed":
 				# Get cutting_plan_reference from Work Order
 				cutting_plan_ref = frappe.db.get_value("Work Order", work_order_ref, "cutting_plan_reference")
 				
