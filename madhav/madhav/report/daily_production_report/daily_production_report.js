@@ -54,6 +54,16 @@ frappe.query_reports["Daily Production Report"] = {
 		// }
 	],
 
+	formatter: function(value, row, column, data, default_formatter) {
+		value = default_formatter(value, row, column, data);
+
+		if (data && data.is_total_row) {
+			value = `<span style="font-weight: 600;">${value}</span>`;
+		}
+
+		return value;
+	},
+
 	onload: function(report) {
 		report.page.add_inner_button(__('Refresh'), function() {
 			report.refresh();
