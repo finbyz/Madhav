@@ -5,6 +5,16 @@ import frappe
 from frappe import _
 from frappe.utils import getdate, today
 
+# Map Target Scrap Warehouses to the respective report buckets.
+# Update the warehouse names below as needed in your environment.
+SCRAP_WAREHOUSE_BUCKETS = frappe._dict({
+	# "Warehouse Name": "bucket_key"
+	"Misroll Scrap - MS": "rm_scrap",
+	"Cutting Scrap - MS": "rm_scrap",
+	"Misroll(Cold Billet) - MS": "miss_roll",
+	"Mis-Roll(Useable) - MS": "reusable_miss_roll",
+})
+
 
 def execute(filters=None):
 	filters = filters or {}
@@ -15,13 +25,13 @@ def execute(filters=None):
 	columns = get_columns()
 	data = []
 
-	plan_filters = {"docstatus": ("<", 2)}
+	plan_filters = {"docstatus": 1}
 	# Always restrict to Raw Material Cut Plan as requested
-	plan_filters["cut_plan_type"] = "Raw Material Cut Plan"
+	plan_filters["cut_plan_type"] = "Finished Cut Plan"
 	if filters.get("company"):
 		plan_filters["company"] = filters.get("company")
-	if filters.get("workflow_state"):
-		plan_filters["workflow_state"] = filters.get("workflow_state")
+	# if filters.get("workflow_state"):
+	# 	plan_filters["workflow_state"] = filters.get("workflow_state")
 
 	plan_filters["date"] = ("between", [from_date, to_date])
 
@@ -80,7 +90,7 @@ def execute(filters=None):
 				"parenttype": "Cutting Plan",
 				"parentfield": "cut_plan_detail",
 			},
-			fields=["qty", "item_code", "supplier_name"],
+			fields=["qty","is_finished_item", "item_code", "supplier_name"],
 		)
 
 		# Fetch scrap rows
@@ -131,22 +141,23 @@ def execute(filters=None):
 
 		# RM Qty from cut_plan_detail
 		for rm in rm_rows:
-			qty = float(rm.get("qty") or 0)
-			agg["rm_qty_mt"] += qty
-			
-			# Column A: Steel Authority Of India Ltd, Column B: All other suppliers
-			supplier = rm.get("supplier_name") or ""
-			if supplier == "Steel Authority Of India Ltd":
-				if agg["a_col"] is None:
-					agg["a_col"] = 0.0
-				agg["a_col"] += qty
-			else:
-				if agg["b_col"] is None:
-					agg["b_col"] = 0.0
-				agg["b_col"] += qty
+			if rm.is_finished_item != 1:
+				qty = float(rm.get("qty") or 0)
+				agg["rm_qty_mt"] += round(qty, 3)
+				
+				# Column A: Steel Authority Of India Ltd, Column B: All other suppliers
+				supplier = rm.get("supplier_name") or ""
+				if supplier == "Steel Authority Of India Ltd":
+					if agg["a_col"] is None:
+						agg["a_col"] = 0.0
+					agg["a_col"] += qty
+				else:
+					if agg["b_col"] is None:
+						agg["b_col"] = 0.0
+					agg["b_col"] += round(qty,3)
 
 		# SIZE from RM item names in cut_plan_detail
-		item_codes = [r.get("item_code") for r in rm_rows if r.get("item_code")]
+		item_codes = [r.get("item_code") for r in rm_rows if r.get("item_code") and r.is_finished_item==1]
 		if item_codes:
 			item_names = {}
 			for it in frappe.get_all("Item", filters={"name": ("in", item_codes)}, fields=["name", "item_name"]):
@@ -175,9 +186,7 @@ def execute(filters=None):
 			qty_val = float(row.get("qty") or 0)
 			if not int(bool(row.get("return_to_stock"))):
 				agg["fg_qty_mt"] += qty_val
-			else:
-				# RE-USABLE MISS ROLL (MT)
-				agg["reusable_miss_roll_mt"] += qty_val
+			
 			# NG will be taken from header; pieces/length not used
 			# collect size tokens from item or other attributes if available
 			if display_item:
@@ -188,14 +197,22 @@ def execute(filters=None):
 		agg["insp_yard_mt"] += float(plan.get("insp_yard_mt") or 0)
 		agg["kvah"] += float(plan.get("kvah") or 0)
 
-		# Scrap totals (we don't yet split by category)
+		# Scrap totals split by target warehouse bucket
 		for sc in scrap_rows:
-			agg["rm_scrap"] += float(sc.get("scrap_qty") or 0)
+			qty = float(sc.get("scrap_qty") or 0)
+			target_wh = sc.get("target_scrap_warehouse")
+			bucket = get_scrap_bucket(target_wh)
+			if bucket == "miss_roll":
+				agg["miss_roll_mt"] += qty
+			elif bucket == "reusable_miss_roll":
+				agg["reusable_miss_roll_mt"] += qty
+			else:
+				agg["rm_scrap"] += qty
 
 		# finalize derived fields for this date after processing the plan
 		# Keep existing size if set from RM items; otherwise fallback to tokens from finish items
-		if not agg.get("size") and size_tokens:
-			agg["size"] = ", ".join(sorted(size_tokens))
+		# if not agg.get("size") and size_tokens:
+		# 	agg["size"] = ", ".join(sorted(size_tokens))
 
 	# compute percentages and totals
 	for date_key in sorted(by_date.keys()):
@@ -343,3 +360,11 @@ def get_columns():
 		{"label": _("TOTAL SCRAP %"), "fieldname": "total_scrap_pct", "fieldtype": "Percent", "width": 120},
 		{"label": _("RE-USABLE MISS ROLL (MT)"), "fieldname": "reusable_miss_roll_mt", "fieldtype": "Float", "width": 170},
 	]
+
+
+def get_scrap_bucket(target_warehouse: str) -> str:
+	"""Return the bucket key for a given target scrap warehouse."""
+	if not target_warehouse:
+		return "rm_scrap"
+
+	return SCRAP_WAREHOUSE_BUCKETS.get(target_warehouse, "rm_scrap")
