@@ -353,6 +353,7 @@ def get_cutting_plan_batches(doctype, txt, searchfield, start, page_len, filters
             )
             AND b.name LIKE %(txt)s
             {supplier_condition}
+            AND b.batch_qty > 0
         ORDER BY b.name
         LIMIT %(page_len)s OFFSET %(start)s
     """, {
