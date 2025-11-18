@@ -203,7 +203,8 @@ def calculate_multiple_repack_valuation(doc):
 					# 		d.batch_yield = flt(result[d.item_code] / flt(item_map[self.based_on]*self.qty_ratio_of_second_item/100))  # cost_ratio_of_second_item percent of sum of items of based_on item from map variable
 
 def after_submit(doc,method):
-    
+    set_custom_supplier_from_batch(doc)
+
     if doc.stock_entry_type == "Material Receipt":
         create_batch_group(doc)
         
@@ -233,6 +234,7 @@ def create_batch_group(doc):
     batch_group.total_length_in_meter = doc.total_length_in_meter
     weight_received_kg = doc.weight_received * 1000
     batch_group.section_weight = round(weight_received_kg/doc.total_length_in_meter, 2)
+    batch_group.section_weight = round(batch_group.section_weight/39.37, 2)
 
     for batch in batch_list:
         batch_group.append("batch_details", {
@@ -240,7 +242,6 @@ def create_batch_group(doc):
             "lengthpieces": batch.pieces,
             "weight_received": batch.weight_received,
             "length_size": batch.average_length,
-            # "length_weight_in_kg": batch.length_weight_in_kg,
             "section_weight": batch.section_weight,
         })
 
@@ -275,7 +276,7 @@ def auto_calculation(doc, method):
         first_item_code = doc.items[0].item_code
         weight_str = frappe.db.get_value("Item", first_item_code, "weight_per_meter") or "0"
         try:
-            weight_per_meter = float(weight_str)
+            weight_per_meter = float(weight_str)*39.37
         except ValueError:
             frappe.throw(f"Invalid weight_per_meter for item {first_item_code}: '{weight_str}'")
 
@@ -291,30 +292,31 @@ def validation_section_weight(doc, method):
     if doc.stock_entry_type != "Material Receipt":
         return
     
-    if not doc.items or not doc.weight_received or not doc.total_length_in_meter:
-        return
+    # if not doc.items or not doc.weight_received or not doc.total_length_in_meter:
+    #     return
 
-    item_code = doc.items[0].item_code
-    standard_section_weight = frappe.db.get_value("Item", item_code, "weight_per_meter")
+    # item_code = doc.items[0].item_code
+    # standard_section_weight = frappe.db.get_value("Item", item_code, "weight_per_meter")
 
-    if not standard_section_weight:
-        frappe.throw(_("Standard section weight not found for item {0}").format(item_code))
+    # if not standard_section_weight:
+    #     frappe.throw(_("Standard section weight not found for item {0}").format(item_code))
 
-    try:
-        weight_received_kg = float(doc.weight_received) * 1000
-        received_section_weight = round(weight_received_kg/ doc.total_length_in_meter, 2)
-    except ZeroDivisionError:
-        frappe.throw(_("Total Length in Meter cannot be zero."))
+    # try:
+    #     weight_received_kg = float(doc.weight_received) * 1000
+    #     received_section_weight = round(weight_received_kg/ doc.total_length_in_meter, 2)
+    #     received_section_weight = round(received_section_weight/39.37, 2)
+    # except ZeroDivisionError:
+    #     frappe.throw(_("Total Length in Meter cannot be zero."))
 
-    # ±1.5% tolerance check
-    lower_bound = received_section_weight * 0.985
-    upper_bound = received_section_weight * 1.015
+    # # ±1.5% tolerance check
+    # lower_bound = received_section_weight * 0.985
+    # upper_bound = received_section_weight * 1.015
 
-    if float(standard_section_weight) < lower_bound or float(standard_section_weight) > upper_bound:
-        frappe.throw(_(
-            "Standard section weight for item {0} is outside ±1.5% of received section weight ({1}).\n"
-            "This Stock Entry is subject to approval and cannot be submitted."
-        ).format(item_code, received_section_weight))    
+    # if float(standard_section_weight) < lower_bound or float(standard_section_weight) > upper_bound:
+    #     frappe.throw(_(
+    #         "Standard section weight for item {0} is outside ±1.5% of received section weight ({1}).\n"
+    #         "This Stock Entry is subject to approval and cannot be submitted."
+    #     ).format(item_code, received_section_weight))    
 
 def update_cutting_plan_workflow(cutting_plan_name, stock_entry_name):
     from frappe.model.workflow import apply_workflow
@@ -358,6 +360,39 @@ def update_source_warehouse(cutting_plan_name, stock_entry_name):
         _("Source warehouse updated to {0} for all items in Cutting Plan {1}")
         .format(frappe.bold(stock_entry.to_warehouse), frappe.bold(cutting_plan_name))
     )
+
+def set_custom_supplier_from_batch(doc):
+    if doc.stock_entry_type != "Repack":
+        return
+
+    first_row = next((row for row in doc.items or [] if getattr(row, "batch_no", None)), None)
+    if not first_row:
+        return
+
+    batch_info = frappe.db.get_value(
+        "Batch",
+        first_row.batch_no,
+        ["reference_doctype", "reference_name"],
+        as_dict=True,
+    )
+
+    if not batch_info or not batch_info.reference_name:
+        return
+
+    supplier = None
+    ref_doctype = batch_info.reference_doctype
+    ref_name = batch_info.reference_name
+
+    if ref_doctype:
+        if frappe.db.has_column(ref_doctype, "custom_supplier"):
+            supplier = frappe.db.get_value(ref_doctype, ref_name, "custom_supplier")
+        if not supplier and frappe.db.has_column(ref_doctype, "supplier_name"):
+            supplier = frappe.db.get_value(ref_doctype, ref_name, "supplier_name")
+        if not supplier and frappe.db.has_column(ref_doctype, "supplier"):
+            supplier = frappe.db.get_value(ref_doctype, ref_name, "supplier")
+
+    if supplier:
+        doc.db_set("custom_supplier", supplier, update_modified=False)
 
 @frappe.whitelist()
 def cancel_linked_psles(doc, method):
