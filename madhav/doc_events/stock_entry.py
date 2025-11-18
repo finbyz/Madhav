@@ -386,8 +386,8 @@ def set_custom_supplier_from_batch(doc):
     if ref_doctype:
         if frappe.db.has_column(ref_doctype, "custom_supplier"):
             supplier = frappe.db.get_value(ref_doctype, ref_name, "custom_supplier")
-        if not supplier and frappe.db.has_column(ref_doctype, "supplier_name"):
-            supplier = frappe.db.get_value(ref_doctype, ref_name, "supplier_name")
+        # if not supplier and frappe.db.has_column(ref_doctype, "supplier_name"):
+        #     supplier = frappe.db.get_value(ref_doctype, ref_name, "supplier_name")
         if not supplier and frappe.db.has_column(ref_doctype, "supplier"):
             supplier = frappe.db.get_value(ref_doctype, ref_name, "supplier")
 
