@@ -309,7 +309,7 @@ def get_cutting_plan_batches(doctype, txt, searchfield, start, page_len, filters
     if conditions:
         where_clause = " AND ".join(conditions) + " AND "
     
-    # Optional supplier filter via PR linkage
+    # Optional supplier filter via PR linkage (and Stock Entry custom supplier)
     supplier_join = ""
     supplier_condition = ""
     if supplier_name:
@@ -317,8 +317,16 @@ def get_cutting_plan_batches(doctype, txt, searchfield, start, page_len, filters
             LEFT JOIN `tabPurchase Receipt` pr
                 ON pr.name = b.reference_name
                 AND b.reference_doctype = 'Purchase Receipt'
+            LEFT JOIN `tabStock Entry` se
+                ON se.name = b.reference_name
+                AND b.reference_doctype = 'Stock Entry'
         """
-        supplier_condition = " AND (pr.supplier_name = %(supplier_name)s OR pr.supplier = %(supplier_name)s) "
+        supplier_condition = """
+            AND (
+                (pr.name IS NOT NULL AND (pr.supplier_name = %(supplier_name)s OR pr.supplier = %(supplier_name)s))
+                OR (se.name IS NOT NULL AND se.custom_supplier = %(supplier_name)s)
+            )
+        """
 
     return frappe.db.sql(f"""
         SELECT

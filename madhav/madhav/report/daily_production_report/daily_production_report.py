@@ -3,7 +3,7 @@
 
 import frappe
 from frappe import _
-from frappe.utils import getdate, today
+from frappe.utils import getdate, today, flt
 
 # Map Target Scrap Warehouses to the respective report buckets.
 # Update the warehouse names below as needed in your environment.
@@ -238,6 +238,12 @@ def execute(filters=None):
 		agg["insp_yard_pct"] = pct(agg["insp_yard_mt"], rm_qty)
 		agg["total_scrap_pct"] = pct(agg["total_scrap_mt"], rm_qty)
 
+		# Round supplier buckets to 3 decimals so UI doesn't show long floats
+		if agg.get("a_col") is not None:
+			agg["a_col"] = flt(agg.get("a_col") or 0, 3)
+		if agg.get("b_col") is not None:
+			agg["b_col"] = flt(agg.get("b_col") or 0, 3)
+
 		# NG AVG = NG / FG Qty (Mt)
 		fg_qty = float(agg.get("fg_qty_mt") or 0)
 		ng_val = float(agg.get("ng") or 0)
@@ -320,19 +326,16 @@ def execute(filters=None):
 		kvah_total = float(tot.get("kvah") or 0)
 		tot["kvah_cum"] = round((kvah_total / fg_total), 3) if fg_total else 0.0
 
+		tot["a_col"] = flt(tot.get("a_col") or 0, 3)
+		tot["b_col"] = flt(tot.get("b_col") or 0, 3)
+
 		data.append(tot)
 
 	return columns, data
 
 
 def get_columns():
-	# Columns aligned with the shared spreadsheet
-	# Column indices (0-based):
-	# 0=Date, 1=Cutting Plans, 2=RM Qty (Mt), 3=SIZE, 4=FG Qty (MT), 5=NG, 6=NG AVG,
-	# 7=R.M Scrap, 8=MISS ROLL (MT), 9=END CUT (MT), 10=INSP + YARD (MT),
-	# 11=KVAH, 12=KVAH CUM, 13=RM SCRAP %, 14=MISS ROLL %, 15=END CUTTING %,
-	# 16=INSP+YARD %, 17=TOTAL SCRAP MT, 18=TOTAL SCRAP %, 19=RE-USABLE MISS ROLL (MT)
-	
+		
 	return [
 		{"label": _("Date"), "fieldname": "date", "fieldtype": "Date", "width": 100},
 		{"label": _("Cutting Plans"), "fieldname": "cutting_plans", "fieldtype": "Data", "width": 220},

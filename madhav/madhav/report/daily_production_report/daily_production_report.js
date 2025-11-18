@@ -58,7 +58,16 @@ frappe.query_reports["Daily Production Report"] = {
 		value = default_formatter(value, row, column, data);
 
 		if (data && data.is_total_row) {
-			value = `<span style="font-weight: 600;">${value}</span>`;
+			value = `
+				<span style="
+					font-weight: 600;
+					background-color: #ffda03;
+					display: block;
+					padding: 4px 6px;
+					border-radius: 2px;
+				">
+					${value}
+				</span>`;
 		}
 
 		return value;
