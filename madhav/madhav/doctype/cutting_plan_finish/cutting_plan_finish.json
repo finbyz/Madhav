@@ -24,6 +24,8 @@
   "section_weight",
   "batch",
   "qty",
+  "process_loss_qty",
+  "qty_after_loss",
   "manual_qty",
   "difference",
   "warehouse",
@@ -358,13 +360,29 @@
    "fieldname": "difference",
    "fieldtype": "Percent",
    "label": "Difference (%)"
+  },
+  {
+   "depends_on": "eval: parent.cut_plan_type == \"Raw Material Cut Plan\";",
+   "fieldname": "process_loss_qty",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Process Loss Qty",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval: parent.cut_plan_type == \"Raw Material Cut Plan\";",
+   "fieldname": "qty_after_loss",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Qty After Loss",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2025-11-07 11:06:30.382415",
+ "modified": "2025-11-19 15:35:30.863418",
  "modified_by": "Administrator",
  "module": "Madhav",
  "name": "Cutting Plan Finish",

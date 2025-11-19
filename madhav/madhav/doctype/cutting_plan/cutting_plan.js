@@ -682,6 +682,13 @@ frappe.ui.form.on('Cutting Plan Finish', {
             let remaining = row.weight_per_length - (row.weight_per_length * row.process_loss / 100);
             frappe.model.set_value(cdt, cdn, 'remaining_weight', remaining);
         }
+        if (row.qty && row.process_loss){
+            // remaining_weight = weight_per_length - (process_loss% of weight_per_length)
+            let process_loss_qty = row.qty * row.process_loss / 100;
+            let remaining_qty = row.qty - process_loss_qty;
+            frappe.model.set_value(cdt, cdn, 'process_loss_qty', process_loss_qty);
+            frappe.model.set_value(cdt, cdn, 'qty_after_loss', remaining_qty);
+        }
     },
     remaining_weight: function (frm, cdt, cdn) {
         let row = locals[cdt][cdn];
@@ -1037,6 +1044,13 @@ function calculate_qty_from_inch(frm, cdt, cdn) {
         let total_length = row.pieces * row.length_size_inch
         frappe.model.set_value(cdt, cdn, 'qty', qty_in_tonne);
         frappe.model.set_value(cdt, cdn, 'total_length_in_meter_inch',total_length) 
+        if (row.qty && row.process_loss){
+            // remaining_weight = weight_per_length - (process_loss% of weight_per_length)
+            let process_loss_qty = row.qty * row.process_loss / 100;
+            let remaining_qty = row.qty - process_loss_qty;
+            frappe.model.set_value(cdt, cdn, 'process_loss_qty', process_loss_qty);
+            frappe.model.set_value(cdt, cdn, 'qty_after_loss', remaining_qty);
+        }
     }
 }
 
@@ -1141,7 +1155,7 @@ function update_total_cut_plan_qty(frm, cdt, cdn){
             qty = flt(item.manual_qty);    
         }
         if(frm.doc.cut_plan_type == "Raw Material Cut Plan"){
-            qty = flt(item.qty);
+            qty = flt(item.qty_after_loss);
         }
 
         if (qty) {
