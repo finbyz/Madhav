@@ -864,7 +864,7 @@ def calculate_qty_for_cut_plan_finish(doc):
                         row.db_set('qty', qty_tonnes, update_modified=False)
                     except Exception:
                         row.qty = qty_tonnes
-                    # total_cut_plan_qty += qty_tonnes
+                    total_cut_plan_qty += qty_tonnes
 
                 # Set total_length_in_meter if field exists
                 if hasattr(row, 'total_length_in_meter_inch') and (pieces and length_size):
@@ -885,18 +885,18 @@ def calculate_qty_for_cut_plan_finish(doc):
                 # remaining_weight with optional process_loss%
                 process_loss = float(getattr(row, 'process_loss', 0) or 0)
 
-                if hasattr(row, 'qty') and process_loss:
-                    process_loss_qty = row.qty * process_loss / 100
-                    remaining_qty = row.qty - process_loss_qty
-                    try:
-                        row.db_set('process_loss_qty', process_loss_qty, update_modified=False)
-                    except Exception:
-                        row.process_loss_qty = process_loss_qty
-                    try:
-                        row.db_set('qty_after_loss', remaining_qty, update_modified=False)
-                    except Exception:
-                        row.qty_after_loss = remaining_qty
-                    total_cut_plan_qty += remaining_qty
+                # if hasattr(row, 'qty') and process_loss:
+                #     process_loss_qty = row.qty * process_loss / 100
+                #     remaining_qty = row.qty - process_loss_qty
+                #     try:
+                #         row.db_set('process_loss_qty', process_loss_qty, update_modified=False)
+                #     except Exception:
+                #         row.process_loss_qty = process_loss_qty
+                #     try:
+                #         row.db_set('qty_after_loss', remaining_qty, update_modified=False)
+                #     except Exception:
+                #         row.qty_after_loss = remaining_qty
+                #     total_cut_plan_qty += remaining_qty
 
                 if hasattr(row, 'remaining_weight'):
                     if getattr(row, 'weight_per_length', None):
