@@ -169,15 +169,31 @@ doc_events = {
         "before_cancel": "madhav.doc_events.stock_entry.cancel_linked_psles",
         "validate": "madhav.doc_events.stock_entry.validate"
     },
+    "Purchase Invoice": {
+        "before_save": "madhav.doc_events.purchase_invoice.validate_limit_on_saved_before_submit"
+    },
     "Purchase Receipt": {
-        "before_save": "madhav.doc_events.purchase_receipt.set_actual_rate_per_kg",
+        "before_save": [
+            "madhav.doc_events.purchase_receipt.set_actual_rate_per_kg",
+            "madhav.doc_events.purchase_receipt.round_off_stock_qty",
+            "madhav.doc_events.purchase_receipt.validate_limit_on_save",
+            "madhav.doc_events.purchase_receipt.prevent_edit_after_quality_inspection"
+        ],
         "before_validate": [
             "madhav.doc_events.purchase_receipt.auto_calculation",
             "madhav.doc_events.purchase_receipt.create_qi"
             ],
-        "before_submit": "madhav.doc_events.purchase_receipt.validation_section_weight",
+        "before_submit": [
+            "madhav.doc_events.purchase_receipt.validation_section_weight",
+            "madhav.doc_events.purchase_receipt.ensure_quality_inspections_submitted"
+        ],
         "on_submit": "madhav.doc_events.purchase_receipt.after_submit",
         "before_cancel": "madhav.doc_events.stock_entry.cancel_linked_psles"
+    },
+    "Purchase Order": {
+        "before_save": [
+            "madhav.doc_events.purchase_order.validate_limit_on_save"
+        ]
     },
     "Batch Group":{
         "autoname":"madhav.doc_events.batch_group.autoname"

@@ -1,6 +1,85 @@
 import frappe
 from frappe import _
 from frappe.utils import get_url_to_form
+from frappe.utils import flt
+from erpnext.controllers.status_updater import OverAllowanceError
+
+
+def validate_limit_on_save(self, method):
+    """
+    Ensure 'Limit Crossed' validation triggers on Save for Purchase Receipts.
+    """
+    if hasattr(self, "validate_qty"):
+        try:
+            self.validate_qty()
+        except Exception:
+            # If standard path raises, rethrow; otherwise continue to our explicit check.
+            raise
+
+    # Explicit PR-based check to ensure early error on Save
+    # Use standard Stock Settings allowance for over receipt/delivery
+    pr_qty_allowance = flt(frappe.db.get_single_value("Stock Settings", "over_delivery_receipt_allowance")) or 0.0
+
+    for d in self.get("items") or []:
+        pr_item = d.get("purchase_order_item")
+        if not pr_item:
+            continue
+
+        # Fetch PR stock_qty reference
+        pr_row = frappe.db.get_value(
+            "Purchase Order Item",
+            pr_item,
+            ["parent", "item_code", "stock_qty"],
+            as_dict=True,
+        )
+        if not pr_row:
+            continue
+
+        pr_stock_qty = flt(pr_row.get("stock_qty") or 0.0, d.precision("stock_qty"))
+        if pr_stock_qty <= 0:
+            continue
+
+        # Sum already received qty across other PRs (draft + submitted), exclude this row
+        already_received = frappe.db.sql(
+            """
+            select coalesce(sum(pri.stock_qty), 0)
+            from `tabPurchase Receipt Item` pri
+            join `tabPurchase Receipt` pr on pr.name = pri.parent
+            where pri.purchase_order_item = %s
+              and pr.docstatus < 2
+              and not (pri.parent = %s)
+            """,
+            (pr_item, self.name or ""),
+        )[0][0]
+
+        # Proposed total including current row's qty
+        proposed_total = flt(already_received) + flt(d.get("stock_qty") or 0.0)
+
+        # Allowed with tolerance
+        max_allowed = pr_stock_qty * (100.0 + pr_qty_allowance) / 100.0
+
+        if proposed_total > max_allowed + 1e-9:
+            reduce_by = proposed_total - max_allowed
+            msg = _(
+                "This document is over limit by {0} for item {1}. Are you making another {2} against the same {3}?"
+            ).format(
+                frappe.bold(flt(reduce_by, d.precision("stock_qty"))),
+                frappe.bold(d.get("item_code")),
+                frappe.bold(_("Purchase Receipt")),
+                frappe.bold(_("Purchase Order")),
+            )
+            action_msg = _(
+                'To allow over receipt / delivery, update "Over Receipt/Delivery Allowance" in Stock Settings or the Item.'
+            )
+            frappe.throw(msg + "<br><br>" + action_msg, OverAllowanceError, title=_("Limit Crossed"))
+
+def round_off_stock_qty(self,method):
+    return
+    for item in self.items:
+        if item.stock_qty:
+            item.db_set("stock_qty", round(item.stock_qty))
+            item.db_set("received_stock_qty", round(item.received_stock_qty))
+            
 
 def set_actual_rate_per_kg(self, method):
     """
@@ -45,6 +124,55 @@ def create_qi(self,method):
 		)
         
         frappe.msgprint(f"<b>Quality Inspections created:</b>{links}", title="Quality Inspections", indicator="green")
+
+def prevent_edit_after_quality_inspection(doc, method):
+    """
+    Once at least one valid Quality Inspection exists against this Purchase Receipt,
+    disallow further edits while the document is in Draft.
+    """
+    if doc.docstatus != 0 or doc.is_new() or getattr(doc, "_action", None) == "submit":
+        return
+
+    linked_qis = []
+    for d in doc.items:
+        qi = d.quality_inspection
+        
+        if not qi:
+            continue
+
+        qi_status = frappe.db.get_value("Quality Inspection", qi, "docstatus")
+        # Skip references to deleted / cancelled QIs (docstatus None or 2)
+        if qi_status in (None, 2):
+            continue
+
+        linked_qis.append(qi)
+
+    if len(linked_qis) == 0:
+        return
+    
+    frappe.throw(
+        _("Purchase Receipt {0} is locked because Quality Inspection {1} already exists. Submit the Quality Inspections to proceed.")
+        .format(doc.name, ", ".join(linked_qis))
+    )
+
+def ensure_quality_inspections_submitted(doc, method):
+    """
+    Reject submission unless every linked Quality Inspection is submitted.
+    """
+    pending = []
+
+    for d in doc.items or []:
+        if not d.quality_inspection:
+            continue
+        qi_status = frappe.db.get_value("Quality Inspection", d.quality_inspection, "docstatus")
+        if qi_status != 1:
+            pending.append(d.quality_inspection)
+
+    if pending:
+        frappe.throw(
+            _("Submit Quality Inspection(s) {0} before submitting this Purchase Receipt.")
+            .format(", ".join(pending))
+        )
 
 
 def make_quality_inspection(se_doc, item):
