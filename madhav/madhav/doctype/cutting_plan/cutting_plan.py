@@ -89,6 +89,9 @@ class CuttingPlan(Document):
         # Validate that finish qty per rm_reference_batch does not exceed RM batch qty
         validate_finish_qty_by_rm_batch(self)
 
+        # Validate cutting plan finish row constraints (semi_fg_length and length sizes)
+        validate_cutting_plan_finish_row_constraints(self)
+
         # On save: update header totals for Finished Cut Plan
         if getattr(self, 'cut_plan_type', None) == "Finished Cut Plan":
             # set_qty_cut_plan_detail(self)
@@ -1294,6 +1297,68 @@ def validate_manual_qty_tolerance(doc):
             title="Cutting Plan Manual Qty Tolerance Error",
             message=f"Doc: {getattr(doc, 'name', '')} Error: {str(e)}\n{frappe.get_traceback()}"
         )
+
+
+def validate_cutting_plan_finish_row_constraints(doc):
+    """Validate constraints for cutting_plan_finish rows.
+    
+    Constraints:
+    1. semi_fg_length must be <= 27
+    2. Sum of length_size_1 through length_size_n (where n = no_of_length_sizes, max 5) 
+       must be <= semi_fg_length (with 3 decimal precision)
+    
+    This mirrors the JavaScript validation in validate_cutting_plan_finish_row_constraints.
+    """
+    if not hasattr(doc, 'cutting_plan_finish') or not doc.cutting_plan_finish:
+        return
+    
+    try:
+        errors = []
+        precision = 3
+        
+        for row in doc.cutting_plan_finish:
+            semi = float(getattr(row, 'semi_fg_length', 0) or 0)
+            count = int(getattr(row, 'no_of_length_sizes', 0) or 0)
+            
+            # Skip validation if semi_fg_length or no_of_length_sizes is not set
+            if not semi or not count:
+                continue
+            
+            # Constraint 1: semi_fg_length <= 27
+            if semi > 27:
+                errors.append(
+                    _("Row #{0}: Semi-FG Length must be less than or equal to 27.").format(row.idx)
+                )
+                continue
+            
+            # Constraint 2: sum(length_size_1..n) <= semi_fg_length
+            total = 0.0
+            max_slots = min(count, 5)
+            
+            for i in range(1, max_slots + 1):
+                length_field = f'length_size_{i}'
+                val = float(getattr(row, length_field, 0) or 0)
+                total += val
+            
+            # Round to 3 decimal places for comparison
+            total_rounded = round(total, precision)
+            semi_rounded = round(semi, precision)
+            
+            # Only error when total is strictly greater than semi (allows equality)
+            if total_rounded > semi_rounded:
+                errors.append(
+                    _("Row #{0}: Sum of Length Sizes must be less than Semi-FG Length.").format(row.idx)
+                )
+        
+        if errors:
+            frappe.throw("<br>".join(errors), title=_("Cutting Plan Finish Constraints Validation"))
+    
+    except Exception as e:
+        frappe.log_error(
+            title="Cutting Plan Finish Row Constraints Validation Error",
+            message=f"Doc: {getattr(doc, 'name', '')} Error: {str(e)}\n{frappe.get_traceback()}"
+        )
+
 
 def set_burning_loss(self):
 
