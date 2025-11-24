@@ -139,6 +139,7 @@ def get_items_from_material_transfer(stock_entry, work_order_id, qty=None):
                     ('average_length', 'average_length'),
                     ('section_weight', 'section_weight'),
                     ('lot_no', 'lot_no'),
+                    ('total_pcs', 'total_pcs'),
                 ]
                 for src, dest in custom_fields:
                     if hasattr(item, src) and getattr(item, src) is not None:
