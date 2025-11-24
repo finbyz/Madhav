@@ -44,6 +44,7 @@ frappe.ui.form.on('Stock Entry', {
                         average_length: d.average_length,
                         section_weight: d.section_weight,
                         lot_no: d.lot_no,
+                        total_pcs: d.total_pcs,
                         fg_item: d.fg_item,
                         semi_fg_length: d.semi_fg_length,
                         work_order_reference: d.work_order_reference,

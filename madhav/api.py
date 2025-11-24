@@ -545,6 +545,7 @@ def get_items_from_cut_plan(work_order):
             "fg_item",
             "semi_fg_length",
             "work_order_reference",
+            "total_pcs",
         ],
         order_by="creation asc",
     )
