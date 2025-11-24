@@ -741,6 +741,7 @@ def get_finished_cut_plan_from_manufacturing(work_orders):
                 "batch_no",
                 # optional/custom fields used in UI
                 "pieces",
+                "total_pcs",
                 "average_length",
                 "lot_no",
             ],
@@ -762,6 +763,7 @@ def get_finished_cut_plan_from_manufacturing(work_orders):
                         # For Finished items, use t_warehouse as the source for subsequent planning
                         "source_warehouse": t_wh,
                         "qty": 0.0,
+                        "pieces": 0.0,
                         "batch": batch_no,
                         "work_order_reference": work_order_name,
                         # Use FG item's section weight if available
@@ -769,6 +771,7 @@ def get_finished_cut_plan_from_manufacturing(work_orders):
                     }
                 row = detail_key_to_row[key]
                 row["qty"] = float(row.get("qty") or 0) + float(it.get("qty") or 0)
+                row["pieces"] = float(row.get("pieces") or 0) + float(it.get("total_pcs") or it.get("pieces") or 0)
                 continue
 
             # NON-FINISHED rows: append to finish_rows for Cutting Plan Finish table
@@ -787,6 +790,7 @@ def get_finished_cut_plan_from_manufacturing(work_orders):
             })
 
     detail_rows = list(detail_key_to_row.values())
+    
     return {"detail_rows": detail_rows, "finish_rows": finish_rows}
 
 
