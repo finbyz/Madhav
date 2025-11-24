@@ -775,7 +775,7 @@ def get_finished_cut_plan_from_manufacturing(work_orders):
                 "item": item_code,
                 "batch": batch_no,
                 "qty": it.get("qty"),
-                "pieces": it.get("pieces"),
+                "pieces": it.get("total_pcs"),
                 "length_size": it.get("average_length"),
                 "lot_no": it.get("lot_no"),
                 "rm_reference_batch": batch_no,
