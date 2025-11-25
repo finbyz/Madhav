@@ -177,7 +177,7 @@ doc_events = {
             "madhav.doc_events.purchase_receipt.set_actual_rate_per_kg",
             "madhav.doc_events.purchase_receipt.round_off_stock_qty",
             "madhav.doc_events.purchase_receipt.validate_limit_on_save",
-            "madhav.doc_events.purchase_receipt.prevent_edit_after_quality_inspection"
+            # "madhav.doc_events.purchase_receipt.prevent_edit_after_quality_inspection"
         ],
         "before_validate": [
             "madhav.doc_events.purchase_receipt.auto_calculation",
@@ -185,7 +185,7 @@ doc_events = {
             ],
         "before_submit": [
             "madhav.doc_events.purchase_receipt.validation_section_weight",
-            "madhav.doc_events.purchase_receipt.ensure_quality_inspections_submitted"
+            # "madhav.doc_events.purchase_receipt.ensure_quality_inspections_submitted"
         ],
         "on_submit": "madhav.doc_events.purchase_receipt.after_submit",
         "before_cancel": "madhav.doc_events.stock_entry.cancel_linked_psles"
