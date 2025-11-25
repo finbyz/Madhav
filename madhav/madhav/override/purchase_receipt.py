@@ -16,6 +16,7 @@ class PurchaseReceipt(_PurchaseReceipt):
                 "Purchase Receipt",
                 filters={
                     "supplier_delivery_note": self.supplier_delivery_note,
+                    "supplier": self.supplier,
                     "docstatus": ["in", [0, 1]],  # Draft or Submitted block reuse
                     "name": ["!=", self.name],
                 },
