@@ -1429,7 +1429,12 @@ function update_scrap_qty_for_batch(frm, batch_name) {
 
 // Function to auto-fill scrap transfer table - without batchwise
 function auto_fill_scrap_transfer_table(frm) {
-    let scrap_qty = flt(frm.doc.total_qty) - flt(frm.doc.cut_plan_total_qty);
+    // Use the same formula as server side for Finished Cut Plan:
+    // scrap_qty = total_qty + process_loss_qty - cut_plan_total_qty
+    let total_qty = flt(frm.doc.total_qty);
+    let process_loss_qty = flt(frm.doc.process_loss_qty);
+    let cut_plan_total_qty = flt(frm.doc.cut_plan_total_qty);
+    let scrap_qty = total_qty + process_loss_qty - cut_plan_total_qty;
     
     // If table exists and has data
     if (frm.doc.cutting_plan_scrap_transfer && frm.doc.cutting_plan_scrap_transfer.length > 0) {
