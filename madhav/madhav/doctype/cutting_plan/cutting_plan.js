@@ -381,6 +381,9 @@ function process_selected_work_orders(frm, selected_work_orders, cut_plan_type) 
             frappe.msgprint(__('Please select at least one Work Order'));
             return;
         }
+
+		set_reference_rm_cut_plan(frm, wo_names);
+
         frappe.call({
             method: 'madhav.api.get_finished_cut_plan_from_manufacturing',
             args: { work_orders: wo_names },
@@ -472,10 +475,53 @@ function process_selected_work_orders(frm, selected_work_orders, cut_plan_type) 
                         indicator: 'green'
                     });
                 }
-            }
+            },
         });
     }
 }
+
+function set_reference_rm_cut_plan(frm, work_orders) {
+	if (!frm || frm.doc.cut_plan_type !== 'Finished Cut Plan') {
+		return;
+	}
+
+	if (!Array.isArray(work_orders) || work_orders.length === 0) {
+		return;
+	}
+
+	frappe.db.get_list('Work Order', {
+		filters: {
+			name: ['in', work_orders],
+		},
+		fields: ['name', 'cutting_plan_reference'],
+		limit_page_length: work_orders.length,
+	}).then((res) => {
+		const unique_refs = [
+			...new Set(
+				(res || [])
+					.map((row) => row.cutting_plan_reference)
+					.filter((ref) => !!ref)
+			),
+		];
+
+		if (unique_refs.length === 1) {
+			frappe.model.set_value(frm.doctype, frm.docname, 'reference_rm_cut_plan', unique_refs[0]);
+		} else if (unique_refs.length > 1) {
+			frappe.msgprint({
+				title: __('Multiple RM Cut Plans Detected'),
+				message: __(
+					'Selected Work Orders reference different RM Cutting Plans ({0}). Please review your selection.',
+					[unique_refs.join(', ')]
+				),
+				indicator: 'orange',
+			});
+		} else {
+			// No reference found; ensure field is cleared
+			frappe.model.set_value(frm.doctype, frm.docname, 'reference_rm_cut_plan', '');
+		}
+	});
+}
+
 
 // Child table events for cut_plan_detail
 frappe.ui.form.on('Cut Plan Detail', {
@@ -624,7 +670,7 @@ frappe.ui.form.on('Cutting Plan Finish', {
                 frappe.model.set_value(cdt, cdn, 'work_order_reference', wo);
             }
         }
-    },
+	},
     pieces: function (frm, cdt, cdn) {
         calculate_qty_from_inch(frm, cdt, cdn);
         update_total_cut_plan_qty(frm, cdt, cdn);
@@ -752,7 +798,7 @@ frappe.ui.form.on('Cutting Plan Finish', {
         // Update scrap quantity in RM Plan Detail
         // update_scrap_qty_for_all_batches(frm);
         // Auto-fill scrap transfer table
-        auto_fill_scrap_transfer_table(frm);
+		auto_fill_scrap_transfer_table(frm);
     },
     section_weight: function (frm, cdt, cdn) {
         let row = locals[cdt][cdn];

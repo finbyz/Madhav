@@ -10,6 +10,7 @@
   "date",
   "column_break_bicg",
   "company",
+  "reference_rm_cut_plan",
   "section_break_rylt",
   "ng",
   "insp_yard_mt",
@@ -26,6 +27,8 @@
   "cut_plan_detail",
   "section_break_at2n",
   "total_qty",
+  "column_break_azzs",
+  "process_loss_qty",
   "section_break_2gpb",
   "cutting_plan_finish",
   "cut_plan_total_qty",
@@ -270,6 +273,25 @@
   {
    "fieldname": "section_break_g9bv",
    "fieldtype": "Section Break"
+  },
+  {
+   "depends_on": "eval: parent.cut_plan_type == \"Finished Cut Plan\";",
+   "fieldname": "reference_rm_cut_plan",
+   "fieldtype": "Link",
+   "label": "Reference RM Cut Plan",
+   "options": "Cutting Plan",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_azzs",
+   "fieldtype": "Column Break"
+  },
+  {
+   "depends_on": "eval: parent.cut_plan_type == \"Finished Cut Plan\";",
+   "fieldname": "process_loss_qty",
+   "fieldtype": "Float",
+   "label": "Process Loss Qty",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
@@ -285,7 +307,7 @@
    "link_fieldname": "cutting_plan_reference"
   }
  ],
- "modified": "2025-11-06 11:00:59.056285",
+ "modified": "2025-11-28 18:44:15.765668",
  "modified_by": "Administrator",
  "module": "Madhav",
  "name": "Cutting Plan",

@@ -92,13 +92,14 @@ class CuttingPlan(Document):
         # Validate cutting plan finish row constraints (semi_fg_length and length sizes)
         validate_cutting_plan_finish_row_constraints(self)
 
-        # On save: update header totals for Finished Cut Plan
+        # On save: update header totals and process loss for Finished Cut Plan
         if getattr(self, 'cut_plan_type', None) == "Finished Cut Plan":
             # set_qty_cut_plan_detail(self)
             set_fgsection_weight(self)
             set_difference_percentage_for_finished_rows(self)
             validate_manual_qty_tolerance(self)
             update_header_totals_for_finished_cut_plan(self)
+            update_process_loss_qty(self)
     
     def validate_material_transfer_before_approve(self):
         """Check if linked Material Transfer Stock Entry is submitted"""
@@ -384,6 +385,26 @@ def create_batch_for_finish_item(cutting_plan_doc, finish_item):
 
     # Create and return batch
     return make_batch(frappe._dict(dct))
+
+
+@frappe.whitelist()
+def get_total_qty_for_rm_cut_plan(cutting_plan: str | None = None):
+	"""Return total qty from referenced RM Cutting Plan (excluding rows marked return_to_stock)."""
+
+	if not cutting_plan:
+		return 0
+
+	total_qty = frappe.db.sql(
+		"""
+		SELECT COALESCE(SUM(qty), 0)
+		FROM `tabCutting Plan Finish`
+		WHERE parent = %s
+			AND IFNULL(return_to_stock, 0) = 0
+		""",
+		(cutting_plan,),
+	)[0][0]
+
+	return float(total_qty or 0)
 
 
 def get_item_stock_uom(item_code):
@@ -1134,7 +1155,8 @@ def update_header_totals_for_finished_cut_plan(doc):
 
     - total_qty: sum of qty in `cut_plan_detail`
     - cut_plan_total_qty: sum of manual_qty in `cutting_plan_finish`
-    - scrap_qty: difference (total_qty - cut_plan_total_qty) minus sum of qty from rows 2+ in first row of `cutting_plan_scrap_transfer`
+    - scrap_qty: (total_qty + process_loss_qty - cut_plan_total_qty)
+                 minus sum of qty from rows 2+ in first row of `cutting_plan_scrap_transfer`
     """
     try:
         # Calculate total qty from cut_plan_detail
@@ -1155,7 +1177,8 @@ def update_header_totals_for_finished_cut_plan(doc):
         total_qty_finish = round(total_qty_finish, 3)
         
         # Calculate base scrap qty
-        base_scrap_qty = round(total_qty_detail - total_qty_finish, 3)
+        process_loss = float(getattr(doc, "process_loss_qty", 0) or 0)
+        base_scrap_qty = round((total_qty_detail + process_loss) - total_qty_finish, 3)
 
         # Update header fields
         if doc.docstatus == 0:  # Draft
@@ -1196,6 +1219,49 @@ def update_header_totals_for_finished_cut_plan(doc):
         frappe.log_error(
             title="Cutting Plan Header Totals Error",
             message=f"Doc: {getattr(doc, 'name', '')} Error: {str(e)}\n{frappe.get_traceback()}"
+        )
+
+
+def update_process_loss_qty(doc):
+    """Set process_loss_qty on Finished Cut Plans based on RM vs FG quantities.
+
+    process_loss_qty = RM_cut_plan_qty (excluding return_to_stock)
+                       - current Finished Cut Plan qty (cut_plan_total_qty)
+    """
+    try:
+        if getattr(doc, "cut_plan_type", None) != "Finished Cut Plan":
+            return
+
+        rm_ref = getattr(doc, "reference_rm_cut_plan", None)
+        if not rm_ref:
+            # No reference → no process loss
+            if hasattr(doc, "process_loss_qty"):
+                if doc.docstatus == 0:
+                    doc.process_loss_qty = 0
+                else:
+                    doc.db_set("process_loss_qty", 0, update_modified=False)
+            return
+
+        # RM quantity from referenced RM cut plan
+        rm_qty = get_total_qty_for_rm_cut_plan(rm_ref)
+
+        # FG quantity from this Finished Cut Plan - prefer header field if present
+        fg_qty = float(getattr(doc, "cut_plan_total_qty", 0) or 0)
+        if not fg_qty and getattr(doc, "cutting_plan_finish", None):
+            fg_qty = sum(float(getattr(row, "qty", 0) or 0) for row in doc.cutting_plan_finish)
+
+        process_loss = rm_qty - fg_qty
+
+        if hasattr(doc, "process_loss_qty"):
+            if doc.docstatus == 0:
+                doc.process_loss_qty = round(process_loss, 3)
+            else:
+                doc.db_set("process_loss_qty", round(process_loss, 3), update_modified=False)
+
+    except Exception:
+        frappe.log_error(
+            title="Cutting Plan Process Loss Qty Error",
+            message=f"Doc: {getattr(doc, 'name', '')}\n{frappe.get_traceback()}",
         )
 
 def set_fgsection_weight(doc):
