@@ -98,9 +98,9 @@ class CuttingPlan(Document):
             set_fgsection_weight(self)
             set_difference_percentage_for_finished_rows(self)
             validate_manual_qty_tolerance(self)
-            update_header_totals_for_finished_cut_plan(self)
             update_process_loss_qty(self)
-    
+            update_header_totals_for_finished_cut_plan(self)
+               
     def validate_material_transfer_before_approve(self):
         """Check if linked Material Transfer Stock Entry is submitted"""
         if not self.material_transfer_stock_entry:
@@ -1179,7 +1179,7 @@ def update_header_totals_for_finished_cut_plan(doc):
         # Calculate base scrap qty
         process_loss = float(getattr(doc, "process_loss_qty", 0) or 0)
         base_scrap_qty = round((total_qty_detail + process_loss) - total_qty_finish, 3)
-
+        
         # Update header fields
         if doc.docstatus == 0:  # Draft
             doc.total_qty = total_qty_detail
@@ -1202,7 +1202,7 @@ def update_header_totals_for_finished_cut_plan(doc):
         
         # Calculate final scrap qty for first row
         final_scrap_qty = round(base_scrap_qty - other_rows_scrap_total, 3)
-
+        
         # Ensure at least one row exists
         if len(doc.cutting_plan_scrap_transfer) == 0:
             row = doc.append('cutting_plan_scrap_transfer', {})
