@@ -9,8 +9,8 @@ from frappe.utils import getdate, today, flt
 # Update the warehouse names below as needed in your environment.
 SCRAP_WAREHOUSE_BUCKETS = frappe._dict({
 	# "Warehouse Name": "bucket_key"
-	"Misroll Scrap - MS": "rm_scrap",
-	"Cutting Scrap - MS": "rm_scrap",
+	"Misroll Scrap - MS": "end_cut",
+	"Cutting Scrap - MS": "end_cut",
 	"Misroll(Cold Billet) - MS": "miss_roll",
 	"Mis-Roll(Useable) - MS": "reusable_miss_roll",
 })
@@ -25,7 +25,7 @@ def execute(filters=None):
 	columns = get_columns()
 	data = []
 
-	plan_filters = {"docstatus": 1}
+	plan_filters = {"docstatus": 0}
 	# Always restrict to Raw Material Cut Plan as requested
 	plan_filters["cut_plan_type"] = "Finished Cut Plan"
 	if filters.get("company"):
@@ -48,6 +48,7 @@ def execute(filters=None):
 			"ng",
 			"insp_yard_mt",
 			"kvah",
+			"reference_rm_cut_plan"
 		],
 		order_by="date asc, creation asc",
 	)
@@ -62,10 +63,30 @@ def execute(filters=None):
 	by_date = {}
 
 	for plan in plans:
-		finish_rows = frappe.get_all(
+		finish_rows_fg = frappe.get_all(
 			"Cutting Plan Finish",
 			filters={
 				"parent": plan.name,
+				"parenttype": "Cutting Plan",
+				"parentfield": "cutting_plan_finish",
+			},
+			fields=[
+				"name",
+				"item",
+				"fg_item",
+				"qty",
+				"warehouse",
+				"lot_no",
+				"work_order_reference",
+				"return_to_stock",
+			],
+			order_by="idx asc",
+		)
+
+		finish_rows_rm = frappe.get_all(
+			"Cutting Plan Finish",
+			filters={
+				"parent": plan.reference_rm_cut_plan,
 				"parenttype": "Cutting Plan",
 				"parentfield": "cutting_plan_finish",
 			},
@@ -86,11 +107,11 @@ def execute(filters=None):
 		rm_rows = frappe.get_all(
 			"Cut Plan Detail",
 			filters={
-				"parent": plan.name,
+				"parent": plan.reference_rm_cut_plan,
 				"parenttype": "Cutting Plan",
 				"parentfield": "cut_plan_detail",
 			},
-			fields=["qty","is_finished_item", "item_code", "supplier_name"],
+			fields=["qty","is_finished_item", "item_code", "supplier_detail"],
 		)
 
 		# Fetch scrap rows
@@ -98,6 +119,17 @@ def execute(filters=None):
 			"Cutting Plan Scrap Transfer",
 			filters={
 				"parent": plan.name,
+				"parenttype": "Cutting Plan",
+				"parentfield": "cutting_plan_scrap_transfer",
+			},
+			fields=["scrap_qty", "item_code", "target_scrap_warehouse"],
+		)
+
+		# Fetch scrap rows for rm items
+		scrap_rows_rm = frappe.get_all(
+			"Cutting Plan Scrap Transfer",
+			filters={
+				"parent": plan.reference_rm_cut_plan,
 				"parenttype": "Cutting Plan",
 				"parentfield": "cutting_plan_scrap_transfer",
 			},
@@ -139,22 +171,30 @@ def execute(filters=None):
 		# Track Cutting Plan name for grouped display
 		agg["cutting_plans"].add(plan.get("name"))
 
+		for row in finish_rows_rm:
+			qty_val = float(row.get("qty") or 0)
+			if not int(bool(row.get("return_to_stock"))):
+				agg["rm_qty_mt"] += qty_val
+
 		# RM Qty from cut_plan_detail
 		for rm in rm_rows:
-			if rm.is_finished_item != 1:
+			# if rm.is_finished_item != 1:
 				qty = float(rm.get("qty") or 0)
-				agg["rm_qty_mt"] += round(qty, 3)
+			# 	agg["rm_qty_mt"] += round(qty, 3)
 				
 				# Column A: Steel Authority Of India Ltd, Column B: All other suppliers
-				supplier = rm.get("supplier_name") or ""
-				if supplier == "Steel Authority Of India Ltd":
+				supplier = rm.get("supplier_detail") or ""
+				
+				if supplier == "Steel Authority Of India Ltd ":
 					if agg["a_col"] is None:
 						agg["a_col"] = 0.0
 					agg["a_col"] += qty
+					
 				else:
 					if agg["b_col"] is None:
 						agg["b_col"] = 0.0
 					agg["b_col"] += round(qty,3)
+					
 
 		# SIZE from RM item names in cut_plan_detail
 		item_codes = [r.get("item_code") for r in rm_rows if r.get("item_code") and r.is_finished_item==1]
@@ -169,7 +209,7 @@ def execute(filters=None):
 		# FG from finish rows (exclude return_to_stock from FG), NG from Cutting Plan header
 		size_tokens = set()
 
-		for row in finish_rows:
+		for row in finish_rows_fg:
 			# Apply optional row-level filters
 			if filter_item and (row.fg_item or row.item) != filter_item:
 				continue
@@ -207,7 +247,11 @@ def execute(filters=None):
 			elif bucket == "reusable_miss_roll":
 				agg["reusable_miss_roll_mt"] += qty
 			else:
-				agg["rm_scrap"] += qty
+				agg["end_cut_mt"] += qty
+
+		for sc_rm in scrap_rows_rm:
+			qty = float(sc_rm.get("scrap_qty") or 0)
+			agg["rm_scrap"] += qty
 
 		# finalize derived fields for this date after processing the plan
 		# Keep existing size if set from RM items; otherwise fallback to tokens from finish items
@@ -223,7 +267,7 @@ def execute(filters=None):
 			links = [f'<a href="/app/cutting-plan/{name}" target="_blank">{name}</a>' for name in plan_names]
 			agg["cutting_plans"] = ", ".join(links)
 		total_scrap = (
-			agg["rm_scrap"]
+			agg["end_cut_mt"]
 			+ agg["miss_roll_mt"]
 			+ agg["end_cut_mt"]
 			+ agg["insp_yard_mt"]
@@ -232,7 +276,7 @@ def execute(filters=None):
 		rm_qty = float(agg["rm_qty_mt"] or 0)
 		def pct(val, base):
 			return round((float(val) / base * 100.0), 2) if base else 0.0
-		agg["rm_scrap_pct"] = pct(agg["rm_scrap"], rm_qty)
+		agg["end_cut_pct"] = pct(agg["end_cut_mt"], rm_qty)
 		agg["miss_roll_pct"] = pct(agg["miss_roll_mt"], rm_qty)
 		agg["end_cut_pct"] = pct(agg["end_cut_mt"], rm_qty)
 		agg["insp_yard_pct"] = pct(agg["insp_yard_mt"], rm_qty)
@@ -368,6 +412,6 @@ def get_columns():
 def get_scrap_bucket(target_warehouse: str) -> str:
 	"""Return the bucket key for a given target scrap warehouse."""
 	if not target_warehouse:
-		return "rm_scrap"
+		return "end_cut"
 
 	return SCRAP_WAREHOUSE_BUCKETS.get(target_warehouse, "rm_scrap")
