@@ -50,7 +50,8 @@ doctype_js = {
     "BOM": "public/js/bom.js",
     "Sales Order": "public/js/sales_order.js",
     "Work Order": "public/js/work_order.js",
-    "Production Plan": "public/js/production_plan.js"
+    "Production Plan": "public/js/production_plan.js",
+    "Material Request": "public/js/material_request.js"
     # "Purchase Receipt": "public/js/purchase_receipt.js"
 }
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
@@ -187,13 +188,17 @@ doc_events = {
             "madhav.doc_events.purchase_receipt.validation_section_weight",
             # "madhav.doc_events.purchase_receipt.ensure_quality_inspections_submitted"
         ],
-        "on_submit": "madhav.doc_events.purchase_receipt.after_submit",
+        "on_submit": ["madhav.doc_events.purchase_receipt.after_submit",
+                    #    "madhav.doc_events.purchase_receipt.round_off_stock_qty"
+                    ],
         "before_cancel": "madhav.doc_events.stock_entry.cancel_linked_psles"
     },
     "Purchase Order": {
         "before_save": [
-            "madhav.doc_events.purchase_order.validate_limit_on_save"
-        ]
+            "madhav.doc_events.purchase_order.validate_limit_on_save"],
+        # "on_submit": [
+        #     "madhav.doc_events.purchase_order.round_off_stock_qty"
+        #     ]
     },
     "Batch Group":{
         "autoname":"madhav.doc_events.batch_group.autoname"
@@ -228,7 +233,10 @@ doc_events = {
         "validate": "madhav.doc_events.payment_entry.validate_cash_limit",
         "on_submit": "madhav.doc_events.payment_entry.validate_cash_limit",
         
-    } 
+    },
+    # "Material Request": {
+    #     "on_submit": "madhav.doc_events.material_request.round_off_stock_qty"
+    # }
 }
 
 from erpnext.stock.serial_batch_bundle import SerialBatchCreation
