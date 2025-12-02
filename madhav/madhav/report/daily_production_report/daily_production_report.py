@@ -25,7 +25,7 @@ def execute(filters=None):
 	columns = get_columns()
 	data = []
 
-	plan_filters = {"docstatus": 0}
+	plan_filters = {"docstatus": 1}
 	# Always restrict to Raw Material Cut Plan as requested
 	plan_filters["cut_plan_type"] = "Finished Cut Plan"
 	if filters.get("company"):
