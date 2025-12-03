@@ -114,6 +114,16 @@ def execute(filters=None):
 			fields=["qty","is_finished_item", "item_code", "supplier_detail"],
 		)
 
+		fg_rows = frappe.get_all(
+			"Cut Plan Detail",
+			filters={
+				"parent": plan.name,
+				"parenttype": "Cutting Plan",
+				"parentfield": "cut_plan_detail",
+			},
+			fields=["qty","is_finished_item", "item_code", "supplier_detail"],
+		)
+
 		# Fetch scrap rows
 		scrap_rows = frappe.get_all(
 			"Cutting Plan Scrap Transfer",
@@ -197,7 +207,7 @@ def execute(filters=None):
 					
 
 		# SIZE from RM item names in cut_plan_detail
-		item_codes = [r.get("item_code") for r in rm_rows if r.get("item_code") and r.is_finished_item==1]
+		item_codes = [r.get("item_code") for r in fg_rows if r.get("item_code") and r.is_finished_item==1]
 		if item_codes:
 			item_names = {}
 			for it in frappe.get_all("Item", filters={"name": ("in", item_codes)}, fields=["name", "item_name"]):
