@@ -251,7 +251,7 @@ def execute(filters=None):
 
 		for sc_rm in scrap_rows_rm:
 			qty = float(sc_rm.get("scrap_qty") or 0)
-			agg["rm_scrap_mt"] += qty
+			agg["rm_scrap"] += qty
 
 		# finalize derived fields for this date after processing the plan
 		# Keep existing size if set from RM items; otherwise fallback to tokens from finish items
@@ -276,7 +276,7 @@ def execute(filters=None):
 		rm_qty = float(agg["rm_qty_mt"] or 0)
 		def pct(val, base):
 			return round((float(val) / base * 100.0), 2) if base else 0.0
-		agg["rm_scrap_pct"] = pct(agg["rm_scrap_mt"], rm_qty)
+		agg["rm_scrap_pct"] = pct(agg["rm_scrap"], rm_qty)
 		agg["miss_roll_pct"] = pct(agg["miss_roll_mt"], rm_qty)
 		agg["end_cut_pct"] = pct(agg["end_cut_mt"], rm_qty)
 		agg["insp_yard_pct"] = pct(agg["insp_yard_mt"], rm_qty)
