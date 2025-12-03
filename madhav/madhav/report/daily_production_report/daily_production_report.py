@@ -275,7 +275,7 @@ def execute(filters=None):
 		agg["total_scrap_mt"] = round(total_scrap, 3)
 		rm_qty = float(agg["rm_qty_mt"] or 0)
 		def pct(val, base):
-			return round((float(val) / base * 100.0), 2) if base else 0.0
+			return round((float(val) / base * 100.0), 3) if base else 0.0
 		agg["rm_scrap_pct"] = pct(agg["rm_scrap"], rm_qty)
 		agg["miss_roll_pct"] = pct(agg["miss_roll_mt"], rm_qty)
 		agg["end_cut_pct"] = pct(agg["end_cut_mt"], rm_qty)
