@@ -70,6 +70,10 @@ class CuttingPlan(Document):
     def validate(self):
         # Auto-set customer if field exists and is empty
         # set_customer_on_cutting_plan(self)
+
+        if self.cut_plan_type == "Raw Material Cut Plan":
+            set_qty_cut_plan_detail(self)
+
         if self.workflow_state in ["RM Allocated( Material Transfer Submitted)", "Cut plan pending", "Cut-plan Done",]:
             self.validate_material_transfer_before_approve()
 
@@ -94,7 +98,7 @@ class CuttingPlan(Document):
 
         # On save: update header totals and process loss for Finished Cut Plan
         if getattr(self, 'cut_plan_type', None) == "Finished Cut Plan":
-            # set_qty_cut_plan_detail(self)
+            
             set_fgsection_weight(self)
             set_difference_percentage_for_finished_rows(self)
             validate_manual_qty_tolerance(self)
@@ -1279,11 +1283,17 @@ def set_fgsection_weight(doc):
 
 
 def set_qty_cut_plan_detail(doc):
+    total_qty_detail = 0.0
+        
     for row in doc.cut_plan_detail:
         row.db_set('length_size', row.length_size_inch/39.37, update_modified=False)
         
-        cal_qty =  row.pieces * row.length_size * row.section_weight
+        cal_qty =  row.pieces * row.length_size * row.section_weight*39.37
         row.db_set('qty', cal_qty/1000, update_modified=False)
+
+        total_qty_detail += float(getattr(row, 'qty', 0) or 0)
+
+    doc.db_set('total_qty', total_qty_detail, update_modified=False)
 
 
 def set_difference_percentage_for_finished_rows(doc):
