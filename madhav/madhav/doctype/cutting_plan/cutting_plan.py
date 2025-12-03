@@ -1287,8 +1287,9 @@ def set_qty_cut_plan_detail(doc):
         
     for row in doc.cut_plan_detail:
         row.db_set('length_size', row.length_size_inch/39.37, update_modified=False)
+        row.db_set('section_weight', row.section_weight_inch*39.37, update_modified=False)
         
-        cal_qty =  row.pieces * row.length_size_inch/39.37 * row.section_weight*39.37
+        cal_qty =  row.pieces * row.length_size * row.section_weight
         row.db_set('qty', cal_qty/1000, update_modified=False)
 
         total_qty_detail += float(getattr(row, 'qty', 0) or 0)
