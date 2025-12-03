@@ -178,14 +178,28 @@ def get_item_map(filters):
 	filter_warehouse = ''
 
 	if filters.get('warehouse'):
-		filter_warehouse = " and b.warehouse = '{}'".format(filters.warehouse)
+		filter_warehouse = " and sle.warehouse = '{}'".format(filters.warehouse)
 
+	# Modified query to calculate from Stock Ledger Entry excluding cancelled entries
 	data = frappe.db.sql(f"""
-		select b.item_code, sum(actual_qty) as qty, sum(stock_value) as value
-		from `tabBin` as b JOIN `tabWarehouse` as w on w.name = b.warehouse
-		where w.company = '{filters.company}'{filter_warehouse}
-		group by b.item_code
-	""", as_dict = 1)
+		select 
+			sle.item_code, 
+			sum(sle.actual_qty) as qty, 
+			sum(sle.stock_value_difference) as value
+		from 
+			`tabStock Ledger Entry` as sle
+		JOIN 
+			`tabWarehouse` as w on w.name = sle.warehouse
+		where 
+			w.company = '{filters.company}'
+			and sle.is_cancelled = 0
+			and sle.docstatus < 2
+			{filter_warehouse}
+		group by 
+			sle.item_code
+		having
+			sum(sle.actual_qty) != 0
+	""", as_dict=1)
 
 	item_map = {}
 
