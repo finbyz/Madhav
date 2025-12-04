@@ -51,7 +51,7 @@ doctype_js = {
     "Sales Order": "public/js/sales_order.js",
     "Work Order": "public/js/work_order.js",
     "Production Plan": "public/js/production_plan.js",
-    "Material Request": "public/js/material_request.js"
+    "Material Request": "public/js/material_request.js",
     # "Purchase Receipt": "public/js/purchase_receipt.js"
 }
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
@@ -176,7 +176,7 @@ doc_events = {
     "Purchase Receipt": {
         "before_save": [
             "madhav.doc_events.purchase_receipt.set_actual_rate_per_kg",
-            "madhav.doc_events.purchase_receipt.round_off_stock_qty",
+            # "madhav.doc_events.purchase_receipt.round_off_stock_qty",
             "madhav.doc_events.purchase_receipt.validate_limit_on_save",
             # "madhav.doc_events.purchase_receipt.prevent_edit_after_quality_inspection"
         ],
@@ -237,6 +237,9 @@ doc_events = {
     # "Material Request": {
     #     "on_submit": "madhav.doc_events.material_request.round_off_stock_qty"
     # }
+    "Quality Inspection": {
+        "on_submit": "madhav.doc_events.quality_inspection.update_purchase_receipt_quantities"
+    }
 }
 
 from erpnext.stock.serial_batch_bundle import SerialBatchCreation
