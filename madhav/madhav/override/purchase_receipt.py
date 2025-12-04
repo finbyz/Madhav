@@ -8,7 +8,7 @@ class PurchaseReceipt(_PurchaseReceipt):
 
     def validate(self):
         """Allow UOM different from Purchase Order by auto-setting conversion_factor/stock_qty."""
-        super().validate()
+        # super().validate()
         # Allow using the same supplier_delivery_note if any previous PRs with that note are cancelled
         if getattr(self, "supplier_delivery_note", None):
             
