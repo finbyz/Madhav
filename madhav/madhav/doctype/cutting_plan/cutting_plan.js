@@ -505,7 +505,22 @@ function set_reference_rm_cut_plan(frm, work_orders) {
 		];
 
 		if (unique_refs.length === 1) {
-			frappe.model.set_value(frm.doctype, frm.docname, 'reference_rm_cut_plan', unique_refs[0]);
+			frappe.db.get_value('Cutting Plan', unique_refs[0], 'cut_plan_type')
+				.then((r) => {
+					if (r.message && r.message.cut_plan_type === 'Finished Cut Plan') {
+						frappe.msgprint({
+							title: __('Invalid Reference'),
+							message: __(
+								'The reference RM Cutting Plan ({0}) cannot be a Finished Cut Plan. Please select Work Orders with a valid RM Cut Plan reference.',
+								[unique_refs[0]]
+							),
+							indicator: 'red',
+						});
+						frappe.model.set_value(frm.doctype, frm.docname, 'reference_rm_cut_plan', '');
+					} else {
+						frappe.model.set_value(frm.doctype, frm.docname, 'reference_rm_cut_plan', unique_refs[0]);
+					}
+				});
 		} else if (unique_refs.length > 1) {
 			frappe.msgprint({
 				title: __('Multiple RM Cut Plans Detected'),
