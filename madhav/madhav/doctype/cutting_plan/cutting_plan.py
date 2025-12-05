@@ -1250,8 +1250,8 @@ def update_process_loss_qty(doc):
         rm_qty = get_total_qty_for_rm_cut_plan(rm_ref)
 
         # FG quantity from this Finished Cut Plan - prefer header field if present
-        fg_qty = float(getattr(doc, "cut_plan_total_qty", 0) or 0)
-        if not fg_qty and getattr(doc, "cutting_plan_finish", None):
+        fg_qty = float(getattr(doc, "total_qty", 0) or 0)
+        if not fg_qty and getattr(doc, "cut_plan_detail", None):
             fg_qty = sum(float(getattr(row, "qty", 0) or 0) for row in doc.cutting_plan_finish)
 
         process_loss = rm_qty - fg_qty
