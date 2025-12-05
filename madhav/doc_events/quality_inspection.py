@@ -10,7 +10,7 @@ def update_purchase_receipt_quantities(qi, method):
         return
 
     # Fetch corresponding Purchase Receipt Item row
-    pr_item = frappe.db.get_value(
+    pr_item_name = frappe.db.get_value(
         "Purchase Receipt Item",
         {
             "parent": qi.reference_name,
@@ -19,27 +19,19 @@ def update_purchase_receipt_quantities(qi, method):
         "name"
     )
 
-    if not pr_item:
+    if not pr_item_name:
         frappe.throw(
             f"No Purchase Receipt Item found for {qi.reference_name} and item {qi.item_code}"
         )
 
+    # Load the Purchase Receipt Item document
+    pr_item = frappe.get_doc("Purchase Receipt Item", pr_item_name)
+
     # accepted_qty = sample_size
-    accepted_qty = qi.sample_size or 0
+    pr_item.qty = qi.sample_size or 0
 
     # rejected_qty = rejected_qty from QI
-    rejected_qty = qi.rejected_qty or 0
+    pr_item.rejected_qty = qi.rejected_qty or 0
 
-    # Update Purchase Receipt Item fields
-    frappe.db.set_value("Purchase Receipt Item", pr_item, {
-        "qty": accepted_qty,
-        "rejected_qty": rejected_qty
-    })
-
-    frappe.db.commit()
-
-    frappe.msgprint(
-        f"Updated Purchase Receipt Item:<br>"
-        f"<b>Accepted Qty:</b> {accepted_qty}<br>"
-        f"<b>Rejected Qty:</b> {rejected_qty}"
-    )
+    # Save the child table row (commits automatically if inside a larger transaction)
+    pr_item.save()
