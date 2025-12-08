@@ -62,6 +62,7 @@ class CuttingPlan(Document):
             self.workflow_state in ["Finished Cut Plan Done"]):
             validate_completed_wo(self)        
             set_burning_loss(self)
+            set_burning_loss_percentage(self)
         
         # If stock entry reference was set/changed, update table immediately
         if self.has_value_changed("stock_entry_reference"):
@@ -1442,7 +1443,7 @@ def set_burning_loss(self):
     rm_qty = float(getattr(self, 'total_qty', 0) or 0)
     fg_qty = float(getattr(self, 'cut_plan_total_qty', 0) or 0)
 
-     # Initialize scrap quantities
+    # Initialize scrap quantities
     useable_scrap_qty = 0.0
     cold_billet_scrap_qty = 0.0
     overall_scrap_qty = 0.0
@@ -1473,3 +1474,18 @@ def set_burning_loss(self):
     burning_loss = round(burning_loss - overall_scrap_qty - misroll_scrap_qty, 3)
     
     self.db_set("burning_loss",burning_loss)
+
+
+def set_burning_loss_percentage(self):
+    """Set burning loss percentage using qty from referenced RM Cut Plan (excluding return to stock)."""
+    rm_cut_plan = getattr(self, "reference_rm_cut_plan", None)
+    burning_loss_qty = float(getattr(self, "burning_loss", 0) or 0)
+
+    if not rm_cut_plan:
+        percent = 0.0
+    else:
+        rm_qty = get_total_qty_for_rm_cut_plan(rm_cut_plan)
+        percent = round((burning_loss_qty / rm_qty) * 100, 3) if rm_qty else 0.0
+
+    if hasattr(self, "burning_loss_"):
+        self.db_set("burning_loss_", percent)

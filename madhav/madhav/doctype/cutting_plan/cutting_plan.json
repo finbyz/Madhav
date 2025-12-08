@@ -42,6 +42,8 @@
   "cut_plan_finish",
   "section_break_g9bv",
   "burning_loss",
+  "column_break_ivho",
+  "burning_loss_",
   "amended_from",
   "naming_series",
   "workflow_state"
@@ -292,6 +294,16 @@
    "fieldtype": "Float",
    "label": "Process Loss Qty",
    "read_only": 1
+  },
+  {
+   "fieldname": "column_break_ivho",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "burning_loss_",
+   "fieldtype": "Percent",
+   "label": "Burning Loss (%)",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
@@ -307,7 +319,7 @@
    "link_fieldname": "cutting_plan_reference"
   }
  ],
- "modified": "2025-11-28 18:44:15.765668",
+ "modified": "2025-12-08 17:59:20.637106",
  "modified_by": "Administrator",
  "module": "Madhav",
  "name": "Cutting Plan",
