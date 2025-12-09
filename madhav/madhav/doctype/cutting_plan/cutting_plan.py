@@ -105,6 +105,8 @@ class CuttingPlan(Document):
             validate_manual_qty_tolerance(self)
             update_process_loss_qty(self)
             update_header_totals_for_finished_cut_plan(self)
+            set_burning_loss(self)
+            set_burning_loss_percentage(self)
                
     def validate_material_transfer_before_approve(self):
         """Check if linked Material Transfer Stock Entry is submitted"""
