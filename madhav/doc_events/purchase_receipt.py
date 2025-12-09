@@ -39,6 +39,10 @@ def validate_limit_on_save(self, method):
         if pr_stock_qty <= 0:
             continue
 
+        # If proposed total is still within ordered qty (considering precision), allow
+        precision = d.precision("stock_qty") or 3
+        tolerance = 1 / (10 ** precision)
+
         # Sum already received qty across other PRs (draft + submitted), exclude this row
         already_received = frappe.db.sql(
             """
@@ -54,6 +58,9 @@ def validate_limit_on_save(self, method):
 
         # Proposed total including current row's qty
         proposed_total = flt(already_received) + flt(d.get("stock_qty") or 0.0)
+
+        if proposed_total <= pr_stock_qty + tolerance:
+            continue
 
         # Allowed with tolerance
         max_allowed = pr_stock_qty * (100.0 + pr_qty_allowance) / 100.0
@@ -73,14 +80,18 @@ def validate_limit_on_save(self, method):
             )
             frappe.throw(msg + "<br><br>" + action_msg, OverAllowanceError, title=_("Limit Crossed"))
 
-def round_off_stock_qty(self,method):
-    return
-    for item in self.items:
-        if item.stock_qty:
-            item.db_set("stock_qty", round(item.stock_qty))
-            item.db_set("received_stock_qty", round(item.received_stock_qty))
-            
-
+def round_off_stock_qty(doc, method=None):
+	"""Round stock_qty for rows where UOM is Kg and stock UOM is Nos."""
+	
+	for row in doc.items or []:
+		if (row.get("uom") or "").lower() == "kg" and (row.get("stock_uom") or "").lower() == "nos":
+			if row.get("stock_qty") is not None:
+				row.db_set("stock_qty", round(flt(row.stock_qty)))
+			
+			# check before setting received_stock_qty
+			if row.get("received_stock_qty") is not None:
+				row.db_set("received_stock_qty", round(flt(row.received_stock_qty)))
+                
 def set_actual_rate_per_kg(self, method):
     """
     Set actual_rate_per_kg on Purchase Receipt Item 
