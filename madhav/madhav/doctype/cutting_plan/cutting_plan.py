@@ -1434,7 +1434,7 @@ def validate_cutting_plan_finish_row_constraints(doc):
 
 def set_burning_loss(self):
 
-    rm_qty = float(getattr(self, 'total_qty', 0) or 0)
+    rm_qty = float(getattr(self, 'total_qty', 0) or 0) + float(getattr(self, 'process_loss_qty', 0) or 0)
     fg_qty = float(getattr(self, 'cut_plan_total_qty', 0) or 0)
 
     # Initialize scrap quantities
