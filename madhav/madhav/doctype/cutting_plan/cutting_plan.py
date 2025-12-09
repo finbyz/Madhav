@@ -1162,8 +1162,7 @@ def update_header_totals_for_finished_cut_plan(doc):
 
     - total_qty: sum of qty in `cut_plan_detail`
     - cut_plan_total_qty: sum of manual_qty in `cutting_plan_finish`
-    - scrap_qty: (total_qty + process_loss_qty - cut_plan_total_qty)
-                 minus sum of qty from rows 2+ in first row of `cutting_plan_scrap_transfer`
+    - scrap_qty (first row only): set once when empty/first created; user edits are preserved
     """
     try:
         # Calculate total qty from cut_plan_detail
@@ -1183,10 +1182,6 @@ def update_header_totals_for_finished_cut_plan(doc):
         total_qty_detail = round(total_qty_detail, 3)
         total_qty_finish = round(total_qty_finish, 3)
         
-        # Calculate base scrap qty
-        process_loss = float(getattr(doc, "process_loss_qty", 0) or 0)
-        base_scrap_qty = round((total_qty_detail + process_loss) - total_qty_finish, 3)
-        
         # Update header fields
         if doc.docstatus == 0:  # Draft
             doc.total_qty = total_qty_detail
@@ -1195,32 +1190,29 @@ def update_header_totals_for_finished_cut_plan(doc):
             doc.db_set('total_qty', total_qty_detail, update_modified=False)
             doc.db_set('cut_plan_total_qty', total_qty_finish, update_modified=False)
 
-        # Update scrap transfer table
-        # Initialize table if it doesn't exist
+        # Set first-row scrap qty only once; do not overwrite user edits
         if not hasattr(doc, 'cutting_plan_scrap_transfer'):
             doc.cutting_plan_scrap_transfer = []
 
-        # Calculate sum of scrap_qty from rows 2 onwards (index 1+)
-        other_rows_scrap_total = 0.0
-        if len(doc.cutting_plan_scrap_transfer) > 1:
-            for i in range(1, len(doc.cutting_plan_scrap_transfer)):
-                row = doc.cutting_plan_scrap_transfer[i]
-                other_rows_scrap_total += float(getattr(row, 'scrap_qty', 0) or 0)
-        
-        # Calculate final scrap qty for first row
-        final_scrap_qty = round(base_scrap_qty - other_rows_scrap_total, 3)
-        
-        # Ensure at least one row exists
         if len(doc.cutting_plan_scrap_transfer) == 0:
+            process_loss = float(getattr(doc, "process_loss_qty", 0) or 0)
+            base_scrap_qty = round((total_qty_detail + process_loss) - total_qty_finish, 3)
             row = doc.append('cutting_plan_scrap_transfer', {})
+            initial_scrap_qty = base_scrap_qty if base_scrap_qty > 0 else 0
+            if doc.docstatus == 0:
+                row.scrap_qty = initial_scrap_qty
+            else:
+                row.db_set('scrap_qty', initial_scrap_qty, update_modified=False)
         else:
-            row = doc.cutting_plan_scrap_transfer[0]
-
-        # Update scrap_qty in first row
-        if doc.docstatus == 0:  # Draft
-            row.scrap_qty = final_scrap_qty if final_scrap_qty > 0 else 0
-        else:  # Submitted or Cancelled
-            row.db_set('scrap_qty', final_scrap_qty if final_scrap_qty > 0 else 0, update_modified=False)
+            first_row = doc.cutting_plan_scrap_transfer[0]
+            if first_row.get('scrap_qty') in (None, ""):
+                process_loss = float(getattr(doc, "process_loss_qty", 0) or 0)
+                base_scrap_qty = round((total_qty_detail + process_loss) - total_qty_finish, 3)
+                initial_scrap_qty = base_scrap_qty if base_scrap_qty > 0 else 0
+                if doc.docstatus == 0:
+                    first_row.scrap_qty = initial_scrap_qty
+                else:
+                    first_row.db_set('scrap_qty', initial_scrap_qty, update_modified=False)
 
     except Exception as e:
         frappe.log_error(
