@@ -313,7 +313,7 @@ def validation_section_weight(doc, method):
     missing_standard = []
 
     for d in doc.items:
-        if not d.item_code:
+        if not d.item_code or d.item_group == "TRADING":
             continue
 
         standard_section_weight = frappe.db.get_value("Item", d.item_code, "weight_per_meter")
