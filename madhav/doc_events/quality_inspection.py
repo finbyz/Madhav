@@ -28,10 +28,12 @@ def update_purchase_receipt_quantities(qi, method):
     pr_item = frappe.get_doc("Purchase Receipt Item", pr_item_name)
 
     # accepted_qty = sample_size
-    pr_item.qty = qi.sample_size or 0
+    # pr_item.qty = qi.sample_size or 0
+    pr_item.qty = qi.accepted_qty or 0
 
     # rejected_qty = rejected_qty from QI
     pr_item.rejected_qty = qi.rejected_qty or 0
+    
 
     # Save the child table row (commits automatically if inside a larger transaction)
     pr_item.save()
