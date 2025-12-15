@@ -97,6 +97,9 @@ class CuttingPlan(Document):
         # Validate cutting plan finish row constraints (semi_fg_length and length sizes)
         validate_cutting_plan_finish_row_constraints(self)
 
+        # Validate return-to-stock finish rows use an existing length size for the same FG item
+        validate_return_to_stock_length_sizes(self)
+
         # On save: update header totals and process loss for Finished Cut Plan
         if getattr(self, 'cut_plan_type', None) == "Finished Cut Plan":
             
@@ -1428,6 +1431,65 @@ def validate_cutting_plan_finish_row_constraints(doc):
     except Exception as e:
         frappe.log_error(
             title="Cutting Plan Finish Row Constraints Validation Error",
+            message=f"Doc: {getattr(doc, 'name', '')} Error: {str(e)}\n{frappe.get_traceback()}"
+        )
+
+
+def validate_return_to_stock_length_sizes(doc):
+    """Ensure return_to_stock rows use a length_size that already exists for the same FG item.
+
+    Applies only to Finished Cut Plan:
+    - Collect length_size (rounded to 3dp) from non-return_to_stock rows per fg_item.
+    - For rows marked return_to_stock, length_size must match one of the collected values.
+    """
+    if getattr(doc, 'cut_plan_type', None) != "Finished Cut Plan":
+        return
+    if not getattr(doc, 'cutting_plan_finish', None):
+        return
+
+    try:
+        precision = 3
+        allowed_by_fg = {}
+
+        # Collect allowed lengths from non-return rows
+        for row in doc.cutting_plan_finish:
+            if getattr(row, "return_to_stock", 0):
+                continue
+            fg_item = getattr(row, "fg_item", None) or getattr(row, "item", None)
+            length = getattr(row, "length_size", None)
+            if fg_item and length is not None:
+                length_val = round(float(length or 0), precision)
+                allowed_by_fg.setdefault(fg_item, set()).add(length_val)
+
+        if not allowed_by_fg:
+            return
+
+        errors = []
+        for row in doc.cutting_plan_finish:
+            if not getattr(row, "return_to_stock", 0):
+                continue
+            fg_item = getattr(row, "fg_item", None) or getattr(row, "item", None)
+            length = getattr(row, "length_size", None)
+            if not fg_item or length is None:
+                continue
+
+            length_val = round(float(length or 0), precision)
+            allowed_lengths = allowed_by_fg.get(fg_item, set())
+
+            if allowed_lengths and length_val not in allowed_lengths:
+                allowed_display = ", ".join(f"{val:.3f}" for val in sorted(allowed_lengths))
+                errors.append(
+                    _(
+                        "Row #{0}: Return to Stock length {1:.3f} m for FG Item {2} must match existing length size(s): {3}"
+                    ).format(row.idx, length_val, fg_item, allowed_display)
+                )
+
+        if errors:
+            frappe.throw("<br>".join(errors), title=_("Invalid Return to Stock Length Size"))
+
+    except Exception as e:
+        frappe.log_error(
+            title="Cutting Plan Return-to-Stock Length Validation Error",
             message=f"Doc: {getattr(doc, 'name', '')} Error: {str(e)}\n{frappe.get_traceback()}"
         )
 
