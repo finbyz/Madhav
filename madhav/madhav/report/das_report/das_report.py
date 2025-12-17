@@ -93,36 +93,43 @@ def get_data(filters):
     
     data = frappe.db.sql("""
         SELECT
-            posting_date as date,
-            customer_name as particulars,
+            si.posting_date as date,
+            si.customer_name as particulars,
             'Sales Invoice' as voucher_type,
-            name as voucher_no,
+            si.name as voucher_no,
             '' as voucher_ref_no,
-			vehicle_no as vehicle_no,
-			total_qty as total_qty,
-			grand_total as grand_total,
+            si.vehicle_no as vehicle_no,
+            si.total_qty as total_qty,
+            si.grand_total as grand_total,
             CASE 
-                WHEN po_no IS NOT NULL AND po_date IS NOT NULL 
-                THEN CONCAT(po_no, ' / ', DATE_FORMAT(po_date, '%%d-%%b-%%y'))
-                WHEN po_no IS NOT NULL 
-                THEN po_no
+                WHEN so.name IS NOT NULL AND so.transaction_date IS NOT NULL 
+                THEN CONCAT(so.name, ' / ', DATE_FORMAT(so.transaction_date, '%%d-%%b-%%y'))
+                WHEN si.po_no IS NOT NULL AND si.po_date IS NOT NULL 
+                THEN CONCAT(si.po_no, ' / ', DATE_FORMAT(si.po_date, '%%d-%%b-%%y'))
+                WHEN si.po_no IS NOT NULL 
+                THEN si.po_no
                 ELSE ''
             END as order_no_date,
-            IFNULL(payment_terms_template, '') as terms_of_payment,
+            IFNULL(si.payment_terms_template, '') as terms_of_payment,
             '' as other_references,
-            tc_name as terms
+            si.tc_name as terms
         FROM
-            `tabSales Invoice`
+            `tabSales Invoice` si
+        LEFT JOIN
+            `tabSales Invoice Item` sii ON sii.parent = si.name
+        LEFT JOIN
+            `tabSales Order` so ON so.name = sii.sales_order
         WHERE
-            docstatus = 1
+            si.docstatus = 1
             {conditions}
+        GROUP BY
+            si.name
         ORDER BY
-            posting_date, name
+            si.posting_date, si.name
     """.format(conditions=conditions), filters, as_dict=1)
     
     # Add totals row
     if data:
-		
         data.append({
             "date": "",
             "particulars": "<b>Total</b>",
@@ -133,9 +140,9 @@ def get_data(filters):
             "terms_of_payment": "",
             "other_references": "",
             "terms": "",
-			"vehicle_no": "",
-			"total_qty": sum([row.get('total_qty', 0) or 0 for row in data]),
-			"grand_total": sum([row.get('grand_total', 0) or 0 for row in data])
+            "vehicle_no": "",
+            "total_qty": sum([row.get('total_qty', 0) or 0 for row in data]),
+            "grand_total": sum([row.get('grand_total', 0) or 0 for row in data])
         })
     
     return data

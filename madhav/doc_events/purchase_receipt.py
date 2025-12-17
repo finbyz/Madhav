@@ -162,7 +162,7 @@ def prevent_edit_after_quality_inspection(doc, method):
         return
     
     frappe.throw(
-        _("Purchase Receipt {0} is locked because Quality Inspection {1} already exists. Submit the Quality Inspections to proceed.")
+        _("Purchase Receipt {0} is locked because Quality Inspection {1} already exists.")
         .format(doc.name, ", ".join(linked_qis))
     )
 

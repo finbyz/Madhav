@@ -21,6 +21,25 @@ def autoname(doc, method):
         if doc.reference_doctype == "Stock Entry":
             stock_entry = frappe.get_doc("Stock Entry", doc.reference_name)
 
+            # Special case: FG Free Length Transfer cum Cutting Entry → MSFGYY-0000001 style
+            if (
+                stock_entry.stock_entry_type
+                == "FG Free Length Transfer cum Cutting Entry"
+                and company == "MADHAV STELCO PRIVATE LIMITED"
+            ):
+                posting_date = getattr(stock_entry, "posting_date", None)
+                if posting_date:
+                    year_suffix = str(posting_date.year)[-2:]
+                else:
+                    year_suffix = frappe.utils.now_datetime().strftime("%y")
+
+                # Use standard series pattern with a dot before hashes
+                # to generate names like MSFG25-0000001
+                series_prefix = f"MSFG{year_suffix}-."
+                doc.name = make_autoname(series_prefix + "#######")
+                doc.batch_id = doc.name
+                return
+
             # Check if from Cutting Plan & if reference_detail_no exists
             if getattr(stock_entry, 'cutting_plan_reference', None) and getattr(doc, "reference_detail_no", None):
                 sed = frappe.get_doc("Stock Entry Detail", doc.reference_detail_no)

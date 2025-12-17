@@ -1,5 +1,30 @@
 import frappe
 
+
+@frappe.whitelist()
+def get_so_item_pieces_and_length(so_detail: str):
+	"""Return pieces, length_size and qty from Sales Order Item.
+
+	This is used by the Delivery Note client script to safely fetch
+	values without calling frappe.client.get_value from JS.
+	"""
+	if not so_detail:
+		return {}
+
+	pieces, length_size, qty = frappe.db.get_value(
+		"Sales Order Item",
+		so_detail,
+		["pieces", "length_size", "qty"],
+	) or (None, None, None)
+
+	return {
+		"pieces": pieces,
+		"length_size": length_size,
+		"qty": qty,
+	}
+
+import frappe
+
 import frappe
 from frappe.utils import get_datetime, get_datetime_str
 from datetime import datetime, timedelta

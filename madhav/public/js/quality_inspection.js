@@ -4,6 +4,14 @@ frappe.ui.form.on("Quality Inspection", {
 		if(!frm.doc.inspected_by) {
 			frm.set_value("inspected_by", frappe.session.user);
 		}
+
+		// Store original sample size from PR to enforce max limit
+		if (frm.is_new() && frm.doc.sample_size) {
+			frm._max_sample_size_from_pr = frm.doc.sample_size;
+		} else if (!frm._max_sample_size_from_pr && frm.doc.sample_size) {
+			// Fallback: first time we see a value on existing doc
+			frm._max_sample_size_from_pr = frm.doc.sample_size;
+		}
 	},
 
 	rejected_qty(frm) {
@@ -11,6 +19,17 @@ frappe.ui.form.on("Quality Inspection", {
 	},
 
 	sample_size(frm) {
+		const entered = parseFloat(frm.doc.sample_size) || 0;
+		const max_allowed = parseFloat(frm._max_sample_size_from_pr) || 0;
+
+		if (max_allowed && entered > max_allowed) {
+			frappe.msgprint({
+				message: __("You are not allowed to set Sample Size more than {0}.", [max_allowed]),
+				indicator: "red",
+			});
+			frm.set_value("sample_size", max_allowed);
+		}
+
 		update_accepted_qty(frm);
 	},
 });
