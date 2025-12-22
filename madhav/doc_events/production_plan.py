@@ -12,6 +12,7 @@ def duplicate_po_items_to_assembly_items_without_consolidate(doc, method):
 
     fields_to_copy = [
         "item_code",
+        "section_weight",
         "bom_no",
         "planned_qty",
         "pending_qty",
@@ -27,6 +28,7 @@ def duplicate_po_items_to_assembly_items_without_consolidate(doc, method):
         "description",
         "customer",
         "customer_name",
+        "customers_purchase_order",
     ]
 
     for row in doc.get("po_items"):
@@ -48,6 +50,7 @@ def consolidate_assembly_items(doc, method):
             consolidated_items[item_code]['planned_qty'] += item.planned_qty or 0
             consolidated_items[item_code]['pieces'] += item.pieces or 0
             consolidated_items[item_code]['length'] += item.length or 0
+            consolidated_items[item_code]['length_size_m'] += item.length_size_m or 0
             
             if item.bom_no and not consolidated_items[item_code]['bom_no']:
                 consolidated_items[item_code]['bom_no'] = item.bom_no
@@ -60,6 +63,7 @@ def consolidate_assembly_items(doc, method):
                 'planned_qty': item.planned_qty or 0,
                 'pieces': item.pieces or 0,
                 'length': item.length or 0,
+                'length_size_m': item.length_size_m or 0,
                 'stock_uom': item.stock_uom,
                 'warehouse': item.warehouse,
                 'planned_start_date': item.planned_start_date                
@@ -69,12 +73,17 @@ def consolidate_assembly_items(doc, method):
     doc.po_items = []    
     
     for item_code, consolidated_item in consolidated_items.items():
+        if frappe.db.get_value("Item", item_code, "weight_per_meter"):
+            section_weight = frappe.db.get_value("Item", item_code, "weight_per_meter")
+            
         doc.append('po_items', {
             'item_code': consolidated_item['item_code'],
+            'section_weight': section_weight,
             'bom_no': consolidated_item['bom_no'],
             'planned_qty': consolidated_item['planned_qty'],
             'pieces': consolidated_item['pieces'],
             'length': consolidated_item['length'],
+            'length_size_m': consolidated_item['length_size_m'],
             'stock_uom': consolidated_item['stock_uom'],
             'warehouse': consolidated_item['warehouse'],
             'planned_start_date': consolidated_item['planned_start_date']            

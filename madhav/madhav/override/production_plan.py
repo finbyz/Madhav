@@ -38,6 +38,7 @@ class CustomProductionPlan(ERPNextProductionPlan):
                     as_dict=True
                 )
                 if so_item:
+                    row.section_weight = frappe.db.get_value("Item", row.item_code, "weight_per_meter")
                     row.pieces = so_item.pieces or 0
                     # Convert and store in inches as required for po_items
                     if  so_item.length_size:
@@ -48,9 +49,10 @@ class CustomProductionPlan(ERPNextProductionPlan):
                 so_details = frappe.db.get_value(
                     "Sales Order",
                     row.sales_order,
-                    ["customer", "customer_name"],
+                    ["customer", "customer_name","po_no"],
                     as_dict=True
                 )
                 if so_details:
                     row.customer = so_details.customer or ""
                     row.customer_name = so_details.customer_name or ""
+                    row.customers_purchase_order = so_details.po_no or ""
