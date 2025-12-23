@@ -36,6 +36,55 @@ frappe.ui.form.on('Production Plan', {
                 }, 1000);
             });
         }
-    }
+    },
+    get_sales_orders(frm) {
+        // Delay required because rows are added asynchronously
+        setTimeout(() => {
+            populate_customer_names(frm);
+        }, 500);
+    },
 });
 
+function populate_customer_names(frm) {
+    (frm.doc.sales_orders || []).forEach(row => {
+        if (row.sales_order && !row.customer_name) {
+            frappe.db.get_value(
+                "Sales Order",
+                row.sales_order,
+                ["customer", "customer_name"],
+                (r) => {
+                    if (r) {
+                        row.customer = r.customer;
+                        row.customer_name = r.customer_name;
+                        frm.refresh_field("sales_orders");
+                    }
+                }
+            );
+        }
+    });
+}
+
+frappe.ui.form.on("Production Plan Sales Order", {
+    sales_order(frm, cdt, cdn) {
+        const row = locals[cdt][cdn];
+
+        if (!row.sales_order) {
+            row.customer_name = "";
+            frm.refresh_field("sales_orders");
+            return;
+        }
+
+        frappe.db.get_value(
+            "Sales Order",
+            row.sales_order,
+            ["customer", "customer_name"],
+            (r) => {
+                if (r) {
+                    row.customer = r.customer;
+                    row.customer_name = r.customer_name;
+                    frm.refresh_field("sales_orders");
+                }
+            }
+        );
+    }
+});
