@@ -1,4 +1,8 @@
 frappe.ui.form.on("Quality Inspection", {
+	validate: function(frm) {
+		// Ensure accepted_qty is correctly calculated before saving
+		update_accepted_qty(frm);
+	},
 	refresh(frm) {
 		// Set inspected_by once when creating a new Quality Inspection
 		if(!frm.doc.inspected_by) {
