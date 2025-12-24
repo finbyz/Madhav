@@ -61,7 +61,7 @@ def make_stock_entry(work_order_id, purpose, qty=None, target_warehouse=None):
             pass
     else:
         # For other purposes, use the original method
-        stock_entry.get_items(qty, work_order.production_item)
+        stock_entry.get_items()
         
         # Only call this for non-Disassemble purposes
         if purpose != "Disassemble":
