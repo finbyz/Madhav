@@ -240,7 +240,8 @@ doc_events = {
     #     "on_submit": "madhav.doc_events.material_request.round_off_stock_qty"
     # }
     "Quality Inspection": {
-        "on_submit": "madhav.doc_events.quality_inspection.update_purchase_receipt_quantities"
+        "on_submit": "madhav.doc_events.quality_inspection.update_purchase_receipt_quantities",
+        "validate": "madhav.doc_events.quality_inspection.validate"
     }
 }
 

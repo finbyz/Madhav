@@ -1,6 +1,8 @@
 
 import frappe
 
+def validate(self,method):
+    self.accepted_qty = (self.sample_size or 0) - (self.rejected_qty or 0)
 def update_purchase_receipt_quantities(qi, method):
     # Only for Purchase Receipt reference
     if qi.reference_type != "Purchase Receipt":
