@@ -173,7 +173,10 @@ doc_events = {
         "validate": "madhav.doc_events.stock_entry.validate"
     },
     "Purchase Invoice": {
-        "before_save": "madhav.doc_events.purchase_invoice.validate_limit_on_saved_before_submit"
+        "before_save": [
+            "madhav.doc_events.purchase_invoice.validate_limit_on_saved_before_submit",
+            "madhav.doc_events.purchase_invoice.validate_pr_rejected_qty_has_return"
+        ],
     },
     "Purchase Receipt": {
         "before_save": [

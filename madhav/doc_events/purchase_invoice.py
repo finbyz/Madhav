@@ -74,3 +74,56 @@ def validate_limit_on_save(self, method):
                 OverAllowanceError,
                 title=_("Limit Crossed"),
             )
+
+
+def validate_pr_rejected_qty_has_return(doc, method=None):
+	"""
+	Block Purchase Invoice if linked Purchase Receipt has rejected qty
+	but no Purchase Return exists against it.
+	"""
+
+	# Collect unique Purchase Receipts from PI items
+	pr_names = {
+		row.purchase_receipt
+		for row in doc.items
+		if row.purchase_receipt
+	}
+
+	if not pr_names:
+		return
+
+	for pr_name in pr_names:
+		# 1. Check if PR has any rejected qty
+		has_rejected_qty = frappe.db.sql(
+			"""
+			SELECT 1
+			FROM `tabPurchase Receipt Item`
+			WHERE parent = %s
+			  AND IFNULL(rejected_qty, 0) > 0
+			LIMIT 1
+			""",
+			pr_name,
+		)
+
+		if not has_rejected_qty:
+			continue
+
+		# 2. Check if Purchase Return exists against this PR
+		return_pr_exists = frappe.db.exists(
+			"Purchase Receipt",
+			{
+				"is_return": 1,
+				"return_against": pr_name,
+				"docstatus": ["!=", 2],
+			},
+		)
+
+		# 3. Block PI save if return PR missing
+		if not return_pr_exists:
+			frappe.throw(
+				_(
+					"Cannot create Purchase Invoice.<br>"
+					"Purchase Receipt <b>{0}</b> has rejected quantity, "
+					"but no Purchase Return exists against it."
+				).format(pr_name)
+			)
