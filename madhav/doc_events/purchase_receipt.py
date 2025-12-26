@@ -87,16 +87,16 @@ def validate_limit_on_save(self, method):
             frappe.throw(msg + "<br><br>" + action_msg, OverAllowanceError, title=_("Limit Crossed"))
 
 def round_off_stock_qty(doc, method=None):
-	"""Round stock_qty for rows where UOM is Kg and stock UOM is Nos."""
-	
-	for row in doc.items or []:
-		if (row.get("uom") or "").lower() == "kg" and (row.get("stock_uom") or "").lower() == "nos":
-			if row.get("stock_qty") is not None:
-				row.db_set("stock_qty", round(flt(row.stock_qty)))
-			
-			# check before setting received_stock_qty
-			if row.get("received_stock_qty") is not None:
-				row.db_set("received_stock_qty", round(flt(row.received_stock_qty)))
+    """Round stock_qty for rows where UOM is Kg and stock UOM is Nos."""
+    
+    for row in doc.items or []:
+        if (row.get("uom") or "").lower() == "kg" and (row.get("stock_uom") or "").lower() == "nos":
+            if row.get("stock_qty") is not None:
+                row.db_set("stock_qty", round(flt(row.stock_qty)))
+            
+            # check before setting received_stock_qty
+            if row.get("received_stock_qty") is not None:
+                row.db_set("received_stock_qty", round(flt(row.received_stock_qty)))
                 
 def set_actual_rate_per_kg(self, method):
     """
@@ -136,13 +136,48 @@ def create_qi(self,method):
                  
     if created_quality_inspections:
         links = ''.join(
-			f'<a href="/app/quality-inspection/{name}" target="_blank">{name}</a>,'
-			for name in created_quality_inspections
-		)
+            f'<a href="/app/quality-inspection/{name}" target="_blank">{name}</a>,'
+            for name in created_quality_inspections
+        )
         
         frappe.msgprint(f"<b>Quality Inspections created:</b>{links}", title="Quality Inspections", indicator="green")
 
 def prevent_edit_after_quality_inspection(doc, method):
+    """
+    Validate that if rejected_qty exists in PR items,
+    a Purchase Return exists against this PR.
+    """
+
+    # 1. Check rejected_qty in child table
+    has_rejected_qty = any(
+        flt(row.rejected_qty) > 0
+        for row in doc.items
+    )
+
+    if not has_rejected_qty:
+        return
+
+    # 2. Check for return PR
+    return_pr_exists = frappe.db.exists(
+        "Purchase Receipt",
+        {
+            "is_return": 1,
+            "return_against": doc.name,
+            "docstatus": ["!=", 2]
+        }
+    )
+
+    if not return_pr_exists:
+        frappe.throw(
+            _(
+                "Rejected Quantity found, but no Purchase Return exists against this Purchase Receipt.<br>"
+                "Please create a Purchase Return before saving."
+            )
+        )
+    for row in doc.items:
+        if row.stock_uom == row.uom:
+            row.db_set("stock_qty", row.qty)
+            
     """
     Once at least one valid Quality Inspection exists against this Purchase Receipt,
     disallow further edits while the document is in Draft.
