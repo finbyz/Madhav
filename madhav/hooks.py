@@ -308,7 +308,8 @@ item_variant.make_variant_item_code = custom_make_variant_item_code
 # ------------------------------
 #
 override_whitelisted_methods = {
-    "erpnext.manufacturing.doctype.work_order.work_order.make_stock_entry": "madhav.madhav.override.work_order.make_stock_entry"
+    "erpnext.manufacturing.doctype.work_order.work_order.make_stock_entry": "madhav.madhav.override.work_order.make_stock_entry",
+    "erpnext.stock.doctype.purchase_receipt.purchase_receipt.make_purchase_invoice": "madhav.madhav.override.purchase_invoice.custom_make_purchase_invoice"
 }
 
 # after_migrate = [
