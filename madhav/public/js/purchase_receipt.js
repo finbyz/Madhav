@@ -1,6 +1,5 @@
 frappe.ui.form.on('Purchase Receipt', {
     company: function(frm) {
-        console.log("we are checking in vs code............")
         set_series(frm);
     },
     is_return: function(frm) {
@@ -37,23 +36,23 @@ function check_supplier_series_and_toggle_fields(frm) {
     frm.refresh_fields(['weight_demand', 'weight_received', 'total_length_in_meter']);
 }
 
-function set_series(frm) {
-    if (!frm.is_new()) return; // Don't change if not new
+// function set_series(frm) {
+//     if (!frm.is_new()) return; // Don't change if not new
 
-    if (frm.doc.company === "MADHAV UDYOG PRIVATE LIMITED") {
-        if (frm.doc.is_return) {
-            frm.set_value('naming_series', 'MURPR.YY.-');
-        } else {
-            frm.set_value('naming_series', 'MUPR.YY.-');
-        }
-    } else if (frm.doc.company === "MADHAV STELCO PRIVATE LIMITED") {
-        if (frm.doc.is_return) {
-            frm.set_value('naming_series', 'MSRPR.YY.-');
-        } else {
-            frm.set_value('naming_series', 'MSPR.YY.-');
-        }
-    }
-}
+//     if (frm.doc.company === "MADHAV UDYOG PRIVATE LIMITED") {
+//         if (frm.doc.is_return) {
+//             frm.set_value('naming_series', 'MURPR.YY.-');
+//         } else {
+//             frm.set_value('naming_series', 'MUPR.YY.-');
+//         }
+//     } else if (frm.doc.company === "MADHAV STELCO PRIVATE LIMITED") {
+//         if (frm.doc.is_return) {
+//             frm.set_value('naming_series', 'MSRPR.YY.-');
+//         } else {
+//             frm.set_value('naming_series', 'MSPR.YY.-');
+//         }
+//     }
+// }
 
 // frappe.ui.form.on('Purchase Receipt Item', {
 //     pieces: function (frm, cdt, cdn) {

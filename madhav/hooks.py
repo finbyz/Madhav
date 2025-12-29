@@ -54,7 +54,7 @@ doctype_js = {
     "Material Request": "public/js/material_request.js",
     "Quality Inspection": "public/js/quality_inspection.js",
     "Delivery Note": "public/js/delivery_note.js",
-    # "Purchase Receipt": "public/js/purchase_receipt.js"
+    "Purchase Receipt": "public/js/purchase_receipt.js"
 }
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
 doctype_list_js = {
@@ -155,6 +155,7 @@ override_doctype_class = {
     "BOM":"madhav.madhav.override.bom.BOM",
     "Production Plan":"madhav.madhav.override.production_plan.CustomProductionPlan",
     "Purchase Receipt": "madhav.madhav.override.purchase_receipt.PurchaseReceipt",
+    # "Purchase Receipt": "madhav.madhav.override.purchase_rPurchaseReceipteceipt.",
 }
 
 # Document Events
