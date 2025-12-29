@@ -14,12 +14,19 @@ def get_columns():
         _("Bill No") + ":Link/Delivery Note:120",
         _("Item") + ":Link/Item:120",
         _("Item Name") + ":Data:180",
+        _("PO No") + ":Data:120",
         _("Length") + ":Float:90",
+        _("Weight") + ":Float:90",
         _("Dispatch PC") + ":Float:110",
         _("Qty") + ":Float:90",
+
+        _("FG Qty") + ":Float:100",
+        _("Ready to Dispatch") + ":Float:140",
+        _("Rate") + ":Currency:90",
+
         _("Truck No") + ":Data:120",
-        _("PO No") + ":Data:120",
     ]
+
 
 
 def get_data(filters):
@@ -39,25 +46,35 @@ def get_data(filters):
         values["delivery_note"] = filters.get("delivery_note")
 	# dn.docstatus = 1
     query = f"""
-        SELECT
-            dn.posting_date,
-            dn.name AS delivery_note,
-            dni.item_code,
-            dni.item_name,
-            dni.average_length,
-            dni.pieces,
-            dni.qty,
-            dn.vehicle_no,
-            dni.against_sales_order
-        FROM
-            `tabDelivery Note` dn
-        INNER JOIN
-            `tabDelivery Note Item` dni ON dni.parent = dn.name
-        WHERE
-        	1 = 1
-            {conditions}
-        ORDER BY
-            dn.posting_date, dn.name
+            SELECT
+                dn.posting_date,
+                dn.name AS delivery_note,
+                dni.item_code,
+                dni.item_name,
+                dni.average_length,
+                dni.pieces,
+                dni.qty,
+                dni.section_weight,
+
+                IFNULL(b.actual_qty, 0) AS fg_qty,
+                IFNULL(b.actual_qty, 0) AS ready_to_dispatch,
+                dni.rate,
+
+                dn.vehicle_no,
+                dni.against_sales_order
+            FROM
+                `tabDelivery Note` dn
+            INNER JOIN
+                `tabDelivery Note Item` dni ON dni.parent = dn.name
+            LEFT JOIN
+                `tabBin` b
+                    ON b.item_code = dni.item_code
+                    AND b.warehouse = COALESCE(dni.warehouse, dn.set_warehouse)
+            WHERE
+                1 = 1
+                {conditions}
+            ORDER BY
+                dn.posting_date, dn.name
     """
 
     rows = frappe.db.sql(query, values, as_dict=True)
@@ -82,11 +99,18 @@ def get_data(filters):
             r.delivery_note,
             r.item_code,
             r.item_name,
+            po_no,
             r.average_length or 0,
+            r.section_weight or 0,
             r.pieces or 0,
             r.qty or 0,
+
+            r.fg_qty or 0,
+            r.qty or 0,
+            r.rate or 0,
+
             r.vehicle_no or "",
-            po_no,
         ])
+
 
     return data
