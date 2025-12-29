@@ -117,7 +117,8 @@ def set_actual_rate_per_kg(self, method):
                 row.rate_per_kg = rate_data.get("actual_rate_per_kg")
 
 def create_qi(self,method):
-    
+    if self.create_quality_inspection == 0:
+        return
     created_quality_inspections = []
     for row in self.items:
         
