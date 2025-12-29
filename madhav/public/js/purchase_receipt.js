@@ -1,12 +1,12 @@
 frappe.ui.form.on('Purchase Receipt', {
-    company: function(frm) {
-        set_series(frm);
-    },
-    is_return: function(frm) {
-        set_series(frm);
-    },
+    // company: function(frm) {
+    //     set_series(frm);
+    // },
+    // is_return: function(frm) {
+    //     set_series(frm);
+    // },
     onload: function(frm) {
-        set_series(frm);
+        // set_series(frm);
         check_supplier_series_and_toggle_fields(frm);
     },
     supplier: function(frm) {
