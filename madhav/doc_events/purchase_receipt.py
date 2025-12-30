@@ -179,22 +179,49 @@ def prevent_edit_after_quality_inspection(doc, method):
 
 def ensure_quality_inspections_submitted(doc, method):
     """
-    Reject submission unless every linked Quality Inspection is submitted.
+    Reject submission unless:
+    1) Every linked Quality Inspection is submitted
+    2) Quality Inspection is created when inspection is mandatory
     """
-    pending = []
+    pending_qi = []
+    missing_qi = []
 
     for d in doc.items or []:
-        if not d.quality_inspection:
-            continue
-        qi_status = frappe.db.get_value("Quality Inspection", d.quality_inspection, "docstatus")
-        if qi_status != 1:
-            pending.append(d.quality_inspection)
+        # --- Check if QI is mandatory for the item ---
+        inspection_required = frappe.db.get_value(
+            "Item",
+            d.item_code,
+            "inspection_required_before_purchase"
+        )
 
-    if pending:
+        if inspection_required:
+            # QI not created and auto-create not enabled
+            if not d.quality_inspection and not doc.create_quality_inspection:
+                missing_qi.append(d.item_code)
+
+        # --- Existing validation: QI must be submitted ---
+        if d.quality_inspection:
+            qi_status = frappe.db.get_value(
+                "Quality Inspection",
+                d.quality_inspection,
+                "docstatus"
+            )
+            if qi_status != 1:
+                pending_qi.append(d.quality_inspection)
+
+    # --- Throw errors ---
+    if missing_qi:
+        frappe.throw(
+            _("Quality Inspection isn't created for item(s): {0}")
+            .format(", ".join(missing_qi))
+        )
+
+    if pending_qi:
         frappe.throw(
             _("Submit Quality Inspection(s) {0} before submitting this Purchase Receipt.")
-            .format(", ".join(pending))
+            .format(", ".join(pending_qi))
         )
+
 
 
 def make_quality_inspection(se_doc, item):
