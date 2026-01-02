@@ -11,7 +11,7 @@ def get_columns():
         {"label": "Party Name", "fieldname": "customer_name", "fieldtype": "Link", "options": "Customer", "width": 180},
         {"label": "Size", "fieldname": "size", "fieldtype": "Data", "width": 100},
         {"label": "Grade", "fieldname": "grade", "fieldtype": "Data", "width": 120},
-		{"label": "PO No", "fieldname": "po_no", "fieldtype": "Data", "width": 80},
+		{"label": "PO No", "fieldname": "customers_purchase_order", "fieldtype": "Data", "width": 80},
 		{"label": "Length in Meter", "fieldname": "length_size_m", "fieldtype": "Float", "width": 120},
 		{"label": "SECTION WEIGHT", "fieldname": "section_weight", "fieldtype": "Data", "width": 160},
 		{"label": "Qty in PCS", "fieldname": "pieces", "fieldtype": "Int", "width": 120},
@@ -43,7 +43,7 @@ def get_data(filters):
                 )
                 ELSE ''
             END AS grade,
-			po_no,
+			customers_purchase_order,
 			length_size_m,
 			CASE 
 				WHEN section_weight IS NOT NULL AND section_weight != ''
