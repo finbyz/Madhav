@@ -78,7 +78,8 @@ def get_data(filters):
                 "item_code",
                 "item_name",
                 "length_size",
-                "total_weight"
+                "total_weight",
+                "pieces"
             ]
         )
 
@@ -91,7 +92,6 @@ def get_data(filters):
                 filters={
                     "against_sales_order": so.name,
                     "item_code": soi.item_code,
-                    "docstatus": 1
                 },
                 fields=["qty", "total_weight"]
             )
@@ -107,7 +107,6 @@ def get_data(filters):
                 filters={
                     "sales_order": so.name,
                     "item_code": soi.item_code,
-                    "docstatus": 1
                 },
                 fields=["qty", "total_weight", "pieces", "parent"]
             )
@@ -126,7 +125,7 @@ def get_data(filters):
                 location = si.place_of_supply
 
             pcs = 0
-            pending_ready_pc = pcs - ready_pc
+            pending_ready_pc = soi.pieces - ready_pc
 
             pending_ready_weight = (
                 0 if (flt(soi.total_weight) - ready_weight) < 0
@@ -134,7 +133,7 @@ def get_data(filters):
             )
 
             clearence = ready_weight
-            balance_weight = flt(soi.total_weight) - balance_pcs
+            balance_weight = flt(soi.total_weight) - dispatch_weight
             rfd = clearence - dispatch_weight
             grade, section = get_grade_and_section(soi.item_name)
 
@@ -144,7 +143,8 @@ def get_data(filters):
                 "po_no": so.po_no,
                 "section": section,
                 "length": soi.length_size,
-                "pcs": pcs,
+                # "pcs": pcs,
+                "pcs": soi.pieces,
                 "total_weight": soi.total_weight,
                 "ready_pc": ready_pc,
                 "ready_weight": ready_weight,
