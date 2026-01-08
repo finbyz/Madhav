@@ -7,6 +7,7 @@ from erpnext.controllers.status_updater import OverAllowanceError
 
 def validate_limit_on_save(self, method):
     for row in self.items:
+        row.received_qty = row.qty + row.rejected_qty
         if not row.qty or row.qty == 0:
             frappe.throw(
                 _("Row {0}: Actual Qty cannot be 0.").format(row.idx)
