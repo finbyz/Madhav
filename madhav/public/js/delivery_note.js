@@ -40,4 +40,45 @@ frappe.ui.form.on("Delivery Note", {
 			});
 		}
 	},
+	onload_post_render: function(frm) {
+        set_lengthpieces(frm);
+    },
+
+    refresh: function(frm) {
+        set_lengthpieces(frm);
+    }
 });
+frappe.ui.form.on('Delivery Note Item', {
+	batch_no(frm, cdt, cdn) {
+		let d = locals[cdt][cdn];
+
+		if (!d.batch_no) return;
+
+		// fetch pieces from Batch only once
+		frappe.db.get_value(
+			"Batch",
+			d.batch_no,
+			"pieces",
+			function (r) {
+				if (r && r.pieces != null) {
+					frappe.model.set_value(
+						cdt,
+						cdn,
+						"pieces",
+						r.pieces
+					);
+				}
+			}
+		);
+	},
+});
+function set_lengthpieces(frm) {
+    (frm.doc.items || []).forEach(row => {
+        if (row.pieces && !row.lengthpieces_so) {
+            row.lengthpieces_so = row.pieces;
+			row.average_length = row.length_size
+			row.length_sizeso = row.length_size
+        }
+    });
+    frm.refresh_field("items");
+}
