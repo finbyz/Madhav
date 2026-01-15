@@ -49,8 +49,8 @@ def get_data(filters):
             cp.name AS cutting_plan,
             cpf.item,
             cpf.item_name,
-            cpf.supplier,
             cpf.supplier_name,
+            cpf.supplier_detail,
             cpf.pieces,
             cpf.length_size_inch,
             cpf.total_length_in_meter_inch,
@@ -72,9 +72,11 @@ def get_data(filters):
             ON cp.name = cpf.parent
         WHERE
             cp.docstatus < 2
+            AND IFNULL(cpf.return_to_stock, 0) = 0
             {conditions}
         ORDER BY
             cp.date DESC, cp.name DESC
     """
+
 
     return frappe.db.sql(query, values, as_dict=True)
