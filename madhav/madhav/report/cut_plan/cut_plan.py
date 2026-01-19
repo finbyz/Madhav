@@ -10,25 +10,174 @@ def execute(filters=None):
 
 def get_columns():
     return [
-        _("Cutting Plan") + ":Link/Cutting Plan:140",
-        _("Item") + ":Link/Item:140",
-        _("Item Name") + ":Data:180",
-        _("Supplier") + ":Link/Supplier:140",
-        _("Supplier Name") + ":Data:180",
-        _("Pieces") + ":Int:80",
-        _("Length Size (Inch)") + ":Float:120",
-        _("Total Length (Inch)") + ":Float:140",
-        _("Section Weight") + ":Float:120",
-        _("Qty") + ":Float:100",
-        _("Process Loss Qty") + ":Float:130",
-        _("Qty After Loss") + ":Float:130",
-        _("Target Warehouse") + ":Link/Warehouse:160",
-        _("RM Reference Batch") + ":Link/Batch:160",
-        _("Weight Per Length") + ":Float:120",
-        _("Process Loss (%)") + ":Float:120",
-        _("Remaining Weight") + ":Float:130",
-        _("Semi FG Length") + ":Float:120",
-        _("FG Cut Plan No Of Length Sizes") + ":Int:180",
+        {
+            "label": _("Cutting Plan"),
+            "fieldname": "cutting_plan",
+            "fieldtype": "Link",
+            "options": "Cutting Plan",
+            "width": 140,
+        },
+        {
+            "label": _("Item"),
+            "fieldname": "item",
+            "fieldtype": "Link",
+            "options": "Item",
+            "width": 140,
+        },
+        {
+            "label": _("Item Name"),
+            "fieldname": "item_name",
+            "fieldtype": "Data",
+            "width": 180,
+        },
+        {
+            "label": _("Supplier"),
+            "fieldname": "supplier",
+            "fieldtype": "Link",
+            "options": "Supplier",
+            "width": 140,
+        },
+        {
+            "label": _("Supplier Name"),
+            "fieldname": "supplier_name",
+            "fieldtype": "Data",
+            "width": 180,
+        },
+        {
+            "label": _("Sales Order"),
+            "fieldname": "sales_order",
+            "fieldtype": "Link",
+            "options": "Sales Order",
+            "width": 140,
+        },
+        {
+            "label": _("Pieces"),
+            "fieldname": "pieces",
+            "fieldtype": "Int",
+            "width": 80,
+        },
+        {
+            "label": _("Length Size (Inch)"),
+            "fieldname": "length_size_inch",
+            "fieldtype": "Float",
+            "width": 120,
+        },
+        {
+            "label": _("Total Length (Inch)"),
+            "fieldname": "total_length_in_meter_inch",
+            "fieldtype": "Float",
+            "width": 140,
+        },
+        {
+            "label": _("Section Weight"),
+            "fieldname": "section_weight",
+            "fieldtype": "Float",
+            "width": 120,
+        },
+        {
+            "label": _("Qty"),
+            "fieldname": "qty",
+            "fieldtype": "Float",
+            "width": 100,
+        },
+        {
+            "label": _("Length Size 1"),
+            "fieldname": "length_size_1",
+            "fieldtype": "Float",
+            "width": 120,
+        },
+        {
+            "label": _("Length Size 2"),
+            "fieldname": "length_size_2",
+            "fieldtype": "Float",
+            "width": 120,
+        },
+        {
+            "label": _("Length Size 3"),
+            "fieldname": "length_size_3",
+            "fieldtype": "Float",
+            "width": 120,
+        },
+        {
+            "label": _("Length Size 4"),
+            "fieldname": "length_size_4",
+            "fieldtype": "Float",
+            "width": 120,
+        },
+        {
+            "label": _("Length Size 5"),
+            "fieldname": "length_size_5",
+            "fieldtype": "Float",
+            "width": 120,
+        },
+        {
+            "label": _("Process Loss Qty"),
+            "fieldname": "process_loss_qty",
+            "fieldtype": "Float",
+            "width": 130,
+        },
+        {
+            "label": _("Qty After Loss"),
+            "fieldname": "qty_after_loss",
+            "fieldtype": "Float",
+            "width": 130,
+        },
+        {
+            "label": _("Target Warehouse"),
+            "fieldname": "warehouse",
+            "fieldtype": "Link",
+            "options": "Warehouse",
+            "width": 160,
+        },
+        {
+            "label": _("Root Radius"),
+            "fieldname": "root_radius",
+            "fieldtype": "Float",
+            "width": 120,
+        },
+        {
+            "label": _("Lot No"),
+            "fieldname": "lot_no",
+            "fieldtype": "Float",
+            "width": 120,
+        },
+        {
+            "label": _("RM Reference Batch"),
+            "fieldname": "rm_reference_batch",
+            "fieldtype": "Link",
+            "options": "Batch",
+            "width": 160,
+        },
+        {
+            "label": _("Weight Per Length"),
+            "fieldname": "weight_per_length",
+            "fieldtype": "Float",
+            "width": 120,
+        },
+        {
+            "label": _("Process Loss (%)"),
+            "fieldname": "process_loss",
+            "fieldtype": "Float",
+            "width": 120,
+        },
+        {
+            "label": _("Remaining Weight"),
+            "fieldname": "remaining_weight",
+            "fieldtype": "Float",
+            "width": 130,
+        },
+        {
+            "label": _("Semi FG Length"),
+            "fieldname": "semi_fg_length",
+            "fieldtype": "Float",
+            "width": 120,
+        },
+        {
+            "label": _("FG Cut Plan No Of Length Sizes"),
+            "fieldname": "no_of_length_sizes",
+            "fieldtype": "Int",
+            "width": 180,
+        },
     ]
 
 
@@ -51,14 +200,27 @@ def get_data(filters):
             cpf.item_name,
             cpf.supplier,
             cpf.supplier_name,
+            cpf.sales_order,              -- ✅ NEW
+
             cpf.pieces,
             cpf.length_size_inch,
             cpf.total_length_in_meter_inch,
             cpf.section_weight,
+
             cpf.qty,
+            cpf.length_size_1,             -- ✅ NEW
+            cpf.length_size_2,             -- ✅ NEW
+            cpf.length_size_3,             -- ✅ NEW
+            cpf.length_size_4,             -- ✅ NEW
+            cpf.length_size_5,             -- ✅ NEW
+            
             cpf.process_loss_qty,
             cpf.qty_after_loss,
+
             cpf.warehouse,
+            cpf.root_radius,               -- ✅ NEW
+            cpf.lot_no,
+
             cpf.rm_reference_batch,
             cpf.weight_per_length,
             cpf.process_loss,
