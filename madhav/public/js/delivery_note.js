@@ -46,7 +46,11 @@ frappe.ui.form.on("Delivery Note", {
 
     refresh: function(frm) {
         set_lengthpieces(frm);
-    }
+    },
+
+    // before_save: function(frm) {
+    //     update_totals(frm);
+    // },
 });
 frappe.ui.form.on('Delivery Note Item', {
 	batch_no(frm, cdt, cdn) {
@@ -71,7 +75,59 @@ frappe.ui.form.on('Delivery Note Item', {
 			}
 		);
 	},
+    pieces(frm, cdt, cdn) {
+        let row = locals[cdt][cdn];
+
+        let pieces = flt(row.pieces);
+        let avg_len = flt(row.average_length);
+        let section_weight = flt(row.section_weight);
+
+        let accepted_qty_kg = pieces * avg_len * section_weight;
+        let qty = accepted_qty_kg / 1000;
+
+        frappe.model.set_value(
+            cdt,
+            cdn,
+            "qty",
+            qty.toFixed(4)
+        );
+    },
+	average_length(frm, cdt, cdn) {
+        let row = locals[cdt][cdn];
+
+        let pieces = flt(row.pieces);
+        let avg_len = flt(row.average_length);
+        let section_weight = flt(row.section_weight);
+
+        let accepted_qty_kg = pieces * avg_len * section_weight;
+        let qty = accepted_qty_kg / 1000;
+
+        frappe.model.set_value(
+            cdt,
+            cdn,
+            "qty",
+            qty.toFixed(4)
+        );
+    },
+	section_weight(frm, cdt, cdn) {
+        let row = locals[cdt][cdn];
+
+        let pieces = flt(row.pieces);
+        let avg_len = flt(row.average_length);
+        let section_weight = flt(row.section_weight);
+
+        let accepted_qty_kg = pieces * avg_len * section_weight;
+        let qty = accepted_qty_kg / 1000;
+
+        frappe.model.set_value(
+            cdt,
+            cdn,
+            "qty",
+            qty.toFixed(4)
+        );
+    }
 });
+
 function set_lengthpieces(frm) {
     (frm.doc.items || []).forEach(row => {
         if (row.pieces && !row.lengthpieces_so) {
