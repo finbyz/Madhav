@@ -102,41 +102,11 @@ function show_work_order_dialog(frm) {
         title: __('Select Work Orders'),
         fields: [
             {
-                fieldtype: 'Link',
+                fieldtype: 'Data',
                 fieldname: 'item_to_manufacture',
                 label: __('Item to Manufacture'),
-                options: 'Item',
-                get_query: function() {
-                    return {
-                        filters: {
-                            'is_stock_item': 1
-                        }
-                    };
-                },
-                onchange: function() {
-                    // When item is selected, update Work Order filter
-                    let item = dialog.get_value('item_to_manufacture');
-                    dialog.fields_dict.work_order_name.get_query = function() {
-                        // Use the cut_plan_type passed from the parent function
-                        
-                        let filters = {
-                            'docstatus': 1
-                        };
-                        
-                        // Set status filter based on cut_plan_type
-                        if (cut_plan_type === 'Finished Cut Plan') {
-                            filters['status'] = 'Completed';
-                        } else {
-                            filters['status'] = ['not in', ['Completed', 'Stopped', 'Cancelled']];
-                        }
-                        
-                        if (item) {
-                            filters.production_item = item;
-                        }
-                        return { filters: filters };
-                    };
-                    // Reload work orders when item changes
-                    load_work_orders(dialog, cut_plan_type);
+                onchange: function () {
+                    debounce_load_work_orders();
                 }
             },  
             {
@@ -228,13 +198,26 @@ function show_work_order_dialog(frm) {
     try {
         dialog.$wrapper.find('.modal-dialog').css('max-width', '40%');
     } catch (e) {}
-    
+    dialog.fields_dict.item_to_manufacture.$input.on(
+        'input',
+        frappe.utils.debounce(function () {
+            load_work_orders(dialog, cut_plan_type);
+        }, 300)
+    );
     // Load work orders initially
     setTimeout(() => {
         load_work_orders(dialog, cut_plan_type);
     }, 100);
 }
+let item_typing_timer = null;
 
+function debounce_load_work_orders() {
+    clearTimeout(item_typing_timer);
+
+    item_typing_timer = setTimeout(() => {
+        load_work_orders(dialog, cut_plan_type);
+    }, 300); // 300ms delay after typing stops
+}
 function load_work_orders(dialog, cut_plan_type) {
     let item_to_manufacture = dialog.get_value('item_to_manufacture');
     let work_order_name = dialog.get_value('work_order_name');
@@ -257,10 +240,16 @@ function load_work_orders(dialog, cut_plan_type) {
         console.log('Filtering for non-completed work orders (Raw Material Cut Plan)');
     }
     
-    if (item_to_manufacture) {
-        filters['production_item'] = item_to_manufacture;
+    // if (item_to_manufacture) {
+    //     filters['production_item'] = ['like', '%' + item_to_manufacture + '%'];
+    //     filters['item_name'] = ['like', '%' + item_to_manufacture + '%'];
+    // }
+    if (/^[RMFG0-9]+$/.test(item_to_manufacture)) {
+        filters['production_item'] = ['like', '%' + item_to_manufacture + '%'];
     }
-    
+    else{
+        filters['item_name'] = ['like', '%' + item_to_manufacture + '%'];
+    }
     if (work_order_name) {
         filters['name'] = ['like', '%' + work_order_name + '%'];
     }
