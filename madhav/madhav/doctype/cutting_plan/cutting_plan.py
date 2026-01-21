@@ -631,7 +631,7 @@ def _validate_rm_batch_availability(cutting_plan):
         available_qty = _get_available_tonnes_for_batch_warehouse(batch_no, source_warehouse)
         
         # Check if total requested quantity exceeds available quantity
-        if total_requested_qty > available_qty:
+        if round(total_requested_qty, 3) > available_qty:
             rows = batch_warehouse_rows[(batch_no, source_warehouse)]
             row_str = ", ".join([f"#{r}" for r in rows])
             errors.append(
