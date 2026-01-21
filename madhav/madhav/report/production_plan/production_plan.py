@@ -16,6 +16,7 @@ def get_columns():
 		{"label": "SECTION WEIGHT", "fieldname": "section_weight", "fieldtype": "Data", "width": 160},
 		{"label": "Qty in PCS", "fieldname": "pieces", "fieldtype": "Int", "width": 120},
         {"label": "QTY/MT", "fieldname": "planned_qty", "fieldtype": "Float", "width": 120},
+        {"label": "Remark", "fieldname": "remark", "fieldtype": "Data", "width": 300},
     ]
 
 
@@ -43,18 +44,20 @@ def get_data(filters):
                 )
                 ELSE ''
             END AS grade,
-			customers_purchase_order,
-			length_size_m,
-			CASE 
-				WHEN section_weight IS NOT NULL AND section_weight != ''
-				THEN CONCAT(section_weight, ' KG/MTR')
-				ELSE ''
-			END AS section_weight,
-			pieces,
-            planned_qty
+            customers_purchase_order,
+            length_size_m,
+            CASE 
+                WHEN section_weight IS NOT NULL AND section_weight != ''
+                THEN CONCAT(section_weight, ' KG/MTR')
+                ELSE ''
+            END AS section_weight,
+            pieces,
+            planned_qty,
+            remark
         FROM `tabProduction Plan Item`
         WHERE parent = %s
-		AND parentfield = 'assembly_items_without_consolidate'
+          AND parentfield = 'assembly_items_without_consolidate'
         ORDER BY idx
     """, (filters.production_plan,), as_dict=True)
+
 
