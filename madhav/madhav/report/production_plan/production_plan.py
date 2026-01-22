@@ -9,6 +9,8 @@ def execute(filters=None):
 def get_columns():
     return [
         {"label": "Party Name", "fieldname": "customer_name", "fieldtype": "Link", "options": "Customer", "width": 180},
+        {"label": "Item", "fieldname": "item_code", "fieldtype": "Link", "options": "Item", "width": 140},
+        {"label": "Item Name", "fieldname": "item_name", "fieldtype": "Data", "width": 200},
         {"label": "Size", "fieldname": "size", "fieldtype": "Data", "width": 100},
         {"label": "Grade", "fieldname": "grade", "fieldtype": "Data", "width": 120},
 		{"label": "PO No", "fieldname": "customers_purchase_order", "fieldtype": "Data", "width": 80},
@@ -26,38 +28,47 @@ def get_data(filters):
 
     return frappe.db.sql("""
         SELECT
-            customer_name,
+            ppi.customer_name,
+            ppi.item_code,
+            it.item_name,
+
             CASE 
-                WHEN bom_no LIKE '%%X%%' 
+                WHEN ppi.bom_no LIKE '%%X%%' 
                 THEN SUBSTRING_INDEX(
-                    SUBSTRING_INDEX(bom_no, ' ', -1),
+                    SUBSTRING_INDEX(ppi.bom_no, ' ', -1),
                 '-', 1)
                 ELSE ''
             END AS size,
 
             CASE 
-                WHEN bom_no LIKE '%% MS %%' AND bom_no LIKE '%%X%%' 
+                WHEN ppi.bom_no LIKE '%% MS %%' AND ppi.bom_no LIKE '%%X%%' 
                 THEN TRIM(
                     SUBSTRING_INDEX(
-                        SUBSTRING_INDEX(bom_no, ' ', -3),
+                        SUBSTRING_INDEX(ppi.bom_no, ' ', -3),
                     ' ', 2)
                 )
                 ELSE ''
             END AS grade,
-            customers_purchase_order,
-            length_size_m,
+
+            ppi.customers_purchase_order,
+            ppi.length_size_m,
+
             CASE 
-                WHEN section_weight IS NOT NULL AND section_weight != ''
-                THEN CONCAT(section_weight, ' KG/MTR')
+                WHEN ppi.section_weight IS NOT NULL AND ppi.section_weight != ''
+                THEN CONCAT(ppi.section_weight, ' KG/MTR')
                 ELSE ''
             END AS section_weight,
-            pieces,
-            planned_qty,
-            remark
-        FROM `tabProduction Plan Item`
-        WHERE parent = %s
-          AND parentfield = 'assembly_items_without_consolidate'
-        ORDER BY idx
+
+            ppi.pieces,
+            ppi.planned_qty,
+            ppi.remark
+
+        FROM `tabProduction Plan Item` ppi
+        LEFT JOIN `tabItem` it ON it.name = ppi.item_code
+        WHERE ppi.parent = %s
+          AND ppi.parentfield = 'assembly_items_without_consolidate'
+        ORDER BY ppi.idx
     """, (filters.production_plan,), as_dict=True)
+
 
 
