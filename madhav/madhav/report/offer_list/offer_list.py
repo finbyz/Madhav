@@ -4,6 +4,7 @@
 import frappe
 from frappe import _
 from frappe.utils import flt
+import re
 
 def execute(filters=None):
 	columns = get_columns()
@@ -94,7 +95,7 @@ def get_data(filters):
 	sales_orders = frappe.get_all(
 		"Sales Order",
 		filters=conditions,
-		fields=["name", "customer", "transaction_date"],
+		fields=["name", "customer", "transaction_date", "po_no"],
 		order_by="transaction_date desc, name desc"
 	)
 	
@@ -109,7 +110,6 @@ def get_data(filters):
 			fields=[
 				"item_name",
 				"item_code",
-				"purchase_order",
 				"length_size",
 				"qty",
 				"name",
@@ -138,7 +138,7 @@ def get_data(filters):
 			row = {
 				"item_name": item.item_name,
 				"lot_no": lot_no,
-				"po_no": item.purchase_order,
+				"po_no": so.po_no,
 				"grade": grade,
 				"length_m": length_m,
 				"pieces": pieces,
@@ -197,18 +197,32 @@ def get_lot_no(item_code, sales_order, item_name):
 	return ""
 
 def get_grade(item_code):
-	"""Get grade from Item master or custom field"""
-	# Check if grade is a field in Item master
-	if frappe.db.has_column("Item", "grade"):
-		grade = frappe.db.get_value("Item", item_code, "grade")
-		if grade:
-			return grade
+	"""Derive grade from Item Name:
+	   Last two letters + first alphabetic part before numbers
+	"""
+	item_name = frappe.db.get_value("Item", item_code, "item_name")
 	
-	# Check if it's a custom field
-	if frappe.db.has_column("Item", "custom_grade"):
-		grade = frappe.db.get_value("Item", item_code, "custom_grade")
-		if grade:
-			return grade
+	if not item_name:
+		return ""
+
+	# Normalize spaces
+	item_name = item_name.strip()
+
+	# 1. Get last two letters
+	last_two_letters_match = re.search(r'([A-Z]{2})\s*$', item_name, re.IGNORECASE)
+	last_two = last_two_letters_match.group(1).upper() if last_two_letters_match else ""
+
+	# 2. Get first alphabetic token (stop when numbers start)
+	first_alpha_match = re.match(r'\s*([A-Z]+)', item_name, re.IGNORECASE)
+	first_alpha = first_alpha_match.group(1).upper() if first_alpha_match else ""
+
+	# Combine
+	if last_two and first_alpha:
+		return f"{last_two} {first_alpha}"
+	elif last_two:
+		return last_two
+	elif first_alpha:
+		return first_alpha
 	
 	return ""
 
