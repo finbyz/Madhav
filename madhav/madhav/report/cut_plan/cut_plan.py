@@ -138,7 +138,7 @@ def get_columns():
         {
             "label": _("Lot No"),
             "fieldname": "lot_no",
-            "fieldtype": "Float",
+            "fieldtype": "Data",
             "width": 120,
         },
         {
