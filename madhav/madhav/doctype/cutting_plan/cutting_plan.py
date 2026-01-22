@@ -1092,7 +1092,7 @@ def validate_finish_qty_by_rm_batch(doc):
         messages = []
         for batch_no, used_qty in used_by_batch.items():
             allowed_qty = allowed_by_batch.get(batch_no, 0.0)
-            if allowed_qty and used_qty > allowed_qty + 1e-9:
+            if allowed_qty and round(used_qty, 3) > allowed_qty + 1e-9:
                 messages.append(
                     _(f"RM Batch {batch_no}: Finish qty {used_qty:.3f} exceeds available {allowed_qty:.3f} from RM Detail. Please adjust quantities.")
                 )
