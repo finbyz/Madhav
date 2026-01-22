@@ -32,8 +32,9 @@ def execute(filters=None):
 	data = []
 
 	for item in sorted(iwb_map):
-		if filters.get("item") and filters["item"] != item:
-			continue
+		if filters.get("item_group"):
+			if item not in item_map:
+				continue
 
 		for wh in sorted(iwb_map[item]):
 			for batch in sorted(iwb_map[item][wh]):
@@ -292,12 +293,25 @@ def get_item_details(filters):
 	"""Get item details like name, description, UOM"""
 	item_map = {}
 	
-	query = frappe.qb.from_("Item").select("name", "item_name", "description", "stock_uom")
-	
+	Item = frappe.qb.DocType("Item")
+
+	query = (
+		frappe.qb.from_(Item)
+		.select(
+			Item.name,
+			Item.item_name,
+			Item.description,
+			Item.stock_uom
+		)
+	)
+
 	# Apply item filter if specified
 	if filters.get("item_code"):
 		query = query.where(frappe.qb.DocType("Item").name == filters.get("item_code"))
-	
+
+	if filters.get("item_group"):
+		query = query.where(Item.item_group == filters.get("item_group"))
+  
 	for item in query.run(as_dict=True):
 		item_map[item.name] = item
 

@@ -36,6 +36,12 @@ frappe.query_reports["Batch Wise Stock Balance"] = {
 			},
 		},
 		{
+			fieldname: "item_group",
+			label: __("Item Group"),
+			fieldtype: "Link",
+			options: "Item Group",
+		},		
+		{
 			fieldname: "warehouse_type",
 			label: __("Warehouse Type"),
 			fieldtype: "Link",
