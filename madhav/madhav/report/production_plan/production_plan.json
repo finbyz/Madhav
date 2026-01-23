@@ -1,5 +1,5 @@
 {
- "add_total_row": 0,
+ "add_total_row": 1,
  "add_translate_data": 0,
  "columns": [],
  "creation": "2025-12-25 15:04:26.638698",
@@ -18,7 +18,7 @@
  "idx": 0,
  "is_standard": "Yes",
  "letter_head": null,
- "modified": "2025-12-25 15:34:08.245533",
+ "modified": "2026-01-23 12:36:07.094097",
  "modified_by": "Administrator",
  "module": "Madhav",
  "name": "Production Plan",
