@@ -2,7 +2,7 @@ import frappe
 
 def execute(filters=None):
     columns = get_columns()
-    data = get_data(filters)
+    data = get_data(filters or {})
     return columns, data
 
 
@@ -13,20 +13,38 @@ def get_columns():
         {"label": "Item Name", "fieldname": "item_name", "fieldtype": "Data", "width": 200},
         {"label": "Size", "fieldname": "size", "fieldtype": "Data", "width": 100},
         {"label": "Grade", "fieldname": "grade", "fieldtype": "Data", "width": 120},
-		{"label": "PO No", "fieldname": "customers_purchase_order", "fieldtype": "Data", "width": 80},
-		{"label": "Length in Meter", "fieldname": "length_size_m", "fieldtype": "Float", "width": 120},
-		{"label": "SECTION WEIGHT", "fieldname": "section_weight", "fieldtype": "Data", "width": 160},
-		{"label": "Qty in PCS", "fieldname": "pieces", "fieldtype": "Int", "width": 120},
+        {"label": "PO No", "fieldname": "customers_purchase_order", "fieldtype": "Data", "width": 80},
+        {"label": "Length in Meter", "fieldname": "length_size_m", "fieldtype": "Float", "width": 120},
+        {"label": "SECTION WEIGHT", "fieldname": "section_weight", "fieldtype": "Data", "width": 160},
+        {"label": "Qty in PCS", "fieldname": "pieces", "fieldtype": "Int", "width": 120},
         {"label": "QTY/MT", "fieldname": "planned_qty", "fieldtype": "Float", "width": 120},
         {"label": "Remark", "fieldname": "remark", "fieldtype": "Data", "width": 300},
     ]
 
 
 def get_data(filters):
-    if not filters or not filters.get("production_plan"):
-        return []
+    conditions = []
+    values = {}
 
-    return frappe.db.sql("""
+    # Filter by Production Plan
+    if filters.get("production_plan"):
+        conditions.append("pp.name = %(production_plan)s")
+        values["production_plan"] = filters["production_plan"]
+
+    # Filter by date range
+    if filters.get("from_date"):
+        conditions.append("pp.posting_date >= %(from_date)s")
+        values["from_date"] = filters["from_date"]
+
+    if filters.get("to_date"):
+        conditions.append("pp.posting_date <= %(to_date)s")
+        values["to_date"] = filters["to_date"]
+
+    condition_sql = ""
+    if conditions:
+        condition_sql = " AND " + " AND ".join(conditions)
+
+    return frappe.db.sql(f"""
         SELECT
             ppi.customer_name,
             ppi.item_code,
@@ -64,11 +82,11 @@ def get_data(filters):
             ppi.remark
 
         FROM `tabProduction Plan Item` ppi
+        INNER JOIN `tabProduction Plan` pp ON pp.name = ppi.parent
         LEFT JOIN `tabItem` it ON it.name = ppi.item_code
-        WHERE ppi.parent = %s
-          AND ppi.parentfield = 'assembly_items_without_consolidate'
-        ORDER BY ppi.idx
-    """, (filters.production_plan,), as_dict=True)
 
+        WHERE ppi.parentfield = 'assembly_items_without_consolidate'
+        {condition_sql}
 
-
+        ORDER BY pp.posting_date, ppi.idx
+    """, values, as_dict=True)
