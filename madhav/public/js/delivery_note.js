@@ -8,10 +8,6 @@ frappe.ui.form.on("Delivery Note", {
 		set_lengthpieces(frm);
 	},
 	onload(frm) {
-		// When Delivery Note is created from a Sales Order, copy
-		// `pieces`, `length_size` and `qty` from Sales Order Item into
-		// `lengthpieces_so`, `length_sizeso` and `quantityso` of Delivery Note Item
-		// via a server-side method (no direct get_value from JS).
 		if (frm.doc.__islocal && Array.isArray(frm.doc.items)) {
 			(frm.doc.items || []).forEach((row) => {
 				// `so_detail` is the link to the Sales Order Item row
@@ -309,8 +305,15 @@ function open_sales_order_items_selector_for_delivery_note(frm) {
 			}, 100);
 		});
 
-		d.get_field("sales_order_filter").$input.on("change", () => render_rows());
-		d.get_field("customer_filter").$input.on("change", () => render_rows());
+
+		d.get_field("sales_order_filter").$input.on(
+			"change input awesomplete-selectcomplete",
+			frappe.utils.debounce(() => render_rows(), 300)
+		);
+		d.get_field("customer_filter").$input.on(
+			"change input awesomplete-selectcomplete",
+			frappe.utils.debounce(() => render_rows(), 300)
+		);
 		d.get_field("min_length").$input.on("input", () => render_rows());
 		d.get_field("max_length").$input.on("input", () => render_rows());
 		d.get_field("show_items").$input.on("change", () => render_rows());
@@ -355,8 +358,13 @@ function open_sales_order_items_selector_for_delivery_note(frm) {
 		let filtered_rows = state.rows.filter((row) => {
 			if (!show_all_items && flt(row.reserved_qty) <= 0 && flt(row.reserved_pieces) <= 0) return false;
 			if (customer_filter && row.customer !== customer_filter) return false;
-			if (min_length > 0 && flt(row.length) < min_length) return false;
-			if (max_length > 0 && flt(row.length) > max_length) return false;
+			
+			const row_length = flt(row.length_size !== undefined ? row.length_size : row.length);
+			if (min_length > 0 || max_length > 0) {
+				if (row_length <= 0) return false; // hide rows with no length when filter is active
+				if (min_length > 0 && row_length < min_length) return false;
+				if (max_length > 0 && row_length > max_length) return false;
+			}
 			if (so_filter && row.parent !== so_filter) return false;
 			return true;
 		});
@@ -394,12 +402,12 @@ function open_sales_order_items_selector_for_delivery_note(frm) {
 			return `
 				<tr style="background-color:${bg_color}">
 					<td><input type="checkbox" class="selector-check" data-name="${frappe.utils.escape_html(row.name)}" ${checked}></td>
-					<td>${frappe.utils.escape_html(row.transaction_date || "")}</td>
 					<td>${frappe.utils.escape_html(row.parent || "")}</td>
+					<td>${frappe.utils.escape_html(row.transaction_date || "")}</td>
 					<td>${frappe.utils.escape_html(row.item_code || "")}</td>
 					<td>${frappe.utils.escape_html(row.item_name || "")}</td>
 					<td class="text-right">${format_number(flt(row.qty || 0))}</td>
-					<td class="text-right">${format_number(flt(row.length || 0))}</td>
+					<td class="text-right">${format_number(flt(row.length_size ?? row.length ?? 0))}</td>
 					<td class="text-right">${format_number(flt(row.pieces || 0))}</td>
 					<td class="text-right">${format_number(flt(row.reserved_qty || 0))}</td>
 					<td class="text-right">${format_number(flt(row.reserved_pieces || 0))}</td>
@@ -414,8 +422,8 @@ function open_sales_order_items_selector_for_delivery_note(frm) {
 					<thead>
 						<tr>
 							<th style="width:40px;"></th>
-							<th>${__("Date")}</th>
 							<th>${__("Sales Order")}</th>
+							<th>${__("Date")}</th>
 							<th>${__("Item Code")}</th>
 							<th>${__("Item Name")}</th>
 							<th class="text-right">${__("SO Qty")}</th>
