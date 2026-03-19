@@ -257,33 +257,51 @@ function open_sales_order_items_selector_for_delivery_note(frm) {
 				freeze: true,
 				freeze_message: __("Mapping Sales Order ..."),
 				callback: function (r) {
-					if (!r.exc) {
-						frappe.model.sync(r.message);
+				if (!r.exc) {
+					frappe.model.sync(r.message);
 
-						// Manually map fields from selector rows that are not in the standard mapper
-						(frm.doc.items || []).forEach(dn_item => {
-							if (dn_item.so_detail && state.selected_children.has(dn_item.so_detail)) {
-								const so_item_data = state.rows.find(row => row.name === dn_item.so_detail);
-								if (so_item_data) {
-									// Support multiple possible property names for length from backend
-									const length_val = so_item_data.length !== undefined ? so_item_data.length : so_item_data.length_size;
-									
-									const update_values = {
-										"section_weight": so_item_data.section_weight,
-										"pieces": so_item_data.pieces,
-										"length_size": length_val, // Also set length_size for UI visibility
-										"average_length": length_val,
+					// ✅ Step 3: Remove duplicate rows with same so_detail
+					const seen_so_details = new Set();
+					frm.doc.items = (frm.doc.items || []).filter(dn_item => {
+						if (dn_item.so_detail) {
+							if (seen_so_details.has(dn_item.so_detail)) return false;
+							seen_so_details.add(dn_item.so_detail);
+						}
+						return true;
+					});
 
-									};
-									frappe.model.set_value(dn_item.doctype, dn_item.name, update_values);
-								}
+					// ✅ Step 4: Remove items that were NOT selected
+					frm.doc.items = (frm.doc.items || []).filter(dn_item => {
+						if (dn_item.so_detail && !filtered_children.includes(dn_item.so_detail)) {
+							frappe.model.clear_doc(dn_item.doctype, dn_item.name);
+							return false;
+						}
+						return true;
+					});
+
+					// ✅ Step 5: Map custom fields for selected items
+					(frm.doc.items || []).forEach(dn_item => {
+						if (dn_item.so_detail && filtered_children.includes(dn_item.so_detail)) {
+							const so_item_data = state.rows.find(row => row.name === dn_item.so_detail);
+							if (so_item_data) {
+								const length_val = so_item_data.length !== undefined
+									? so_item_data.length
+									: so_item_data.length_size;
+
+								frappe.model.set_value(dn_item.doctype, dn_item.name, {
+									"section_weight": so_item_data.section_weight,
+									"pieces": so_item_data.pieces,
+									"length_size": length_val,
+									"average_length": length_val,
+								});
 							}
-						});
+						}
+					});
 
-						frm.dirty();
-						frm.refresh();
-					}
-				},
+					frm.dirty();
+					frm.refresh();
+				}
+			},
 			});
 		},
 	});
