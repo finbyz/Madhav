@@ -135,6 +135,12 @@ def execute(filters=None):
                 "opening_stock_in": 0,
                 "subcontract_receipt_in": 0,
                 "stock_reconciliation": 0,
+                "material_issue_in": 0,
+                "material_transfer_in": 0,
+                "material_transfer_for_manufacture_in": 0,
+                "material_consumption_for_manufacture_in": 0,
+                "rm_transfer_cum_cutting_in": 0,
+                "fg_free_length_transfer_in": 0,
                 "total_inward": 0,
 
                 # OUTWARD
@@ -148,6 +154,11 @@ def execute(filters=None):
                 "repack_out": 0,
                 "subcontract_issue_out": 0,
                 "purchase_invoice_out": 0,
+                "material_receipt_out": 0,
+                "material_transfer_out": 0,
+                "disassemble_out": 0,
+                "material_consumption_for_manufacture_out": 0,
+                "material_issue_return_out": 0,
                 "total_outward": 0,
 
                 "closing_balance": None,
@@ -216,6 +227,18 @@ def execute(filters=None):
                         row["opening_stock_in"] += qty
                     elif se_type == "Subcontract Receipt":
                         row["subcontract_receipt_in"] += qty
+                    elif se_type == "Material Issue":
+                        row["material_issue_in"] += qty
+                    elif se_type == "Material Transfer":
+                        row["material_transfer_in"] += qty
+                    elif se_type == "Material Transfer for Manufacture":
+                        row["material_transfer_for_manufacture_in"] += qty
+                    elif se_type == "Material Consumption for Manufacture":
+                        row["material_consumption_for_manufacture_in"] += qty
+                    elif se_type == "RM Transfer cum Cutting Entry":
+                        row["rm_transfer_cum_cutting_in"] += qty
+                    elif se_type == "FG Free Length Transfer cum Cutting Entry":
+                        row["fg_free_length_transfer_in"] += qty
 
                 else:
                     # -------- OUTWARD --------
@@ -236,6 +259,16 @@ def execute(filters=None):
                         row["repack_out"] += qty
                     elif se_type == "Subcontract Issue":
                         row["subcontract_issue_out"] += qty
+                    elif se_type == "Material Receipt":
+                        row["material_receipt_out"] += qty
+                    elif se_type == "Material Transfer":
+                        row["material_transfer_out"] += qty
+                    elif se_type == "Disassemble":
+                        row["disassemble_out"] += qty
+                    elif se_type == "Material Consumption for Manufacture":
+                        row["material_consumption_for_manufacture_out"] += qty
+                    elif se_type == "Material Issue Return":
+                        row["material_issue_return_out"] += qty
 
 
             # ---------------- OUTWARD ----------------
@@ -250,8 +283,8 @@ def execute(filters=None):
                 if se_type == "RM Transfer cum Cutting Entry":
                     item_wise_data[item_code]["rm_transfer_cum_cutting"] += abs(qty)
 
-                elif se_type == "Material Transfer for Manufacture":
-                    item_wise_data[item_code]["material_transfer_for_manufacture"] += abs(qty)
+                # elif se_type == "Material Transfer for Manufacture":
+                #     item_wise_data[item_code]["material_transfer_for_manufacture"] += abs(qty)
 
                 elif se_type == "Send to Subcontractor":
                     item_wise_data[item_code]["send_to_subcontractor_out"] += abs(qty)
@@ -300,6 +333,12 @@ def execute(filters=None):
             + row["repack_in"]
             + row["opening_stock_in"]
             + row["subcontract_receipt_in"]
+            + row["material_issue_in"]
+            + row["material_transfer_in"]
+            + row["material_transfer_for_manufacture_in"]
+            + row["material_consumption_for_manufacture_in"]
+            + row["rm_transfer_cum_cutting_in"]
+            + row["fg_free_length_transfer_in"]
         )
 
         row["total_outward"] = (
@@ -312,6 +351,11 @@ def execute(filters=None):
             + row["manufacture_out"]
             + row["repack_out"]
             + row["subcontract_issue_out"]
+            + row["material_receipt_out"]
+            + row["material_transfer_out"]
+            + row["disassemble_out"]
+            + row["material_consumption_for_manufacture_out"]
+            + row["material_issue_return_out"]
         )
 
     # Compute closing balance
@@ -555,6 +599,42 @@ def get_columns(filters):
                 "width": 150,
             },
             {
+                "label": "Material Issue (In)",
+                "fieldname": "material_issue_in",
+                "fieldtype": "Float",
+                "width": 140,
+            },
+            {
+                "label": "Material Transfer (In)",
+                "fieldname": "material_transfer_in",
+                "fieldtype": "Float",
+                "width": 160,
+            },
+            {
+                "label": "Material Transfer for Manufacture (In)",
+                "fieldname": "material_transfer_for_manufacture_in",
+                "fieldtype": "Float",
+                "width": 220,
+            },
+            {
+                "label": "Material Consumption for Manufacture (In)",
+                "fieldname": "material_consumption_for_manufacture_in",
+                "fieldtype": "Float",
+                "width": 260,
+            },
+            {
+                "label": "RM Transfer cum Cutting Entry (In)",
+                "fieldname": "rm_transfer_cum_cutting_in",
+                "fieldtype": "Float",
+                "width": 260,
+            },
+            {
+                "label": "FG Free Length Transfer cum Cutting Entry (In)",
+                "fieldname": "fg_free_length_transfer_in",
+                "fieldtype": "Float",
+                "width": 320,
+            },
+            {
                 "label": "Total Inward",
                 "fieldname": "total_inward",
                 "fieldtype": "Float",
@@ -620,7 +700,36 @@ def get_columns(filters):
                 "fieldtype": "Float",
                 "width": 160,
             },
-
+            {
+                "label": "Material Receipt (Out)",
+                "fieldname": "material_receipt_out",
+                "fieldtype": "Float",
+                "width": 170,
+            },
+            {
+                "label": "Material Transfer (Out)",
+                "fieldname": "material_transfer_out",
+                "fieldtype": "Float",
+                "width": 180,
+            },
+            {
+                "label": "Disassemble (Out)",
+                "fieldname": "disassemble_out",
+                "fieldtype": "Float",
+                "width": 160,
+            },
+            {
+                "label": "Material Consumption for Manufacture (Out)",
+                "fieldname": "material_consumption_for_manufacture_out",
+                "fieldtype": "Float",
+                "width": 300,
+            },
+            {
+                "label": "Material Issue Return (Out)",
+                "fieldname": "material_issue_return_out",
+                "fieldtype": "Float",
+                "width": 220,
+            },
             {
                 "label": "Total Outward",
                 "fieldname": "total_outward",

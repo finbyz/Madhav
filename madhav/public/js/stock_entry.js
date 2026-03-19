@@ -1,5 +1,5 @@
 frappe.ui.form.on('Stock Entry', {
-    company: function(frm) {
+    validate(frm){
         if (frm.is_new()) { 
             if (frm.doc.company === "MADHAV UDYOG PRIVATE LIMITED") {
                 frm.set_value("naming_series", "MUST.YY.-");

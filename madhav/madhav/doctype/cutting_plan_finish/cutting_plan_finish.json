@@ -10,6 +10,8 @@
   "fg_item",
   "work_order_reference",
   "sales_order",
+  "supplier",
+  "supplier_name",
   "column_break_encc",
   "item_name",
   "fg_item_name",
@@ -376,13 +378,25 @@
    "in_list_view": 1,
    "label": "Qty After Loss",
    "read_only": 1
+  },
+  {
+   "fieldname": "supplier",
+   "fieldtype": "Link",
+   "label": "Supplier",
+   "options": "Supplier"
+  },
+  {
+   "fetch_from": "supplier.supplier_name",
+   "fieldname": "supplier_name",
+   "fieldtype": "Data",
+   "label": "Supplier Name"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2025-11-19 15:35:30.863418",
+ "modified": "2025-12-30 13:53:13.502923",
  "modified_by": "Administrator",
  "module": "Madhav",
  "name": "Cutting Plan Finish",

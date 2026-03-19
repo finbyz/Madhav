@@ -1,0 +1,288 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-02-03 20:25:38.949999",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "target_warehouse",
+  "section_break_kahx",
+  "item",
+  "party_name",
+  "work_order",
+  "old_work_order",
+  "sales_order",
+  "old_sales_order",
+  "column_break_ffue",
+  "grade",
+  "section",
+  "po_no",
+  "stock_uom",
+  "section_break_wuwh",
+  "qty",
+  "pieces",
+  "length_size",
+  "column_break_iyya",
+  "standard_weight",
+  "calculated_section_weight",
+  "variation",
+  "make_it_unplanned",
+  "section_break_ngws",
+  "ready_qty",
+  "ready_pieces",
+  "section_break_wqrn",
+  "remaining_qty",
+  "remaining_pieces",
+  "section_break_nnyc",
+  "consumption",
+  "scrap_qty",
+  "section_break_ifob",
+  "actual_weight",
+  "actual_average_length",
+  "column_break_khvx",
+  "actual_section_weight"
+ ],
+ "fields": [
+  {
+   "fieldname": "party_name",
+   "fieldtype": "Link",
+   "label": "Party Name",
+   "options": "Customer",
+   "read_only": 1
+  },
+  {
+   "fieldname": "grade",
+   "fieldtype": "Data",
+   "label": "Grade",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Section"
+  },
+  {
+   "fieldname": "sales_order",
+   "fieldtype": "Link",
+   "label": "Sales Order",
+   "options": "Sales Order",
+   "read_only": 1
+  },
+  {
+   "fieldname": "po_no",
+   "fieldtype": "Data",
+   "label": "PO No",
+   "read_only": 1
+  },
+  {
+   "columns": 1,
+   "fieldname": "length_size",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Length Size",
+   "read_only": 1,
+   "read_only_depends_on": "eval:!doc.variation"
+  },
+  {
+   "columns": 1,
+   "fieldname": "pieces",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Pieces",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "variation",
+   "fieldtype": "Check",
+   "label": "Variation",
+   "read_only": 1
+  },
+  {
+   "fieldname": "standard_weight",
+   "fieldtype": "Float",
+   "label": "Standard Weight",
+   "read_only": 1
+  },
+  {
+   "columns": 1,
+   "fieldname": "ready_pieces",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Ready Pieces",
+   "reqd": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "make_it_unplanned",
+   "fieldtype": "Check",
+   "label": "Make it unplanned"
+  },
+  {
+   "fieldname": "actual_average_length",
+   "fieldtype": "Float",
+   "label": "Actual Average Length"
+  },
+  {
+   "fieldname": "actual_section_weight",
+   "fieldtype": "Float",
+   "label": "Actual Section Weight"
+  },
+  {
+   "fieldname": "actual_weight",
+   "fieldtype": "Float",
+   "label": "Actual Weight"
+  },
+  {
+   "fieldname": "consumption",
+   "fieldtype": "Float",
+   "label": "Consumption",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_ffue",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "section_break_wuwh",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "column_break_iyya",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "section_break_ifob",
+   "fieldtype": "Section Break",
+   "hidden": 1
+  },
+  {
+   "fieldname": "column_break_khvx",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "work_order",
+   "fieldtype": "Link",
+   "label": "Work Order",
+   "options": "Work Order",
+   "read_only": 1
+  },
+  {
+   "columns": 1,
+   "fieldname": "qty",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Qty",
+   "read_only": 1
+  },
+  {
+   "columns": 1,
+   "fieldname": "target_warehouse",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Target Warehouse",
+   "no_copy": 1,
+   "options": "Warehouse",
+   "reqd": 1
+  },
+  {
+   "fieldname": "section_break_kahx",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "old_work_order",
+   "fieldtype": "Link",
+   "hidden": 1,
+   "label": "Old Work Order",
+   "options": "Work Order"
+  },
+  {
+   "columns": 1,
+   "fieldname": "item",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Item",
+   "options": "Item",
+   "read_only": 1
+  },
+  {
+   "fieldname": "stock_uom",
+   "fieldtype": "Link",
+   "label": "Stock UOM",
+   "options": "UOM",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_ngws",
+   "fieldtype": "Section Break"
+  },
+  {
+   "columns": 1,
+   "fieldname": "ready_qty",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Ready Qty",
+   "reqd": 1
+  },
+  {
+   "fieldname": "section_break_wqrn",
+   "fieldtype": "Section Break"
+  },
+  {
+   "columns": 1,
+   "fieldname": "remaining_qty",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Remaining Qty",
+   "read_only": 1
+  },
+  {
+   "columns": 1,
+   "fieldname": "remaining_pieces",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Remaining Pieces",
+   "read_only": 1
+  },
+  {
+   "fieldname": "old_sales_order",
+   "fieldtype": "Link",
+   "hidden": 1,
+   "label": "Old Sales Order",
+   "options": "Sales Order"
+  },
+  {
+   "fieldname": "calculated_section_weight",
+   "fieldtype": "Float",
+   "label": "Calculated Section Weight",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_nnyc",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "scrap_qty",
+   "fieldtype": "Float",
+   "label": "Scrap Qty",
+   "read_only": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-02-13 13:35:40.134457",
+ "modified_by": "Administrator",
+ "module": "Madhav",
+ "name": "Pending Work Orders",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

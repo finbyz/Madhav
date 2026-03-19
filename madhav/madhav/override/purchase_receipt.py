@@ -83,3 +83,4 @@ class PurchaseReceipt(_PurchaseReceipt):
             self.validate_rate_with_reference_doc(
                 [["Purchase Order", "purchase_order", "purchase_order_item"]]
             )
+

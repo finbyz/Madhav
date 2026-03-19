@@ -3,9 +3,6 @@ from frappe import _
 
 
 def duplicate_po_items_to_assembly_items_without_consolidate(doc, method):
-    """Duplicate current po_items rows to assembly_items_without_consolidate without altering po_items."""
-    # Reset target table to avoid duplication on subsequent saves
-    doc.set("assembly_items_without_consolidate", [])
 
     if not getattr(doc, "po_items", None):
         return
@@ -31,61 +28,50 @@ def duplicate_po_items_to_assembly_items_without_consolidate(doc, method):
         "customers_purchase_order",
     ]
 
+    # Build index of existing target rows
+    existing_map = {
+        (row.item_code, row.sales_order_item): row
+        for row in doc.get("assembly_items_without_consolidate", [])
+    }
+
     for row in doc.get("po_items"):
-        new_row = {key: getattr(row, key, None) for key in fields_to_copy}
-        doc.append("assembly_items_without_consolidate", new_row)
+        key = (row.item_code, row.sales_order_item)
+
+        if key in existing_map:
+            # Update existing row → no reset
+            target_row = existing_map[key]
+        else:
+            # Append new row
+            target_row = doc.append("assembly_items_without_consolidate", {})
+
+        for field in fields_to_copy:
+            target_row.set(field, getattr(row, field, None))
 
 def consolidate_assembly_items(doc, method):
 
     if not doc.po_items:
         return
-    
-    consolidated_items = {}
-    
-    for item in doc.po_items:
-        item_code = item.item_code
-        
-        if item_code in consolidated_items:
-            
-            consolidated_items[item_code]['planned_qty'] += item.planned_qty or 0
-            consolidated_items[item_code]['pieces'] += item.pieces or 0
-            consolidated_items[item_code]['length'] += item.length or 0
-            consolidated_items[item_code]['length_size_m'] += item.length_size_m or 0
-            
-            if item.bom_no and not consolidated_items[item_code]['bom_no']:
-                consolidated_items[item_code]['bom_no'] = item.bom_no
-                
-        else:
-            
-            consolidated_items[item_code] = {
-                'item_code': item_code,
-                'bom_no': item.bom_no,
-                'planned_qty': item.planned_qty or 0,
-                'pieces': item.pieces or 0,
-                'length': item.length or 0,
-                'length_size_m': item.length_size_m or 0,
-                'stock_uom': item.stock_uom,
-                'warehouse': item.warehouse,
-                'planned_start_date': item.planned_start_date                
-            }
-    
-    # Clear existing assembly items
-    doc.po_items = []    
-    
-    for item_code, consolidated_item in consolidated_items.items():
-        if frappe.db.get_value("Item", item_code, "weight_per_meter"):
-            section_weight = frappe.db.get_value("Item", item_code, "weight_per_meter")
-            
-        doc.append('po_items', {
-            'item_code': consolidated_item['item_code'],
-            'section_weight': section_weight,
-            'bom_no': consolidated_item['bom_no'],
-            'planned_qty': consolidated_item['planned_qty'],
-            'pieces': consolidated_item['pieces'],
-            'length': consolidated_item['length'],
-            'length_size_m': consolidated_item['length_size_m'],
-            'stock_uom': consolidated_item['stock_uom'],
-            'warehouse': consolidated_item['warehouse'],
-            'planned_start_date': consolidated_item['planned_start_date']            
-        })
 
+    consolidated = {}
+
+    for row in doc.po_items:
+        key = row.item_code
+
+        if key not in consolidated:
+            consolidated[key] = row
+        else:
+            base = consolidated[key]
+
+            base.planned_qty += row.planned_qty or 0
+            base.pieces += row.pieces or 0
+            base.length += row.length or 0
+            base.length_size_m += row.length_size_m or 0
+
+            # Remove duplicate rows safely
+            doc.remove(row)
+
+    # Only update calculated fields, never delete rows
+    for row in consolidated.values():
+        row.section_weight = frappe.db.get_value(
+            "Item", row.item_code, "weight_per_meter"
+        )

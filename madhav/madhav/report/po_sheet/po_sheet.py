@@ -27,6 +27,7 @@ def get_columns():
         {"label": "Balance PCS", "fieldname": "balance_pcs", "fieldtype": "Float", "width": 120},
         {"label": "Balance Weight", "fieldname": "balance_weight", "fieldtype": "Float", "width": 140},
         {"label": "RFD", "fieldname": "rfd", "fieldtype": "Float", "width": 100},
+        {"label": "Stock Qty", "fieldname": "stock_qty", "fieldtype": "Data", "width": 150},
         {"label": "PO Date", "fieldname": "po_date", "fieldtype": "Date", "width": 100},
         {"label": "Delivery Date", "fieldname": "delivery_date", "fieldtype": "Date", "width": 120},
         {"label": "Completion Date", "fieldname": "completion_date", "fieldtype": "Date", "width": 140},
@@ -75,29 +76,42 @@ def get_data(filters):
             "Sales Order Item",
             filters={"parent": so.name},
             fields=[
+                "idx",
                 "item_code",
                 "item_name",
                 "length_size",
                 "total_weight",
-                "pieces"
+                "pieces",
+                "qty",
+                "name",
+                "projected_qty",
+                "actual_qty"
             ]
         )
+
 
         for soi in so_items:
             # ---------------------------
             # Delivery Note aggregation
             # ---------------------------
-            dn_items = frappe.get_all(
+            dn_item = frappe.get_all(
                 "Delivery Note Item",
                 filters={
                     "against_sales_order": so.name,
                     "item_code": soi.item_code,
+                    "so_detail": soi.name,   # exact SO row match
                 },
-                fields=["qty", "total_weight"]
+                fields=["qty", "pieces"],
+                limit=1
             )
 
-            ready_pc = sum(flt(d.qty) for d in dn_items)
-            ready_weight = sum(flt(d.total_weight) for d in dn_items)
+            if dn_item:
+                ready_pc = flt(dn_item[0].pieces)
+                ready_weight = flt(dn_item[0].qty)
+            else:
+                ready_pc = 0
+                ready_weight = 0
+
 
             # ---------------------------
             # Sales Invoice aggregation
@@ -107,13 +121,21 @@ def get_data(filters):
                 filters={
                     "sales_order": so.name,
                     "item_code": soi.item_code,
+                    "so_detail": soi.name,   # exact SO row match
                 },
-                fields=["qty", "total_weight", "pieces", "parent"]
+                fields=["qty", "pieces", "parent"],
+                limit=1
             )
 
-            dispatch_pcs = sum(flt(s.qty) for s in si_items)
-            dispatch_weight = sum(flt(s.total_weight) for s in si_items)
-            balance_pcs = sum(flt(s.pieces) for s in si_items)
+            if si_items:
+                dispatch_pcs = flt(si_items[0].pieces)
+                dispatch_weight = flt(si_items[0].qty)
+            else:
+                dispatch_pcs = 0
+                dispatch_weight = 0
+
+            balance_pcs = soi.pieces - dispatch_pcs
+
 
             # Completion date & location
             completion_date = None
@@ -128,12 +150,12 @@ def get_data(filters):
             pending_ready_pc = soi.pieces - ready_pc
 
             pending_ready_weight = (
-                0 if (flt(soi.total_weight) - ready_weight) < 0
-                else (flt(soi.total_weight) - ready_weight)
+                0 if (flt(soi.qty) - ready_weight) < 0
+                else (flt(soi.qty) - ready_weight)
             )
 
             clearence = ready_weight
-            balance_weight = flt(soi.total_weight) - dispatch_weight
+            balance_weight = flt(soi.qty) - dispatch_weight
             rfd = clearence - dispatch_weight
             grade, section = get_grade_and_section(soi.item_name)
 
@@ -145,7 +167,7 @@ def get_data(filters):
                 "length": soi.length_size,
                 # "pcs": pcs,
                 "pcs": soi.pieces,
-                "total_weight": soi.total_weight,
+                "total_weight": soi.qty,
                 "ready_pc": ready_pc,
                 "ready_weight": ready_weight,
                 "pending_ready_pc": pending_ready_pc,
@@ -156,6 +178,7 @@ def get_data(filters):
                 "balance_pcs": balance_pcs,
                 "balance_weight": balance_weight,
                 "rfd": rfd,
+                "stock_qty": soi.actual_qty,
                 "po_date": so.po_date,
                 "delivery_date": so.delivery_date,
                 "completion_date": completion_date,

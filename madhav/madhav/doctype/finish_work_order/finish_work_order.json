@@ -1,0 +1,234 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "format:PEN-WO-{#####}",
+ "creation": "2026-02-05 14:22:20.696871",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "filters_section",
+  "date",
+  "item_name",
+  "wo_number",
+  "column_break_kfdf",
+  "customer",
+  "sales_order",
+  "company",
+  "section_break_aojs",
+  "fetch_pending_work_orders",
+  "pending_work_orders",
+  "section_break_rtvw",
+  "total_work_order_qty",
+  "column_break_sdtl",
+  "total_work_order_pieces",
+  "section_break_rxeq",
+  "raw_materials",
+  "amended_from",
+  "section_break_uhuw",
+  "total_raw_material_qty",
+  "column_break_zppz",
+  "total_raw_material_pieces",
+  "section_break_tenl",
+  "scrap_items",
+  "section_break_hgvu",
+  "scrap_qty",
+  "excess_rm_qty",
+  "column_break_qhen",
+  "consumption_ratio",
+  "scrap_ratio"
+ ],
+ "fields": [
+  {
+   "fieldname": "fetch_pending_work_orders",
+   "fieldtype": "Button",
+   "label": "Fetch Pending Work Orders"
+  },
+  {
+   "allow_bulk_edit": 1,
+   "fieldname": "pending_work_orders",
+   "fieldtype": "Table",
+   "label": "Pending Work Orders",
+   "options": "Pending Work Orders"
+  },
+  {
+   "fieldname": "filters_section",
+   "fieldtype": "Section Break",
+   "label": "Filters"
+  },
+  {
+   "fieldname": "date",
+   "fieldtype": "Date",
+   "label": "WO Date"
+  },
+  {
+   "fieldname": "section_break_aojs",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "item_name",
+   "fieldtype": "Data",
+   "label": "WO Item Name"
+  },
+  {
+   "fieldname": "wo_number",
+   "fieldtype": "Link",
+   "label": "WO Number",
+   "options": "Work Order"
+  },
+  {
+   "fieldname": "customer",
+   "fieldtype": "Link",
+   "label": "WO Customer",
+   "options": "Customer"
+  },
+  {
+   "fieldname": "sales_order",
+   "fieldtype": "Link",
+   "label": "WO Sales Order",
+   "options": "Sales Order"
+  },
+  {
+   "fieldname": "column_break_kfdf",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "section_break_rxeq",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "raw_materials",
+   "fieldtype": "Table",
+   "label": "Raw Materials",
+   "options": "Raw Material Items"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Finish Work Order",
+   "print_hide": 1,
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "section_break_tenl",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "scrap_items",
+   "fieldtype": "Table",
+   "label": "Scrap Items",
+   "options": "Scrap Items"
+  },
+  {
+   "fieldname": "company",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Company",
+   "options": "Company",
+   "reqd": 1
+  },
+  {
+   "fieldname": "total_work_order_qty",
+   "fieldtype": "Float",
+   "label": "Total Work Order Qty",
+   "read_only": 1
+  },
+  {
+   "fieldname": "total_work_order_pieces",
+   "fieldtype": "Float",
+   "label": "Total Work Order Pieces",
+   "read_only": 1
+  },
+  {
+   "fieldname": "total_raw_material_qty",
+   "fieldtype": "Float",
+   "label": "Total Raw Material Qty",
+   "read_only": 1
+  },
+  {
+   "fieldname": "total_raw_material_pieces",
+   "fieldtype": "Float",
+   "label": "Total Raw Material Pieces",
+   "read_only": 1
+  },
+  {
+   "fieldname": "scrap_qty",
+   "fieldtype": "Float",
+   "label": "Total Scrap Qty",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_rtvw",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "column_break_sdtl",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "section_break_uhuw",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "column_break_zppz",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "section_break_hgvu",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "column_break_qhen",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "consumption_ratio",
+   "fieldtype": "Float",
+   "label": "Consumption Ratio",
+   "read_only": 1
+  },
+  {
+   "fieldname": "scrap_ratio",
+   "fieldtype": "Float",
+   "label": "Scrap Ratio",
+   "read_only": 1
+  },
+  {
+   "fieldname": "excess_rm_qty",
+   "fieldtype": "Float",
+   "hidden": 1,
+   "label": "Excess RM Qty"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2026-02-18 13:38:52.814210",
+ "modified_by": "Administrator",
+ "module": "Madhav",
+ "name": "Finish Work Order",
+ "naming_rule": "Expression (old style)",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

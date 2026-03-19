@@ -358,7 +358,7 @@ function get_selected_work_orders(frm, dialog, cut_plan_type) {
     }
 
     // Process selected work orders and add to cutting plan
-    process_selected_work_orders(frm, selected_work_orders, cut_plan_type);
+    // process_selected_work_orders(frm, selected_work_orders, cut_plan_type);
     dialog.hide();
 }
 

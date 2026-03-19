@@ -1,0 +1,368 @@
+// Copyright (c) 2026, Finbyz pvt. ltd. and contributors
+// For license information, please see license.txt
+
+frappe.ui.form.on("Finish Work Order", {
+    refresh(frm) {
+        set_unplanned_checkbox_lock(frm);
+        set_batch_query(frm);
+        apply_work_order_filters(frm);
+        set_warehouse_filter(frm, "pending_work_orders", "target_warehouse");
+        set_warehouse_filter(frm, "raw_materials", "source_warehouse");
+    },
+    onload(frm) {
+        apply_work_order_filters(frm);
+    },
+    date(frm) {
+        apply_work_order_filters(frm);
+    },
+    company(frm) {
+        set_warehouse_filter(frm, "pending_work_orders", "target_warehouse");
+        set_warehouse_filter(frm, "raw_materials", "source_warehouse");
+    },
+    fetch_pending_work_orders(frm) {
+        if (!frm.doc.company) {
+            frappe.throw(__('Company field is mandatory'));
+            return;
+        }
+        frappe.call({
+            method: "madhav.api.populate_pending_work_orders",
+            args: {
+                filters: {
+                    date: frm.doc.date,
+                    item_name: frm.doc.item_name,
+                    wo_number: frm.doc.wo_number,
+                    sales_order: frm.doc.sales_order,
+                    company: frm.doc.company
+                }
+            },
+            freeze: true,
+            callback(r) {
+                if (!r.exc && r.message) {
+
+                    frm.clear_table("pending_work_orders");
+
+                    r.message.forEach(wo => {
+                        let row = frm.add_child("pending_work_orders");
+
+                        row.work_order = wo.name;
+                        row.party_name = wo.customer;
+                        row.target_warehouse = wo.fg_warehouse;
+                        row.item = wo.production_item;
+                        row.stock_uom = wo.stock_uom;
+                        row.grade = wo.item_name;
+                        row.pieces = wo.pieces;
+                        row.length_size = wo.length;
+                        row.actual_average_length = wo.length;
+                        row.ready_pieces = wo.pieces;
+                        row.variation = wo.variation_allowed;
+                        row.po_no = wo.po_no;
+                        row.actual_weight = wo.weight_per_meter;
+                        row.standard_weight = wo.weight_per_meter;
+                        row.actual_section_weight = wo.weight_per_meter;
+                        row.qty = wo.qty - wo.produced_qty;
+                        row.ready_qty = wo.qty- wo.produced_qty;
+                        row.remaining_qty = wo.qty - wo.produced_qty
+                        row.sales_order = wo.sales_order;
+                    });
+
+                    frm.refresh_field("pending_work_orders");
+                    frm.dirty();
+
+                    frappe.msgprint(`Fetched ${r.message.length} Work Orders`);
+                }
+            }
+        });
+    },
+    pending_work_orders(frm, cdt, cdn) {
+        let row = locals[cdt][cdn];
+
+        // Clear field you don't want copied
+        row.target_warehouse = "";
+        frm.refresh_field("pending_work_orders");
+    }
+});
+frappe.ui.form.on('Raw Material Items', {
+    item_code: function(frm, cdt, cdn) {
+        // Clear the batch_no if the item_code changes to prevent invalid data
+        frappe.model.set_value(cdt, cdn, 'batch_no', '');
+        set_batch_query(frm, cdt, cdn);
+        fetch_batch_qty(frm, cdt, cdn);
+    },
+    source_warehouse: function(frm, cdt, cdn) {
+        fetch_batch_qty(frm, cdt, cdn);
+         set_batch_query(frm, cdt, cdn);
+    },
+
+    batch_no(frm, cdt, cdn) {
+        let row = locals[cdt][cdn];
+
+        if (!row.batch_no) return;
+
+        frappe.db.get_value('Batch', row.batch_no, 
+            ['pieces', 'average_length', 'section_weight'], 
+            function (r) {
+                if (r) {
+                    frappe.model.set_value(cdt, cdn, 'pieces', r.pieces);
+                    frappe.model.set_value(cdt, cdn, 'length', r.average_length);
+                    frappe.model.set_value(cdt, cdn, 'section_weight', r.section_weight);
+                }
+            }
+        );
+        fetch_batch_qty(frm, cdt, cdn);
+    }
+});
+function set_batch_query(frm, cdt, cdn) {
+    frm.fields_dict.raw_materials.grid.get_field("batch_no").get_query = function(doc, cdt, cdn) {
+        let row = locals[cdt][cdn];
+
+        return {
+            query: "madhav.madhav.doctype.finish_work_order.finish_work_order.get_available_batches",
+            filters: {
+                item_code: row.item_code,
+                warehouse: row.source_warehouse
+            }
+        };
+    };
+}
+frappe.ui.form.on("Pending Work Orders", {
+    ready_qty(frm, cdt, cdn) {
+        let row = locals[cdt][cdn];
+    
+        frappe.db.get_single_value("Manufacturing Settings", 
+            "overproduction_percentage_for_work_order"
+        ).then((percentage) => {
+    
+            percentage = flt(percentage) || 0;
+    
+            let multiplier = 1 + (percentage / 100);
+            let max_allowed = flt(row.qty) * multiplier;
+    
+            if (flt(row.ready_qty) > max_allowed) {
+                frappe.msgprint(
+                    __('Ready Qty cannot be greater than Qty by more than {0}%', [percentage])
+                );
+                frappe.model.set_value(cdt, cdn, 'ready_qty', row.qty);
+            }
+    
+            check_weight_variance(frm, cdt, cdn);
+        });
+    },
+
+    ready_pieces(frm, cdt, cdn) {
+        let row = locals[cdt][cdn];
+    
+        frappe.db.get_single_value("Manufacturing Settings", 
+            "overproduction_percentage_for_work_order"
+        ).then((percentage) => {
+    
+            percentage = flt(percentage) || 0;
+    
+            let multiplier = 1 + (percentage / 100);
+            let max_allowed = flt(row.pieces) * multiplier;
+    
+            if (flt(row.ready_pieces) > max_allowed) {
+                frappe.msgprint(
+                    __('Ready Pieces cannot be greater than Pieces by more than {0}%', [percentage])
+                );
+                frappe.model.set_value(cdt, cdn, 'ready_pieces', row.pieces);
+            }
+    
+            check_weight_variance(frm, cdt, cdn);
+        });
+    },
+
+    length_size(frm, cdt, cdn) {
+        check_weight_variance(frm, cdt, cdn);
+    },
+    make_it_unplanned(frm, cdt, cdn) {
+        let row = locals[cdt][cdn];
+        if (row.make_it_unplanned) {
+            row.old_work_order = row.work_order;
+            row.work_order = "";
+            row.old_sales_order = row.sales_order;
+            row.sales_order = "";
+            row.variation = 1;
+        } 
+        else {
+            row.work_order = row.old_work_order || "";
+            row.old_work_order = "";
+            row.sales_order = row.old_sales_order;
+            row.old_sales_order = "";
+            row.variation = 0;
+        }
+        frm.refresh_field("pending_work_orders");
+    },
+    form_render(frm, cdt, cdn) {
+        let row = locals[cdt][cdn];
+        let grid = frm.fields_dict.pending_work_orders.grid;
+        let grid_row = grid.grid_rows_by_docname[cdn];
+
+        if (row.make_it_unplanned) {
+            grid_row.toggle_editable("make_it_unplanned", false);
+        }
+    },
+    pending_work_orders_add: function(frm, cdt, cdn) {
+        // Clears the target_warehouse field when a row is duplicated or added
+        frappe.model.set_value(cdt, cdn, 'target_warehouse', null);
+    }
+});
+function check_weight_variance(frm, cdt, cdn) {
+    let row = locals[cdt][cdn];
+
+    if (!row || !row.ready_qty || !row.ready_pieces || !row.length_size || !row.standard_weight) {
+        return;
+    }
+
+    let calculated = flt(row.ready_qty) * 1000 / (flt(row.ready_pieces) * flt(row.length_size));
+    let max_allowed = flt(row.standard_weight) * 1.20;
+    let min_allowed = flt(row.standard_weight) * 0.80;
+    frappe.model.set_value(cdt, cdn, 'calculated_section_weight', calculated);
+
+    let grid = frm.fields_dict["pending_work_orders"].grid;
+    let grid_row = grid.grid_rows_by_docname[cdn];
+
+    if (!grid_row || !grid_row.row) return;
+
+    if (calculated > max_allowed || calculated < min_allowed) {
+        // Highlight entire row
+        $(grid_row.on_grid_fields[0].$input).css({
+            "background-color": "#fff0f0",
+        });
+        $(grid_row.on_grid_fields[1].$input).css({
+            "background-color": "#fff0f0",
+        });
+        $(grid_row.on_grid_fields[2].$input).css({
+            "background-color": "#fff0f0",
+        });
+        $(grid_row.on_grid_fields[3].$input).css({
+            "background-color": "#fff0f0",
+        });
+        $(grid_row.on_grid_fields[4].$input).css({
+            "background-color": "#fff0f0",
+        });
+        $(grid_row.on_grid_fields[5].$input).css({
+            "background-color": "#fff0f0",
+        });
+        $(grid_row.on_grid_fields[6].$input).css({
+            "background-color": "#fff0f0",
+        });
+        $(grid_row.on_grid_fields[7].$input).css({
+            "background-color": "#fff0f0",
+        });
+        $(grid_row.on_grid_fields[8].$input).css({
+            "background-color": "#fff0f0",
+        });
+        $(grid_row.row).css({
+            "background-color": "#fff0f0",
+        });
+    } else {
+
+        // Reset highlight
+        $(grid_row.row).css({
+            "background-color": "",
+            "border-left": ""
+        });
+    }
+}
+function set_warehouse_filter(frm, child_table, warehouse) {
+    frm.set_query(warehouse, child_table, function(doc, cdt, cdn) {
+
+        if (!frm.doc.company) {
+            return {};
+        }
+
+        return {
+            filters: {
+                company: frm.doc.company
+            }
+        };
+    });
+}
+function set_unplanned_checkbox_lock(frm) {
+    let grid = frm.fields_dict.pending_work_orders?.grid;
+    if (!grid) return;
+
+    (frm.doc.pending_work_orders || []).forEach(row => {
+        let grid_row = grid.grid_rows_by_docname[row.name];
+        if (!grid_row) return;
+
+        if (row.make_it_unplanned) {
+            grid_row.toggle_editable("make_it_unplanned", false);
+        }
+    });
+}
+function fetch_batch_qty(frm, cdt, cdn) {
+
+    let row = locals[cdt][cdn];
+
+    if (row.source_warehouse && row.item_code && row.batch_no) {
+
+        frappe.call({
+            method: "erpnext.stock.doctype.batch.batch.get_batch_qty",
+            args: {
+                batch_no: row.batch_no,
+                warehouse: row.source_warehouse,
+                item_code: row.item_code
+            },
+            callback: function(r) {
+                if (r.message) {
+                    frappe.model.set_value(cdt, cdn, 'qty', r.message);
+                }
+            }
+        });
+
+    }
+}
+function apply_work_order_filters(frm) {
+
+    // If no date → empty filters
+    if (!frm.doc.date) {
+        set_empty_filters(frm);
+        return;
+    }
+
+    frappe.call({
+        method: 'frappe.client.get_list',
+        args: {
+            doctype: 'Work Order',
+            filters: {
+                creation: ['between', [
+                    frm.doc.date + ' 00:00:00',
+                    frm.doc.date + ' 23:59:59'
+                ]]
+            },
+            fields: ['sales_order', 'name', 'customer'],
+            limit_page_length: 0
+        },
+        callback(r) {
+            if (!r.message) {
+                set_empty_filters(frm);
+                return;
+            }
+
+            let sales_orders = [...new Set(r.message.map(d => d.sales_order).filter(Boolean))];
+            let wo_numbers  = [...new Set(r.message.map(d => d.name).filter(Boolean))];
+            let wo_customers = [...new Set(r.message.map(d => d.customer).filter(Boolean))];
+
+            frm.set_query('sales_order', () => ({
+                filters: { name: ['in', sales_orders.length ? sales_orders : ['']] }
+            }));
+
+            frm.set_query('wo_number', () => ({
+                filters: { name: ['in', wo_numbers.length ? wo_numbers : ['']] }
+            }));
+
+            frm.set_query('customer', () => ({
+                filters: { name: ['in', wo_customers.length ? wo_customers : ['']] }
+            }));
+        }
+    });
+}
+
+
+// Ensures dropdowns empty if no date
+function set_empty_filters(frm) {
+    frm.set_query('sales_order', () => ({ filters: { name: ['in', ['']] } }));
+    frm.set_query('wo_number', () => ({ filters: { name: ['in', ['']] } }));
+    frm.set_query('customer', () => ({ filters: { name: ['in', ['']] } }));
+}

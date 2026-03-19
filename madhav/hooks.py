@@ -155,14 +155,18 @@ override_doctype_class = {
     "BOM":"madhav.madhav.override.bom.BOM",
     "Production Plan":"madhav.madhav.override.production_plan.CustomProductionPlan",
     "Purchase Receipt": "madhav.madhav.override.purchase_receipt.PurchaseReceipt",
+    "Stock Entry": "madhav.madhav.override.stock_entry.CustomStockEntry"
     # "Purchase Receipt": "madhav.madhav.override.purchase_rPurchaseReceipteceipt.",
 }
 
 # Document Events
 # ---------------
-# Hook on document methods and events
+# Hook on document methods and events 
 
 doc_events = {
+    "BOM": {
+        "on_submit": "madhav.doc_events.bom.mark_item_as_manufacture",
+    },
 	"Stock Ledger Entry": {
         "on_submit": "madhav.doc_events.stock_ledger_entry.create_piece_stock_ledger_entry",
 	},
@@ -174,11 +178,13 @@ doc_events = {
         "validate": "madhav.doc_events.stock_entry.validate"
     },
     "Purchase Invoice": {
-        "before_save": [
-            "madhav.doc_events.purchase_invoice.validate_limit_on_saved_before_submit",
-            "madhav.doc_events.purchase_invoice.validate_pr_rejected_qty_has_return"
-        ],
-    },
+    "before_save": [
+        # "madhav.doc_events.purchase_invoice.validate_limit_on_saved_before_submit",
+        # "madhav.madhav.override.purchase_invoice.before_save",
+        "madhav.doc_events.purchase_invoice.validate_pr_rejected_qty_has_return"
+    ],
+    "before_cancel": "madhav.doc_events.stock_entry.cancel_linked_psles"
+},
     "Purchase Receipt": {
         "before_save": [
             "madhav.doc_events.purchase_receipt.set_actual_rate_per_kg",
@@ -195,6 +201,7 @@ doc_events = {
             "madhav.doc_events.purchase_receipt.ensure_quality_inspections_submitted"
         ],
         "on_submit": ["madhav.doc_events.purchase_receipt.after_submit",
+                    #   "madhav.doc_events.purchase_receipt.create_stock_reservation"
                     #    "madhav.doc_events.purchase_receipt.round_off_stock_qty"
                     ],
         "before_cancel": "madhav.doc_events.stock_entry.cancel_linked_psles"
@@ -219,11 +226,12 @@ doc_events = {
         "before_cancel": "madhav.doc_events.stock_entry.cancel_linked_psles"
     },
     "Delivery Note": {
-        "before_cancel": "madhav.doc_events.stock_entry.cancel_linked_psles"
+        "before_cancel": "madhav.doc_events.stock_entry.cancel_linked_psles",
+        "on_submit": "madhav.doc_events.delivery_note.on_submit"
     },
-    "Purchase Invoice": {
-        "before_cancel": "madhav.doc_events.stock_entry.cancel_linked_psles"
-    },
+    # "Purchase Invoice": {
+    #     "before_cancel": "madhav.doc_events.stock_entry.cancel_linked_psles"
+    # },
     "Attendance":{
       "validate":"madhav.doc_events.attendance.set_status",
       "after_insert":"madhav.doc_events.attendance.set_short_leave_count",
@@ -232,7 +240,7 @@ doc_events = {
     "Production Plan": {
         "before_save": [
             "madhav.doc_events.production_plan.duplicate_po_items_to_assembly_items_without_consolidate",
-            "madhav.doc_events.production_plan.consolidate_assembly_items",
+            # "madhav.doc_events.production_plan.consolidate_assembly_items",
         ]
         },
     "Payment Entry": {
@@ -252,6 +260,16 @@ doc_events = {
 from erpnext.stock.serial_batch_bundle import SerialBatchCreation
 from madhav.madhav.monkey_patch.serial_batch_bundle import create_batch
 SerialBatchCreation.create_batch = create_batch
+
+from erpnext.stock.doctype.stock_reservation_entry import stock_reservation_entry as sre_module
+from madhav.madhav.monkey_patch.stock_reservation_entry import (
+	auto_reserve_serial_and_batch,
+	create_stock_reservation_entries_for_so_items as custom_create_stock_reservation_entries_for_so_items,
+)
+sre_module.StockReservationEntry.auto_reserve_serial_and_batch = auto_reserve_serial_and_batch
+sre_module.create_stock_reservation_entries_for_so_items = (
+	custom_create_stock_reservation_entries_for_so_items
+)
 
 # from erpnext.controllers.buying_controller import BuyingController
 # from madhav.madhav.monkey_patch.buying_controller import update_stock_ledger
@@ -313,7 +331,8 @@ item_variant.make_variant_item_code = custom_make_variant_item_code
 #
 override_whitelisted_methods = {
     "erpnext.manufacturing.doctype.work_order.work_order.make_stock_entry": "madhav.madhav.override.work_order.make_stock_entry",
-    "erpnext.stock.doctype.purchase_receipt.purchase_receipt.make_purchase_invoice": "madhav.madhav.override.purchase_invoice.custom_make_purchase_invoice"
+    "erpnext.stock.doctype.purchase_receipt.purchase_receipt.make_purchase_invoice": "madhav.madhav.override.purchase_invoice.custom_make_purchase_invoice",
+    "erpnext.manufacturing.doctype.production_plan.production_plan.get_open_sales_orders":"madhav.madhav.override.production_plan.get_open_sales_orders"
 }
 
 # after_migrate = [

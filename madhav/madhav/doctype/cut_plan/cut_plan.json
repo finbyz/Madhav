@@ -1,0 +1,221 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "naming_series:",
+ "creation": "2026-03-13 16:56:53.572073",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "cut_document_section",
+  "company",
+  "date",
+  "item",
+  "item_name",
+  "consumed_material_section",
+  "from_warehouse",
+  "consumed_batch",
+  "column_break_qyjp",
+  "consumed_qty",
+  "consumed_pcs",
+  "consumed_avg_length",
+  "consumed_section_weight",
+  "produced_material_section",
+  "to_warehouse",
+  "batch",
+  "column_break_nvtw",
+  "produced_qty",
+  "produced_pcs",
+  "produced_avg_length",
+  "produced_section_weight",
+  "scrap_section",
+  "scrap_item",
+  "scrap_warehouse",
+  "scrap_qty",
+  "section_break_qeda",
+  "naming_series",
+  "amended_from"
+ ],
+ "fields": [
+  {
+   "fieldname": "section_break_qeda",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "naming_series",
+   "fieldtype": "Select",
+   "hidden": 1,
+   "label": "Naming series",
+   "options": "CP-.####."
+  },
+  {
+   "fieldname": "cut_document_section",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "company",
+   "fieldtype": "Link",
+   "label": "Company",
+   "options": "Company"
+  },
+  {
+   "fieldname": "date",
+   "fieldtype": "Date",
+   "label": "Date"
+  },
+  {
+   "fieldname": "item",
+   "fieldtype": "Link",
+   "label": "Item",
+   "options": "Item"
+  },
+  {
+   "fieldname": "item_name",
+   "fieldtype": "Data",
+   "label": "Item Name",
+   "read_only": 1
+  },
+  {
+   "fieldname": "consumed_material_section",
+   "fieldtype": "Section Break",
+   "label": "Consumed Material"
+  },
+  {
+   "fieldname": "from_warehouse",
+   "fieldtype": "Link",
+   "label": "From Warehouse",
+   "options": "Warehouse"
+  },
+  {
+   "fieldname": "consumed_batch",
+   "fieldtype": "Link",
+   "label": "Batch",
+   "options": "Batch"
+  },
+  {
+   "fieldname": "column_break_qyjp",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "consumed_qty",
+   "fieldtype": "Float",
+   "label": "Qty"
+  },
+  {
+   "fieldname": "consumed_pcs",
+   "fieldtype": "Int",
+   "label": "Pcs"
+  },
+  {
+   "fieldname": "consumed_avg_length",
+   "fieldtype": "Float",
+   "label": "Avg Length"
+  },
+  {
+   "fieldname": "consumed_section_weight",
+   "fieldtype": "Float",
+   "label": "Section Weight"
+  },
+  {
+   "fieldname": "produced_material_section",
+   "fieldtype": "Section Break",
+   "label": "Produced Material "
+  },
+  {
+   "fieldname": "to_warehouse",
+   "fieldtype": "Link",
+   "label": "To Warehouse",
+   "options": "Warehouse"
+  },
+  {
+   "fieldname": "batch",
+   "fieldtype": "Link",
+   "label": "Batch",
+   "options": "Batch"
+  },
+  {
+   "fieldname": "column_break_nvtw",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "produced_qty",
+   "fieldtype": "Float",
+   "label": "Qty"
+  },
+  {
+   "fieldname": "produced_pcs",
+   "fieldtype": "Int",
+   "label": "Pcs"
+  },
+  {
+   "fieldname": "produced_avg_length",
+   "fieldtype": "Float",
+   "label": "Avg Length"
+  },
+  {
+   "fieldname": "produced_section_weight",
+   "fieldtype": "Float",
+   "label": "Section Weight"
+  },
+  {
+   "fieldname": "scrap_section",
+   "fieldtype": "Section Break",
+   "label": "Scrap"
+  },
+  {
+   "fieldname": "scrap_item",
+   "fieldtype": "Link",
+   "label": "Scrap Item",
+   "options": "Item"
+  },
+  {
+   "fieldname": "scrap_warehouse",
+   "fieldtype": "Link",
+   "label": "Scrap Warehouse",
+   "options": "Warehouse"
+  },
+  {
+   "fieldname": "scrap_qty",
+   "fieldtype": "Float",
+   "label": "Scrap Qty"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Cut Plan",
+   "print_hide": 1,
+   "read_only": 1,
+   "search_index": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2026-03-13 18:02:44.988845",
+ "modified_by": "Administrator",
+ "module": "Madhav",
+ "name": "Cut Plan",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

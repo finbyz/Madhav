@@ -4,7 +4,6 @@ from frappe.utils import get_url_to_form
 from frappe.utils import flt
 from erpnext.controllers.status_updater import OverAllowanceError
 
-
 def validate_limit_on_save(self, method):
     for row in self.items:
         row.received_qty = row.qty + row.rejected_qty
@@ -237,6 +236,9 @@ def make_quality_inspection(se_doc, item):
         "ref_item": item.name,
         "description": item.description,
         "batch_no": item.batch_no,
+        "pieces":item.pieces,
+        "sample_length_size":item.average_length,
+        "section_weight":item.section_weight,
         # "lot_no": item.lot_no,
         # "ar_no": item.ar_no,
         "sample_size": item.qty
@@ -253,7 +255,53 @@ def make_quality_inspection(se_doc, item):
 
 def after_submit(doc,method):
     create_batch_group(doc)
+    
+def create_fg_stock_reservation(company, item_code, warehouse, qty, so_qty, stock_uom, so_item_no, sales_order=None):
+    """Create Stock Reservation Entry for Finished Good"""
 
+    if not item_code or not warehouse or not qty:
+        return
+    
+    try:
+        sre = frappe.new_doc("Stock Reservation Entry")
+        sre.item_code = item_code
+        sre.warehouse = warehouse
+        sre.reserved_qty = qty
+        sre.voucher_qty = so_qty
+        available_qty = so_qty - qty
+        sre.available_qty = available_qty
+        # Optional but recommended links
+        if sales_order:
+            sre.voucher_type = "Sales Order"
+            sre.voucher_no = sales_order
+            sre.voucher_detail_no = so_item_no
+        else:
+            return
+        
+        if not available_qty:
+            return
+
+        sre.company = company
+        sre.stock_uom = stock_uom
+        sre.flags.ignore_permissions = True
+        sre.insert()
+        sre.submit()
+
+    except Exception:
+        frappe.log_error(
+            title=f"Stock Reservation Failed: {item_code}",
+            message=frappe.get_traceback()
+        )
+        frappe.throw(
+            f"Failed to create Stock Reservation Entry for Item <b>{item_code}</b>"
+        )
+            
+def create_stock_reservation(doc,method):
+    for row in doc.items:
+        if row.sales_order and row.sales_order_item:
+            so_item_qty = frappe.get_value("Sales Order Item", {"name": row.sales_order_item, "parent": row.sales_order}, "qty")
+            create_fg_stock_reservation(doc.company, row.item_code, row.warehouse, row.qty, so_item_qty, row.uom, row.sales_order_item, row.sales_order)
+    
 def create_batch_group(purchase_receipt):
     # Find all batches linked to this PR
     batch_list = frappe.get_all(

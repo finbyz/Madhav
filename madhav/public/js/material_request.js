@@ -1,3 +1,15 @@
+frappe.ui.form.on('Material Request', {
+    validate(frm) {
+        if (frm.doc.company === "MADHAV UDYOG PRIVATE LIMITED") {
+            frm.set_value("naming_series", "MUMR.YY.-");
+        } else if (frm.doc.company === "MADHAV STELCO PRIVATE LIMITED") {
+            frm.set_value("naming_series", "MSMR.YY.-");
+        } 
+    
+},
+})
+
+
 frappe.ui.form.on('Material Request Item', {
 	qty: function (frm,cdt,cdn) {
 		console.log("chekcing for MR................")

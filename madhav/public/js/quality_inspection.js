@@ -2,6 +2,7 @@ frappe.ui.form.on("Quality Inspection", {
 	validate: function(frm) {
 		// Ensure accepted_qty is correctly calculated before saving
 		update_accepted_qty(frm);
+		update_length_size(frm)
 	},
 	refresh(frm) {
 		// Set inspected_by once when creating a new Quality Inspection
@@ -21,7 +22,12 @@ frappe.ui.form.on("Quality Inspection", {
 	rejected_qty(frm) {
 	update_accepted_qty(frm);
 	},
-
+	rejected_length_size(frm) {
+		update_length_size(frm);
+	},
+	sample_length_size(frm) {
+		update_length_size(frm);
+	},
 	sample_size(frm) {
 		const entered = parseFloat(frm.doc.sample_size) || 0;
 		const max_allowed = parseFloat(frm._max_sample_size_from_pr) || 0;
@@ -46,5 +52,15 @@ const update_accepted_qty = (frm) => {
 	// accepted_qty = sample_size - rejected_qty (never below zero)
 	const accepted_qty = Math.max(sample_size - rejected_qty, 0);
 	frm.set_value("accepted_qty", accepted_qty);
+};
+
+const update_length_size = (frm) => {
+	console.log("checking for update_accepted_qty");
+	const sample_length_size = parseFloat(frm.doc.sample_length_size) || 0;
+	const rejected_length_size = parseFloat(frm.doc.rejected_length_size) || 0;
+
+	// accepted_qty = sample_size - rejected_qty (never below zero)
+	const accepted_length_size = Math.max(sample_length_size - rejected_length_size, 0);
+	frm.set_value("accepted_length_size", accepted_length_size);
 };
 

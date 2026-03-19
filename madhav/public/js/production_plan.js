@@ -1,5 +1,22 @@
 frappe.ui.form.on('Production Plan', {
     refresh: function(frm) {
+        if (frm.doc.docstatus === 1) {
+            if (frm.doc.status !== "Completed") {
+                let items = frm.events.get_items_for_work_order(frm);
+
+				if (items?.length && frm.doc.status !== "Closed") {
+                    frm.remove_custom_button('Work Order / Subcontract PO', 'Create');
+                    frm.add_custom_button(
+                        __("Work Order or Subcontract PO"),
+                        () => {
+                            frm.trigger("make_work_order_custom");
+                            // console.log("triggered")
+                        },
+                        __("Create")
+                    );
+                }
+            }
+        }
         // Show button only if Production Plan is submitted
         if (frm.doc.docstatus === 1) {
             frm.add_custom_button('Create Cutting Plan', function() {
@@ -37,6 +54,41 @@ frappe.ui.form.on('Production Plan', {
             });
         }
     },
+    get_items_for_work_order(frm) {
+		let items = frm.doc.po_items;
+		if (frm.doc.sub_assembly_items?.length) {
+			items = [...items, ...frm.doc.sub_assembly_items];
+		}
+
+		let has_items =
+			items.filter((item) => {
+				if (item.planned_qty) {
+					return item.planned_qty > item.ordered_qty;
+				} else {
+					return item.qty > (item.received_qty || item.ordered_qty);
+				}
+			}) || [];
+
+		return has_items;
+	},
+    make_work_order_custom(frm) {
+        console.log("MAKE WORK ORDER TRIGGERED");
+		frappe.call({
+			method: "make_work_order",
+			freeze: true,
+			doc: frm.doc,
+			callback: function () {
+				frm.reload_doc();
+                update_latest_work_order(frm);
+			},
+		});
+	},
+    get_items(frm) {
+        // Wait for ERPNext to finish populating rows
+        frappe.after_ajax(() => {
+            populate_all_rows(frm);
+        });
+    },
     get_sales_orders(frm) {
         // Delay required because rows are added asynchronously
         setTimeout(() => {
@@ -44,7 +96,19 @@ frappe.ui.form.on('Production Plan', {
         }, 500);
     },
 });
-
+function update_latest_work_order(frm) {
+    frappe.call({
+        method: "madhav.api.update_latest_wo_from_pp", // server method
+        args: {
+            production_plan: frm.doc.name
+        },
+        freeze: true,
+        callback: function () {
+            frm.reload_doc();
+            frappe.msgprint("✅ Work Order updated from Production Plan!");
+        }
+    });
+}
 function populate_customer_names(frm) {
     (frm.doc.sales_orders || []).forEach(row => {
         if (row.sales_order && !row.customer_name) {
@@ -60,6 +124,48 @@ function populate_customer_names(frm) {
                     }
                 }
             );
+        }
+    });
+}
+
+frappe.ui.form.on("Production Plan Item", {
+    item_code: function (frm, cdt, cdn) {
+        fetch_so_item_pcs(frm, cdt, cdn);
+    },
+});
+function populate_all_rows(frm) {
+    (frm.doc.po_items || []).forEach(row => {
+        fetch_so_item_pcs(frm, row.doctype, row.name);
+    });
+}
+function fetch_so_item_pcs(frm, cdt, cdn) {
+    let row = locals[cdt][cdn];
+
+    if (!row.sales_order || !row.item_code) return;
+
+    frappe.call({
+        method: "madhav.api.get_so_item_pcs",
+        args: {
+            sales_order: row.sales_order,
+            item_code: row.item_code,
+            sales_order_item: row.sales_order_item,
+            planned_qty: row.planned_qty || 0,
+            row_id: cdn
+        },
+        callback(r) {
+            if (r.message) {
+                const row_id = r.message.row_id;
+    
+                frappe.model.set_value(cdt, row_id, "length_size_m", r.message.length_size || 0);
+                frappe.model.set_value(cdt, row_id, "pieces", r.message.pieces || 0);
+                frappe.model.set_value(cdt, row_id, "po_no", r.message.po_no || "");
+                // frappe.model.set_value(cdt, row_id, "section_weight", r.message.total_weight || "");
+                frappe.model.set_value(cdt, row_id, "planned_qty", r.message.planned_qty || 0);
+                frappe.model.set_value(cdt, row_id, "pending_qty", r.message.planned_qty || 0);
+                frappe.model.set_value(cdt, row_id, "customers_purchase_order", r.message.po_no || "");
+                frappe.model.set_value(cdt, row_id, "customer", r.message.customer || "");
+                frappe.model.set_value(cdt, row_id, "customer_name", r.message.customer_name || "");
+            }
         }
     });
 }

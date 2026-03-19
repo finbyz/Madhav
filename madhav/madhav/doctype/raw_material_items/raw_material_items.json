@@ -1,0 +1,148 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-02-05 13:45:50.566375",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "source_warehouse",
+  "section_break_yuwo",
+  "item_code",
+  "item_name",
+  "column_break_izxi",
+  "batch_no",
+  "work_order",
+  "section_break_tkfz",
+  "required_qty",
+  "column_break_fcfb",
+  "uom",
+  "section_break_ocoe",
+  "qty",
+  "length",
+  "column_break_bnic",
+  "pieces",
+  "section_weight"
+ ],
+ "fields": [
+  {
+   "columns": 2,
+   "fieldname": "source_warehouse",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Source Warehouse",
+   "options": "Warehouse"
+  },
+  {
+   "fieldname": "section_break_yuwo",
+   "fieldtype": "Section Break"
+  },
+  {
+   "columns": 2,
+   "fieldname": "item_code",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Item Code",
+   "options": "Item",
+   "reqd": 1
+  },
+  {
+   "fieldname": "item_name",
+   "fieldtype": "Data",
+   "label": "Item Name"
+  },
+  {
+   "fieldname": "section_break_tkfz",
+   "fieldtype": "Section Break"
+  },
+  {
+   "columns": 1,
+   "fieldname": "qty",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Qty",
+   "reqd": 1
+  },
+  {
+   "fieldname": "required_qty",
+   "fieldtype": "Float",
+   "label": "Required Qty"
+  },
+  {
+   "fieldname": "column_break_fcfb",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "uom",
+   "fieldtype": "Link",
+   "label": "UOM",
+   "options": "UOM"
+  },
+  {
+   "columns": 2,
+   "fieldname": "batch_no",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Batch No",
+   "options": "Batch",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_izxi",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "section_break_ocoe",
+   "fieldtype": "Section Break"
+  },
+  {
+   "columns": 1,
+   "fieldname": "length",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Length",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_bnic",
+   "fieldtype": "Column Break"
+  },
+  {
+   "columns": 1,
+   "fieldname": "pieces",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Pieces",
+   "reqd": 1
+  },
+  {
+   "columns": 1,
+   "fieldname": "section_weight",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Section Weight",
+   "read_only": 1
+  },
+  {
+   "fieldname": "work_order",
+   "fieldtype": "Link",
+   "label": "Work Order",
+   "options": "Work Order"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-02-11 16:18:10.046182",
+ "modified_by": "Administrator",
+ "module": "Madhav",
+ "name": "Raw Material Items",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

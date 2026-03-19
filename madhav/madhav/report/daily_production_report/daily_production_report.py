@@ -248,15 +248,29 @@ def execute(filters=None):
 		agg["kvah"] += float(plan.get("kvah") or 0)
 
 		# Scrap totals split by target warehouse bucket
+		# for sc in scrap_rows:
+		# 	qty = float(sc.get("scrap_qty") or 0)
+		# 	target_wh = sc.get("target_scrap_warehouse")
+		# 	bucket = get_scrap_bucket(target_wh)
+		# 	if bucket == "miss_roll":
+		# 		agg["miss_roll_mt"] += qty
+		# 	elif bucket == "reusable_miss_roll":
+		# 		agg["reusable_miss_roll_mt"] += qty
+		# 	else:
+		# 		agg["end_cut_mt"] += qty
 		for sc in scrap_rows:
 			qty = float(sc.get("scrap_qty") or 0)
-			target_wh = sc.get("target_scrap_warehouse")
-			bucket = get_scrap_bucket(target_wh)
-			if bucket == "miss_roll":
+			item_code = sc.get("item_code")
+
+			item_name = ""
+			if item_code:
+				item_name = frappe.db.get_value("Item", item_code, "item_name") or ""
+
+			item_name_upper = item_name.upper()
+
+			if item_name_upper.startswith("MIS ROLL"):
 				agg["miss_roll_mt"] += qty
-			elif bucket == "reusable_miss_roll":
-				agg["reusable_miss_roll_mt"] += qty
-			else:
+			elif item_name_upper.startswith("FG"):
 				agg["end_cut_mt"] += qty
 
 		for sc_rm in scrap_rows_rm:

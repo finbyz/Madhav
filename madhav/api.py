@@ -1,27 +1,30 @@
 import frappe
-
+import json
+from frappe.model.mapper import get_mapped_doc
+from erpnext.stock.get_item_details import get_bin_details, get_default_bom, get_price_list_rate
+from erpnext.stock.doctype.packed_item.packed_item import is_product_bundle
 
 @frappe.whitelist()
 def get_so_item_pieces_and_length(so_detail: str):
-	"""Return pieces, length_size and qty from Sales Order Item.
+    """Return pieces, length_size and qty from Sales Order Item.
 
-	This is used by the Delivery Note client script to safely fetch
-	values without calling frappe.client.get_value from JS.
-	"""
-	if not so_detail:
-		return {}
+    This is used by the Delivery Note client script to safely fetch
+    values without calling frappe.client.get_value from JS.
+    """
+    if not so_detail:
+        return {}
 
-	pieces, length_size, qty = frappe.db.get_value(
-		"Sales Order Item",
-		so_detail,
-		["pieces", "length_size", "qty"],
-	) or (None, None, None)
+    pieces, length_size, qty = frappe.db.get_value(
+        "Sales Order Item",
+        so_detail,
+        ["pieces", "length_size", "qty"],
+    ) or (None, None, None)
 
-	return {
-		"pieces": pieces,
-		"length_size": length_size,
-		"qty": qty,
-	}
+    return {
+        "pieces": pieces,
+        "length_size": length_size,
+        "qty": qty,
+    }
 
 import frappe
 
@@ -417,7 +420,8 @@ def get_work_order_details(work_orders):
             'basic_rate': wo_items.get('basic_rate', 0),
             'work_order_reference':work_order_name,
             'sales_order': work_order.sales_order,
-            'production_item': work_order.production_item
+            'production_item': work_order.production_item,
+            "fg_item_name": work_order.item_name
             })
     return items
 
@@ -850,4 +854,455 @@ def get_items_with_material_request(doctype, txt, searchfield, start, page_len, 
         "page_len": page_len
     })
 
+@frappe.whitelist()
+def get_so_item_pcs(sales_order, item_code, sales_order_item, row_id=None):
 
+    if not sales_order or not item_code:
+        return {}
+
+    so_item = frappe.db.get_value(
+        "Sales Order Item",
+        {
+            "parent": sales_order,
+            "item_code": item_code,
+            "name": sales_order_item
+        },
+        ["completed_pcs", "pending_pcs", "length_size", "pieces", "total_weight", "stock_reserved_qty"],
+        as_dict=True,
+    ) or {}
+
+    so = frappe.db.get_value(
+        "Sales Order",
+        sales_order,
+        ["po_no", "customer", "customer_name"],
+        as_dict=True
+    ) or {}
+    
+    reserved = flt(so_item.get("stock_reserved_qty"))
+    planned_qty = flt(frappe.form_dict.get("planned_qty"))
+
+    adjusted_planned_qty = planned_qty - reserved
+    if adjusted_planned_qty < 0:
+        adjusted_planned_qty = 0
+        
+    so_item.update({
+        "planned_qty": adjusted_planned_qty,
+        "po_no": so.get("po_no", ""),
+        "customer": so.get("customer", ""),
+        "customer_name": so.get("customer_name", ""),
+        "row_id": row_id
+    })
+
+    return so_item
+
+@frappe.whitelist()
+def update_latest_wo_from_pp(production_plan):
+
+    if not production_plan:
+        return {"status": "no_pp"}
+
+    # Fetch all Work Orders for this PP
+    wo_list = frappe.get_all(
+        "Work Order",
+        filters={"production_plan": production_plan},
+        fields=["name", "production_plan_item", "sales_order"]
+    )
+
+    if not wo_list:
+        return {"status": "no_wo"}
+
+    updated = 0
+
+    for wo in wo_list:
+        if not wo.production_plan_item:
+            continue
+
+        # Fetch linked PP Item row
+        pp_item = frappe.db.get_value(
+            "Production Plan Item",
+            wo.production_plan_item,
+            ["length_size_m", "pieces", "po_no"],
+            as_dict=True
+        )
+        sales_order = frappe.db.get_value(
+            "Sales Order", 
+            {"name": wo.sales_order}, 
+            ["customer", "customer_name"],
+            as_dict=True)
+        
+        if not pp_item:
+            continue
+
+        wo_doc = frappe.get_doc("Work Order", wo.name)
+        wo_doc.length = pp_item.length_size_m or 0
+        wo_doc.pieces = pp_item.pieces or 0
+        wo_doc.po_no = pp_item.po_no or ""
+        wo_doc.customer = sales_order.customer
+        wo_doc.customer_name = sales_order.customer_name
+        wo_doc.skip_transfer = 1
+
+        wo_doc.save()
+
+        # submit if still draft
+        if wo_doc.docstatus == 0:
+            wo_doc.submit()
+
+        updated += 1
+
+    return {
+        "status": "ok",
+        "updated_wo": updated
+    }
+
+
+@frappe.whitelist()
+def populate_pending_work_orders(filters=None):
+
+    filters = frappe.parse_json(filters) if filters else {}
+
+    conditions = []
+    values = {}
+
+    # Base filters
+    conditions.append("wo.status NOT IN ('Draft', 'Completed', 'Cancelled')")
+
+    if filters.get("item_name"):
+        conditions.append("wo.item_name LIKE %(item_name)s")
+        values["item_name"] = f"%{filters['item_name']}%"
+
+    if filters.get("wo_number"):
+        conditions.append("wo.name = %(wo_number)s")
+        values["wo_number"] = filters["wo_number"]
+
+    if filters.get("sales_order"):
+        conditions.append("wo.sales_order = %(sales_order)s")
+        values["sales_order"] = filters["sales_order"]
+
+    if filters.get("date"):
+        conditions.append("wo.creation BETWEEN %(from)s AND %(to)s")
+        values["from"] = f"{filters['date']} 00:00:00"
+        values["to"] = f"{filters['date']} 23:59:59"
+
+    where_clause = " AND ".join(conditions)
+
+    return frappe.db.sql(f"""
+        SELECT
+            wo.name,
+            wo.source_warehouse,
+            wo.customer,
+            wo.fg_warehouse,
+            wo.production_item,
+            wo.stock_uom,
+            wo.item_name,
+            wo.pieces,
+            wo.length,
+            wo.completed_pcs,
+            wo.variation_allowed,
+            wo.po_no,
+            wo.qty,
+            wo.sales_order,
+            wo.produced_qty,
+            i.weight_per_meter
+        FROM `tabWork Order` wo
+        LEFT JOIN `tabItem` i
+            ON i.name = wo.production_item
+        WHERE {where_clause}
+        ORDER BY wo.creation DESC
+    """, values=values, as_dict=True)
+    
+
+@frappe.whitelist()
+def sync_work_orders_from_sales_order(sales_order):
+
+    so = frappe.get_doc("Sales Order", sales_order)
+
+    # Build item map from Sales Order Items
+    item_map = {}
+
+    for row in so.items:
+        item_map[row.item_code] = {
+            "pieces": row.pieces,
+            "length": row.length_size,
+            "completed_pcs": row.completed_pcs,
+            "pending_pcs": row.pending_pcs,
+            "variation_allowed": row.variation_allowed
+        }
+
+    work_orders = frappe.get_all(
+        "Work Order",
+        filters={"sales_order": sales_order},
+        fields=["name", "production_item"]
+    )
+
+    updated = 0
+
+    for wo in work_orders:
+        if wo.production_item not in item_map:
+            continue
+
+        data = item_map[wo.production_item]
+
+        frappe.db.set_value("Work Order", wo.name, {
+            "pieces": data["pieces"],
+            "length": data["length"],
+            "completed_pcs": data["completed_pcs"],
+            "pending_pcs": data["pending_pcs"],
+            "variation_allowed": data["variation_allowed"],
+            "po_no": so.po_no
+        })
+
+        updated += 1
+
+    return f"{updated} Work Orders updated successfully"
+
+def get_requested_item_qty(sales_order):
+    result = {}
+    for d in frappe.db.get_all(
+        "Material Request Item",
+        filters={"docstatus": 1, "sales_order": sales_order},
+        fields=["sales_order_item", "sum(qty) as qty", "sum(received_qty) as received_qty"],
+        group_by="sales_order_item",
+    ):
+        result[d.sales_order_item] = frappe._dict({"qty": d.qty, "received_qty": d.received_qty})
+
+    return result
+
+@frappe.whitelist()
+def make_material_request(source_name, target_doc=None):
+    requested_item_qty = get_requested_item_qty(source_name)
+
+    def postprocess(source, target):
+        if source.tc_name and frappe.db.get_value("Terms and Conditions", source.tc_name, "buying") != 1:
+            target.tc_name = None
+            target.terms = None
+
+    def get_remaining_qty(so_item):
+        reserved = flt(so_item.get("stock_reserved_qty"))
+        effective_qty = flt(so_item.qty) - reserved
+
+        return flt(
+            effective_qty
+            - flt(requested_item_qty.get(so_item.name, {}).get("qty"))
+            - max(
+                flt(so_item.get("delivered_qty"))
+                - flt(requested_item_qty.get(so_item.name, {}).get("received_qty")),
+                0,
+            )
+        )
+
+    def update_item(source, target, source_parent):
+        # qty is for packed items, because packed items don't have stock_qty field
+        target.project = source_parent.project
+        target.qty = get_remaining_qty(source)
+        target.stock_qty = flt(target.qty) * flt(target.conversion_factor)
+        target.actual_qty = get_bin_details(
+            target.item_code, target.warehouse, source_parent.company, True
+        ).get("actual_qty", 0)
+
+        args = target.as_dict().copy()
+        args.update(
+            {
+                "company": source_parent.get("company"),
+                "price_list": frappe.db.get_single_value("Buying Settings", "buying_price_list"),
+                "currency": source_parent.get("currency"),
+                "conversion_rate": source_parent.get("conversion_rate"),
+            }
+        )
+
+        target.rate = flt(
+            get_price_list_rate(args=args, item_doc=frappe.get_cached_doc("Item", target.item_code)).get(
+                "price_list_rate"
+            )
+        )
+        target.amount = target.qty * target.rate
+
+    doc = get_mapped_doc(
+        "Sales Order",
+        source_name,
+        {
+            "Sales Order": {"doctype": "Material Request", "validation": {"docstatus": ["=", 1]}},
+            "Packed Item": {
+                "doctype": "Material Request Item",
+                "field_map": {"parent": "sales_order", "uom": "stock_uom"},
+                "postprocess": update_item,
+            },
+            "Sales Order Item": {
+                "doctype": "Material Request Item",
+                "field_map": {
+                    "name": "sales_order_item",
+                    "parent": "sales_order",
+                    "delivery_date": "schedule_date",
+                    "bom_no": "bom_no",
+                },
+                "condition": lambda item: (
+                    not item.is_manufacture
+                    and not frappe.db.exists(
+                        "Product Bundle", {"name": item.item_code, "disabled": 0}
+                    )
+                    and get_remaining_qty(item) > 0
+                ),
+                "postprocess": update_item,
+            },
+        },
+        target_doc,
+        postprocess,
+    )
+
+    return doc
+
+def set_delivery_date(items, sales_order):
+    delivery_dates = frappe.get_all(
+        "Sales Order Item", filters={"parent": sales_order}, fields=["delivery_date", "item_code"]
+    )
+
+    delivery_by_item = frappe._dict()
+    for date in delivery_dates:
+        delivery_by_item[date.item_code] = date.delivery_date
+
+    for item in items:
+        if item.product_bundle:
+            item.schedule_date = delivery_by_item[item.product_bundle]
+   
+@frappe.whitelist()
+def make_purchase_order(source_name, selected_items=None, target_doc=None):
+    if not selected_items:
+        return
+
+    if isinstance(selected_items, str):
+        selected_items = json.loads(selected_items)
+
+    items_to_map = [item.get("item_code") for item in selected_items if item.get("item_code")]
+    items_to_map = list(set(items_to_map))
+
+    def is_drop_ship_order(target):
+        drop_ship = True
+        for item in target.items:
+            if not item.delivered_by_supplier:
+                drop_ship = False
+                break
+
+        return drop_ship
+
+    def set_missing_values(source, target):
+        target.supplier = ""
+        target.apply_discount_on = ""
+        target.additional_discount_percentage = 0.0
+        target.discount_amount = 0.0
+        target.inter_company_order_reference = ""
+        target.shipping_rule = ""
+        target.tc_name = ""
+        target.terms = ""
+        target.payment_terms_template = ""
+        target.payment_schedule = []
+
+        if is_drop_ship_order(target):
+            if source.shipping_address_name:
+                target.shipping_address = source.shipping_address_name
+                target.shipping_address_display = source.shipping_address
+            else:
+                target.shipping_address = source.customer_address
+                target.shipping_address_display = source.address_display
+
+            target.customer_contact_person = source.contact_person
+            target.customer_contact_display = source.contact_display
+            target.customer_contact_mobile = source.contact_mobile
+            target.customer_contact_email = source.contact_email
+        else:
+            target.customer = target.customer_name = target.shipping_address = None
+
+        target.run_method("set_missing_values")
+        if not target.taxes:
+            target.append_taxes_from_item_tax_template()
+        target.run_method("calculate_taxes_and_totals")
+
+    def update_item(source, target, source_parent):
+        target.schedule_date = source.delivery_date
+        reserved = flt(source.get("stock_reserved_qty"))
+
+        effective_qty = flt(source.qty) - reserved
+        effective_stock_qty = flt(source.stock_qty) - reserved
+
+        target.qty = effective_qty - (flt(source.ordered_qty) / flt(source.conversion_factor))
+        target.stock_qty = effective_stock_qty - flt(source.ordered_qty)
+        target.project = source_parent.project
+
+    def update_item_for_packed_item(source, target, source_parent):
+        target.qty = flt(source.qty) - flt(source.ordered_qty)
+
+    # po = frappe.get_list("Purchase Order", filters={"sales_order":source_name, "supplier":supplier, "docstatus": ("<", "2")})
+    doc = get_mapped_doc(
+        "Sales Order",
+        source_name,
+        {
+            "Sales Order": {
+                "doctype": "Purchase Order",
+                "field_no_map": [
+                    "address_display",
+                    "contact_display",
+                    "contact_mobile",
+                    "contact_email",
+                    "contact_person",
+                    "taxes_and_charges",
+                    "shipping_address",
+                    "dispatch_address",
+                ],
+                "validation": {"docstatus": ["=", 1]},
+            },
+            "Sales Order Item": {
+                "doctype": "Purchase Order Item",
+                "field_map": [
+                    ["name", "sales_order_item"],
+                    ["parent", "sales_order"],
+                    ["stock_uom", "stock_uom"],
+                    ["uom", "uom"],
+                    ["conversion_factor", "conversion_factor"],
+                    ["delivery_date", "schedule_date"],
+                ],
+                "field_no_map": [
+                    "rate",
+                    "price_list_rate",
+                    "item_tax_template",
+                    "discount_percentage",
+                    "discount_amount",
+                    "supplier",
+                    "pricing_rules",
+                ],
+                "postprocess": update_item,
+                "condition": lambda doc: (
+                    flt(doc.ordered_qty) < (flt(doc.stock_qty) - flt(doc.get("stock_reserved_qty")))
+                    and doc.item_code in items_to_map
+                    and not is_product_bundle(doc.item_code)
+                    and not doc.is_manufacture
+                ),
+            },
+            "Packed Item": {
+                "doctype": "Purchase Order Item",
+                "field_map": [
+                    ["name", "sales_order_packed_item"],
+                    ["parent", "sales_order"],
+                    ["uom", "uom"],
+                    ["conversion_factor", "conversion_factor"],
+                    ["parent_item", "product_bundle"],
+                    ["rate", "rate"],
+                ],
+                "field_no_map": [
+                    "price_list_rate",
+                    "item_tax_template",
+                    "discount_percentage",
+                    "discount_amount",
+                    "supplier",
+                    "pricing_rules",
+                ],
+                "postprocess": update_item_for_packed_item,
+                "condition": lambda doc: doc.parent_item in items_to_map
+                and flt(doc.ordered_qty) < flt(doc.qty),
+            },
+        },
+        target_doc,
+        set_missing_values,
+    )
+
+    set_delivery_date(doc.items, source_name)
+    doc.set_onload("load_after_mapping", False)
+
+    return doc

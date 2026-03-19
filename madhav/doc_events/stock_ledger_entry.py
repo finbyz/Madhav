@@ -1,62 +1,6 @@
 import frappe
-from frappe.utils import now
-
-
-
-
-# def convert_item_quantity(item_code, from_uom, to_uom, qty):
-#     item = frappe.get_doc("Item", item_code)
-#     from_factor = None
-#     to_factor = None
-
-#     for row in item.uoms:
-#         if row.uom == from_uom:
-#             from_factor = row.conversion_factor
-#         if row.uom == to_uom:
-#             to_factor = row.conversion_factor
-
-#     if from_factor is None:
-#         frappe.throw(f"UOM '{from_uom}' not found for item {item_code}")
-#     if to_factor is None:
-#         frappe.throw(f"UOM '{to_uom}' not found for item {item_code}")
-
-#     converted_qty = to_factor * qty / from_factor
-
-#     return converted_qty
-
-
-# def create_piece_stock_ledger_entry(self, method):
-#     required_stock_in_pieces = frappe.db.get_value("Item", self.item_code, "required_stock_in_pieces")
-#     if not required_stock_in_pieces:
-#         return
-    
-#     psle = frappe.get_doc({
-#         "doctype" : "Piece Stock Ledger Entry",
-#         "item_code": self.item_code,
-#         "warehouse": self.warehouse,
-#         "posting_date": self.posting_date,
-#         "posting_time": self.posting_time,
-#         "voucher_type": self.voucher_type,
-#         "voucher_no": self.voucher_no,
-#         "serial_and_batch_bundle": self.serial_and_batch_bundle,
-#         "actual_qty": self.pieces_qty,
-#         "company": self.company,
-#         "unit_of_measure": "Piece",
-#         "is_cancelled" : self.is_cancelled,
-#         "batch_no": self.batch_no,
-#         "docstatus" : self.docstatus
-#     }) 
-#     psle.save()
-        
-#     if psle.is_cancelled:
-#         frappe.db.sql(
-#             """update `tabPiece Stock Ledger Entry` set is_cancelled=1,
-#             modified=%s, modified_by=%s
-#             where voucher_type=%s and voucher_no=%s and is_cancelled = 0""",
-#             (now(), frappe.session.user, self.voucher_type, self.voucher_no),
-#         )
-
-import frappe
+from frappe.utils import now,flt
+from erpnext.stock.serial_batch_bundle import get_batchwise_qty
 
 def create_piece_stock_ledger_entry(sle_doc, method):
     # Check if piece_qty exists in the parent document, else skip
@@ -93,6 +37,8 @@ def create_piece_stock_ledger_entry(sle_doc, method):
         # "stock_value_difference": sle_doc.stock_value_difference,
     })
     piece_doc.insert(ignore_permissions=True)
+    update_batch_piece_on_sle(sle_doc, piece_qty)
+
 
 def get_piece_qty(sle_doc):
     
@@ -116,21 +62,6 @@ def get_piece_qty(sle_doc):
         return None
 
     return frappe.db.get_value(child_doctype, detail_no, "pieces")
-    
-    # try:
-    #     child_doctype = frappe.db.get_value("DocField", {
-    #         "parent": sle_doc.voucher_type,
-    #         "fieldname": "items"
-    #     }, "options")
-        
-    #     if not child_doctype:
-    #         return None
-
-    #     piece_qty = frappe.db.get_value(child_doctype, sle_doc.voucher_detail_no, "pieces")
-    #     return piece_qty
-    # except Exception as e:
-    #     frappe.log_error(f"Error fetching piece_qty: {e}")
-    #     return None
 
 def adjust_piece_qty_sign(sle_doc, piece_qty):
     """Make piece_qty negative for outgoing transactions"""
@@ -140,6 +71,9 @@ def adjust_piece_qty_sign(sle_doc, piece_qty):
     if sle_doc.voucher_type == "Sales Invoice":
         return -1 * abs(piece_qty)
 
+    if sle_doc.voucher_type == "Purchase Receipt" and frappe.db.get_value("Purchase Receipt",sle_doc.voucher_no,"is_return") == 1:
+        return -1 * abs(piece_qty)
+    
     if sle_doc.voucher_type == "Stock Entry":
         # Get Stock Entry purpose
         purpose = frappe.db.get_value("Stock Entry", sle_doc.voucher_no, "purpose")
@@ -156,32 +90,54 @@ def adjust_piece_qty_sign(sle_doc, piece_qty):
     # Default: assume incoming
     return abs(piece_qty)
 
-# def cancel_piece_stock_ledger_entry(sle_doc, method):
-#     """Cancel corresponding Piece Stock Ledger Entry when Stock Ledger Entry is cancelled"""
-    
-#     # Check if item requires piece tracking
-#     if not frappe.db.get_value("Item", sle_doc.item_code, "required_stock_in_pieces"):
-#         return
-    
-#     # Find piece entries that match this SLE
-#     piece_entries = frappe.get_all("Piece Stock Ledger Entry", 
-#         filters={
-#             "voucher_type": sle_doc.voucher_type,
-#             "voucher_no": sle_doc.voucher_no,
-#             "item_code": sle_doc.item_code,
-#             "warehouse": sle_doc.warehouse,
-#             "docstatus": 1,
-#             "is_cancelled": 0
-#         },
-#         fields=["name"]
-#     )
-    
-#     frappe.log_error(f"SLE Cancel: Found {len(piece_entries)} piece entries to cancel for SLE {sle_doc.name}")
-    
-#     for entry in piece_entries:
-#         try:
-#             piece_doc = frappe.get_doc("Piece Stock Ledger Entry", entry.name)
-#             piece_doc.cancel()
-#             frappe.log_error(f"SLE Cancel: Successfully cancelled Piece Stock Ledger Entry {entry.name}")
-#         except Exception as e:
-#             frappe.log_error(f"SLE Cancel: Error cancelling Piece Stock Ledger Entry {entry.name}: {str(e)}")
+# def update_batch_piece(voucher_type, voucher_no, docstatus, via_landed_cost_voucher=False):
+# 	batches = get_batchwise_qty(voucher_type, voucher_no)
+# 	if not batches:
+# 		return
+
+# 	precision = frappe.get_precision("Batch", "pieces")
+# 	for batch, pieces in batches.items():
+# 		current_qty = get_batch_current_qty(batch)
+# 		current_qty += flt(pieces, precision) * (-1 if docstatus == 2 else 1)
+
+# 		frappe.db.set_value("Batch", batch, "pieces", current_qty)
+  
+# def get_batch_current_qty(batch):
+# 	doctype = frappe.qb.DocType("Batch")
+# 	query = frappe.qb.from_(doctype).select(doctype.pieces).where(doctype.name == batch).for_update()
+# 	batch_qty = query.run()
+
+# 	return flt(batch_qty[0][0]) if batch_qty else 0.0
+
+def update_batch_piece_on_sle(sle_doc, piece_qty):
+	"""
+	Update Batch.pieces safely using row lock.
+	Called once per Piece Stock Ledger Entry.
+	"""
+
+	if not sle_doc.batch_no:
+		return
+
+	doctype = frappe.qb.DocType("Batch")
+
+	query = (
+		frappe.qb.from_(doctype)
+		.select(doctype.pieces)
+		.where(doctype.name == sle_doc.batch_no)
+		.for_update()
+	)
+
+	current = query.run()
+	current_qty = flt(current[0][0]) if current else 0
+
+	# Reverse on cancel
+	if sle_doc.is_cancelled:
+		piece_qty = -piece_qty
+
+	frappe.db.set_value(
+		"Batch",
+		sle_doc.batch_no,
+		"pieces",
+		current_qty + piece_qty,
+		update_modified=False
+	)
