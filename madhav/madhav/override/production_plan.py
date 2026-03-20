@@ -44,7 +44,6 @@ class CustomProductionPlan(ERPNextProductionPlan):
 
 		try:
 			wo.flags.ignore_mandatory = True
-			wo.flags.ignore_validate = True
 			wo.insert()
 			wo.submit()
 			return wo.name

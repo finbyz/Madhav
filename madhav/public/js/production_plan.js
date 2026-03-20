@@ -72,7 +72,6 @@ frappe.ui.form.on('Production Plan', {
 		return has_items;
 	},
     make_work_order_custom(frm) {
-        console.log("MAKE WORK ORDER TRIGGERED");
 		frappe.call({
 			method: "make_work_order",
 			freeze: true,
