@@ -34,6 +34,7 @@ class CustomProductionPlan(ERPNextProductionPlan):
 		wo = frappe.new_doc("Work Order")
 		wo.update(item)
 		wo.planned_start_date = item.get("planned_start_date") or item.get("schedule_date")
+		wo.skip_transfer = 1
 
 		if item.get("warehouse"):
 			wo.fg_warehouse = item.get("warehouse")
