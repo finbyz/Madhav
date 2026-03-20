@@ -89,13 +89,12 @@ class CustomProductionPlan(ERPNextProductionPlan):
 				so_details = frappe.db.get_value(
 					"Sales Order",
 					row.sales_order,
-					["customer", "customer_name", "po_no"],
+					["customer", "customer_name"],
 					as_dict=True,
 				)
 				if so_details:
 					row.customer = so_details.customer or ""
 					row.customer_name = so_details.customer_name or ""
-					row.customers_purchase_order = so_details.po_no or ""
 
 	@frappe.whitelist()
 	def get_open_sales_orders(self):
