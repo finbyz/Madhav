@@ -867,7 +867,7 @@ def get_so_item_pcs(sales_order, item_code, sales_order_item, row_id=None):
             "item_code": item_code,
             "name": sales_order_item
         },
-        ["completed_pcs", "pending_pcs", "length_size", "pieces", "total_weight", "stock_reserved_qty"],
+        [ "length_size", "pieces", "total_weight", "stock_reserved_qty"],
         as_dict=True,
     ) or {}
 
