@@ -25,30 +25,30 @@ def meters_to_inches(value):
 
 class CustomProductionPlan(ERPNextProductionPlan):
     
-	def create_work_order(self, item):
-		from erpnext.manufacturing.doctype.work_order.work_order import OverProductionError
+	# def create_work_order(self, item):
+	# 	from erpnext.manufacturing.doctype.work_order.work_order import OverProductionError
 
-		if flt(item.get("qty")) <= 0:
-			return
+	# 	if flt(item.get("qty")) <= 0:
+	# 		return
 
-		wo = frappe.new_doc("Work Order")
-		wo.update(item)
-		wo.planned_start_date = item.get("planned_start_date") or item.get("schedule_date")
-		wo.skip_transfer = 1
+	# 	wo = frappe.new_doc("Work Order")
+	# 	wo.update(item)
+	# 	wo.planned_start_date = item.get("planned_start_date") or item.get("schedule_date")
+	# 	wo.skip_transfer = 1
 
-		if item.get("warehouse"):
-			wo.fg_warehouse = item.get("warehouse")
+	# 	if item.get("warehouse"):
+	# 		wo.fg_warehouse = item.get("warehouse")
 
-		wo.set_work_order_operations()
-		wo.set_required_items()
+	# 	wo.set_work_order_operations()
+	# 	wo.set_required_items()
 
-		try:
-			wo.flags.ignore_mandatory = True
-			wo.insert()
-			wo.submit()
-			return wo.name
-		except OverProductionError:
-			pass
+	# 	try:
+	# 		wo.flags.ignore_mandatory = True
+	# 		wo.insert()
+	# 		wo.submit()
+	# 		return wo.name
+	# 	except OverProductionError:
+	# 		pass
 
 	def validate(self):
 		super().validate()

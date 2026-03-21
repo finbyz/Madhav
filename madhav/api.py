@@ -943,9 +943,7 @@ def update_latest_wo_from_pp(production_plan):
 
         wo_doc.save()
 
-        # submit if still draft
-        if wo_doc.docstatus == 0:
-            wo_doc.submit()
+        wo_doc.submit()
 
         updated += 1
 
