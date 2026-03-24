@@ -3,6 +3,7 @@ import json
 from frappe.utils import flt
 from frappe import _
 
+
 def on_submit(doc, method=None):
     if not doc.items:
         return
@@ -62,12 +63,14 @@ def on_submit(doc, method=None):
                     "for Item {3}, Batch {4} in Warehouse {5}"
                 ).format(
                     row.idx,
+                    row.qty,
                     reserved_qty,
                     row.item_code,
                     row.batch_no,
                     row.warehouse,
                 )
             )
+
 
 @frappe.whitelist()
 def get_sales_order_items_for_selector(filters=None):
@@ -85,7 +88,7 @@ def get_sales_order_items_for_selector(filters=None):
     for key, val in filters.items():
         if key in ("dynamic_filters", "project"):
             continue
-        
+
         if val:
             if isinstance(val, list) and len(val) == 2:
                 # Array format like ["not in", [...]] or ["<", 99.99]
@@ -101,7 +104,7 @@ def get_sales_order_items_for_selector(filters=None):
         dynamic_filters = filters.get("dynamic_filters")
         if isinstance(dynamic_filters, str):
             dynamic_filters = json.loads(dynamic_filters)
-        
+
         for df in dynamic_filters:
             if len(df) >= 4:
                 # df format: [doctype, fieldname, operator, value]
@@ -111,7 +114,7 @@ def get_sales_order_items_for_selector(filters=None):
 
                 if operator == "Between" and isinstance(value, str) and " to " in value:
                     value = value.split(" to ")
-                
+
                 so_filters.append([fieldname, operator, value])
 
     sales_orders = frappe.get_all(
@@ -177,9 +180,7 @@ def get_sales_order_items_for_selector(filters=None):
         as_dict=True,
     )
 
-    reservation_map = {
-        r.voucher_detail_no: r for r in reservation_rows
-    }
+    reservation_map = {r.voucher_detail_no: r for r in reservation_rows}
 
     rows = []
 
@@ -201,17 +202,13 @@ def get_sales_order_items_for_selector(filters=None):
                 "parent": row.parent,
                 "customer": so.get("customer"),
                 "transaction_date": so.get("transaction_date"),
-
                 "item_code": row.item_code,
                 "item_name": row.item_name,
-
                 "qty": flt(row.qty),
                 "pending_qty": pending_qty,
                 "uom": row.uom,
-
                 "pieces": row.pieces,
                 "length": row.length_size,
-
                 # section weight from Item
                 "section_weight": flt(row.section_weight),
                 # reservation data
@@ -221,3 +218,49 @@ def get_sales_order_items_for_selector(filters=None):
         )
 
     return rows
+
+
+def validate(self, method):
+    for row in self.items:
+        if row.against_sales_order:
+            deliver_as_qty = frappe.db.get_value(
+                "Sales Order", row.against_sales_order, "deliver_as_qty"
+            )
+            if deliver_as_qty and not row.invoice_qty:
+                frappe.throw(f"Invoice Qty is mandatory for row {row.idx}")
+
+
+def before_submit(self, method):
+    for row in self.items:
+        if row.invoice_qty:
+            # Create new Stock Reconciliation
+            data = frappe.new_doc("Stock Reconciliation")
+            data.purpose = "Stock Reconciliation"
+            data.posting_date = self.posting_date
+            data.posting_time = self.posting_time
+            data.company = self.company
+            data.set_warehouse = self.set_warehouse  # "Finished Goods - MS"
+
+            # Add item row
+            data.append(
+                "items",
+                {
+                    "item_code": row.item_code,
+                    "warehouse": row.warehouse,
+                    "use_serial_batch_fields": row.use_serial_batch_fields,
+                    "batch_no": row.batch_no,
+                    "qty": row.invoice_qty,  # or row.qty depending on your logic
+                    "pieces": row.pieces,
+                    "length": row.length,
+                    "average_length": row.average_length,
+                    "section_weight": row.section_weight,
+                    "delivery_note_ref": self.name,
+                },
+            )
+
+            data.insert(ignore_permissions=True)
+            # data.submit()
+
+            frappe.msgprint(
+                f"Stock Reconciliation {data.name} created for item {row.item_code}"
+            )

@@ -177,6 +177,14 @@ function open_sales_order_items_selector_for_delivery_note(frm) {
 				default: frm.doc.customer || "",
 			},
 			{
+				fieldtype: "Column Break",
+			},
+			{
+				fieldtype: "Data",
+				fieldname: "item_filter",
+				label: __("Item Name"),
+			},
+			{
 				fieldtype: "Section Break",
 			},
 			{
@@ -328,6 +336,10 @@ function open_sales_order_items_selector_for_delivery_note(frm) {
 			"change input awesomplete-selectcomplete",
 			frappe.utils.debounce(() => render_rows(), 300)
 		);
+		d.get_field("item_filter").$input.on(
+			"change input awesomplete-selectcomplete",
+			frappe.utils.debounce(() => render_rows(), 300)
+		);
 		d.get_field("customer_filter").$input.on(
 			"change input awesomplete-selectcomplete",
 			frappe.utils.debounce(() => render_rows(), 300)
@@ -368,6 +380,7 @@ function open_sales_order_items_selector_for_delivery_note(frm) {
 	function render_rows() {
 		const show_items = d.get_value("show_items");
 		const show_all_items = d.get_value("show_all_items");
+		const item_filter = d.get_value("item_filter");
 		const customer_filter = d.get_value("customer_filter");
 		const min_length = flt(d.get_value("min_length"));
 		const max_length = flt(d.get_value("max_length"));
@@ -376,6 +389,10 @@ function open_sales_order_items_selector_for_delivery_note(frm) {
 		let filtered_rows = state.rows.filter((row) => {
 			if (!show_all_items && flt(row.reserved_qty) <= 0 && flt(row.reserved_pieces) <= 0) return false;
 			if (customer_filter && row.customer !== customer_filter) return false;
+			if (item_filter && !( 
+				(row.item_code || "").toLowerCase().includes(item_filter.toLowerCase()) ||
+				(row.item_name || "").toLowerCase().includes(item_filter.toLowerCase())
+			)) return false;
 			
 			const row_length = flt(row.length_size !== undefined ? row.length_size : row.length);
 			if (min_length > 0 || max_length > 0) {
@@ -405,6 +422,57 @@ function open_sales_order_items_selector_for_delivery_note(frm) {
 		setup_table_events(wrapper, show_items, filtered_rows);
 	}
 
+	// function render_items_table(rows) {
+	// 	let last_so = null;
+	// 	let color_band = 0;
+
+	// 	const rows_html = rows.map((row) => {
+	// 		if (row.parent !== last_so) {
+	// 			if (last_so !== null) color_band = color_band ? 0 : 1;
+	// 			last_so = row.parent;
+	// 		}
+	// 		const bg_color = color_band ? "#f0faff" : "#fff";
+	// 		const checked = state.selected_children.has(row.name) ? "checked" : "";
+
+	// 		return `
+	// 			<tr style="background-color:${bg_color}">
+	// 				<td><input type="checkbox" class="selector-check" data-name="${frappe.utils.escape_html(row.name)}" ${checked}></td>
+	// 				<td>${frappe.utils.escape_html(row.parent || "")}</td>
+	// 				<td>${frappe.utils.escape_html(row.transaction_date || "")}</td>
+	// 				<td>${frappe.utils.escape_html(row.item_code || "")}</td>
+	// 				<td>${frappe.utils.escape_html(row.item_name || "")}</td>
+	// 				<td class="text-right">${format_number(flt(row.qty || 0))}</td>
+	// 				<td class="text-right">${format_number(flt(row.length_size ?? row.length ?? 0))}</td>
+	// 				<td class="text-right">${format_number(flt(row.pieces || 0))}</td>
+	// 				<td class="text-right">${format_number(flt(row.reserved_qty || 0))}</td>
+	// 				<td class="text-right">${format_number(flt(row.reserved_pieces || 0))}</td>
+	// 				<td class="text-right">${format_number(flt(row.section_weight || 0))}</td>
+	// 			</tr>`;
+	// 	}).join("");
+
+	// 	return `
+	// 		${get_table_header()}
+	// 		<div style="max-height:420px;overflow:auto;border:1px solid var(--border-color);border-radius:6px;">
+	// 			<table class="table table-bordered" style="margin-bottom:0;min-width:1200px;">
+	// 				<thead>
+	// 					<tr>
+	// 						<th style="width:40px;"></th>
+	// 						<th>${__("Sales Order")}</th>
+	// 						<th>${__("Date")}</th>
+	// 						<th>${__("Item Code")}</th>
+	// 						<th>${__("Item Name")}</th>
+	// 						<th class="text-right">${__("SO Qty")}</th>
+	// 						<th class="text-right">${__("Length")}</th>
+	// 						<th class="text-right">${__("Pieces")}</th>
+	// 						<th class="text-right">${__("Reserved Qty")}</th>
+	// 						<th class="text-right">${__("Reserved Pieces")}</th>
+	// 						<th class="text-right">${__("Section Weight")}</th>
+	// 					</tr>
+	// 				</thead>
+	// 				<tbody>${rows_html}</tbody>
+	// 			</table>
+	// 		</div>`;
+	// }
 	function render_items_table(rows) {
 		let last_so = null;
 		let color_band = 0;
@@ -433,11 +501,17 @@ function open_sales_order_items_selector_for_delivery_note(frm) {
 				</tr>`;
 		}).join("");
 
+		const filter_input = (col) =>
+			`<td style="padding:4px;"><input type="text" class="col-filter" data-col="${col}" placeholder="Search..." style="width:100%;padding:3px 6px;border:1px solid #ccc;border-radius:4px;font-size:12px;box-sizing:border-box;"></td>`;
+
+		const filter_number_input = (col) =>
+			`<td style="padding:4px;"><input type="text" class="col-filter col-filter-number" data-col="${col}" placeholder="Search..." style="width:100%;padding:3px 6px;border:1px solid #ccc;border-radius:4px;font-size:12px;box-sizing:border-box;text-align:right;"></td>`;
+
 		return `
-			${get_table_header()}
+			${get_table_header(rows.length)}
 			<div style="max-height:420px;overflow:auto;border:1px solid var(--border-color);border-radius:6px;">
 				<table class="table table-bordered" style="margin-bottom:0;min-width:1200px;">
-					<thead>
+					<thead style="position:sticky;top:0;z-index:1;background-color:#fff;">
 						<tr>
 							<th style="width:40px;"></th>
 							<th>${__("Sales Order")}</th>
@@ -450,6 +524,19 @@ function open_sales_order_items_selector_for_delivery_note(frm) {
 							<th class="text-right">${__("Reserved Qty")}</th>
 							<th class="text-right">${__("Reserved Pieces")}</th>
 							<th class="text-right">${__("Section Weight")}</th>
+						</tr>
+						<tr style="background-color:#f5f5f5;position:sticky;top:37px;z-index:1;">
+							<td style="padding:4px;"></td>
+							${filter_input("parent")}
+							${filter_input("transaction_date")}
+							${filter_input("item_code")}
+							${filter_input("item_name")}
+							${filter_number_input("qty")}
+							${filter_number_input("length_size")}
+							${filter_number_input("pieces")}
+							${filter_number_input("reserved_qty")}
+							${filter_number_input("reserved_pieces")}
+							${filter_number_input("section_weight")}
 						</tr>
 					</thead>
 					<tbody>${rows_html}</tbody>
@@ -510,31 +597,88 @@ function open_sales_order_items_selector_for_delivery_note(frm) {
 			</div>`;
 	}
 
-	function setup_table_events(wrapper, show_items, rows) {
-		if (show_items) {
-			wrapper.find(".selector-check").on("change", function () {
-				const row_name = this.getAttribute("data-name");
-				if (this.checked) state.selected_children.add(row_name);
-				else state.selected_children.delete(row_name);
-			});
-		} else {
-			wrapper.find(".so-selector-check").on("change", function () {
-				const parent = this.getAttribute("data-parent");
-				const so_items = rows.filter(r => r.parent === parent);
-				so_items.forEach(item => {
-					if (this.checked) state.selected_children.add(item.name);
-					else state.selected_children.delete(item.name);
-				});
-			});
-		}
+	// function setup_table_events(wrapper, show_items, rows) {
+	// 	if (show_items) {
+	// 		wrapper.find(".selector-check").on("change", function () {
+	// 			const row_name = this.getAttribute("data-name");
+	// 			if (this.checked) state.selected_children.add(row_name);
+	// 			else state.selected_children.delete(row_name);
+	// 		});
+	// 	} else {
+	// 		wrapper.find(".so-selector-check").on("change", function () {
+	// 			const parent = this.getAttribute("data-parent");
+	// 			const so_items = rows.filter(r => r.parent === parent);
+	// 			so_items.forEach(item => {
+	// 				if (this.checked) state.selected_children.add(item.name);
+	// 				else state.selected_children.delete(item.name);
+	// 			});
+	// 		});
+	// 	}
 
-		wrapper.find(".check-all-visible").on("change", function () {
-			const checked = this.checked;
-			const selector = show_items ? ".selector-check" : ".so-selector-check";
-			wrapper.find(selector).each(function () {
-				this.checked = checked;
-				$(this).trigger("change");
+	// 	wrapper.find(".check-all-visible").on("change", function () {
+	// 		const checked = this.checked;
+	// 		const selector = show_items ? ".selector-check" : ".so-selector-check";
+	// 		wrapper.find(selector).each(function () {
+	// 			this.checked = checked;
+	// 			$(this).trigger("change");
+	// 		});
+	// 	});
+	// }
+	function setup_table_events(wrapper, show_items, rows) {
+	if (show_items) {
+		wrapper.find(".selector-check").on("change", function () {
+			const row_name = this.getAttribute("data-name");
+			if (this.checked) state.selected_children.add(row_name);
+			else state.selected_children.delete(row_name);
+		});
+
+		wrapper.find(".col-filter").on("input", function () {
+			const col_filters = {};
+			wrapper.find(".col-filter").each(function () {
+				const col = this.getAttribute("data-col");
+				const val = this.value.toLowerCase().trim();
+				if (val) col_filters[col] = val;
+			});
+
+			wrapper.find("tbody tr").each(function () {
+				const $row = $(this);
+				const row_name = $row.find(".selector-check").data("name");
+				const row_data = rows.find(r => r.name === row_name);
+				if (!row_data) return;
+
+				const visible = Object.entries(col_filters).every(([col, val]) => {
+					// for number columns: get the actual value, handle length_size alias
+					let cell_val;
+					if (col === "length_size") {
+						cell_val = String(flt(row_data.length_size ?? row_data.length ?? 0));
+					} else {
+						cell_val = String(row_data[col] !== undefined ? row_data[col] : "").toLowerCase();
+					}
+					return cell_val.includes(val);
+				});
+
+				$row.toggle(visible);
+			});
+		});
+
+	} else {
+		wrapper.find(".so-selector-check").on("change", function () {
+			const parent = this.getAttribute("data-parent");
+			const so_items = rows.filter(r => r.parent === parent);
+			so_items.forEach(item => {
+				if (this.checked) state.selected_children.add(item.name);
+				else state.selected_children.delete(item.name);
 			});
 		});
 	}
+
+	wrapper.find(".check-all-visible").on("change", function () {
+		const checked = this.checked;
+		const selector = show_items ? ".selector-check" : ".so-selector-check";
+		wrapper.find(selector).each(function () {
+			this.checked = checked;
+			$(this).trigger("change");
+		});
+	});
+}
 }
