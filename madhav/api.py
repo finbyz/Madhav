@@ -988,6 +988,7 @@ def populate_pending_work_orders(filters=None):
             wo.name,
             wo.source_warehouse,
             wo.customer,
+            so.customer_name,  -- ✅ ADDED
             wo.fg_warehouse,
             wo.production_item,
             wo.stock_uom,
@@ -1004,6 +1005,8 @@ def populate_pending_work_orders(filters=None):
         FROM `tabWork Order` wo
         LEFT JOIN `tabItem` i
             ON i.name = wo.production_item
+        LEFT JOIN `tabSales Order` so   -- ✅ ADDED
+            ON so.name = wo.sales_order
         WHERE {where_clause}
         ORDER BY wo.creation DESC
     """, values=values, as_dict=True)

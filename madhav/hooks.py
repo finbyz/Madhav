@@ -54,6 +54,7 @@ doctype_js = {
     "Material Request": "public/js/material_request.js",
     "Quality Inspection": "public/js/quality_inspection.js",
     "Delivery Note": "public/js/delivery_note.js",
+    "Stock Reconciliation": "public/js/stock_reconciliation.js",
     # "Purchase Receipt": "public/js/purchase_receipt.js"
 }
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
@@ -164,6 +165,9 @@ override_doctype_class = {
 # Hook on document methods and events 
 
 doc_events = {
+    "Stock Reconciliation": {
+        "on_submit": "madhav.doc_events.stock_reconciliation.on_submit"
+    },
     "BOM": {
         "on_submit": "madhav.doc_events.bom.mark_item_as_manufacture",
     },
@@ -227,7 +231,9 @@ doc_events = {
     },
     "Delivery Note": {
         "before_cancel": "madhav.doc_events.stock_entry.cancel_linked_psles",
-        "on_submit": "madhav.doc_events.delivery_note.on_submit"
+        "on_submit": "madhav.doc_events.delivery_note.on_submit",
+        "validate": "madhav.doc_events.delivery_note.validate",
+        "before_submit":"madhav.doc_events.delivery_note.before_submit"
     },
     # "Purchase Invoice": {
     #     "before_cancel": "madhav.doc_events.stock_entry.cancel_linked_psles"
@@ -261,15 +267,15 @@ from erpnext.stock.serial_batch_bundle import SerialBatchCreation
 from madhav.madhav.monkey_patch.serial_batch_bundle import create_batch
 SerialBatchCreation.create_batch = create_batch
 
-from erpnext.stock.doctype.stock_reservation_entry import stock_reservation_entry as sre_module
-from madhav.madhav.monkey_patch.stock_reservation_entry import (
-	auto_reserve_serial_and_batch,
-	create_stock_reservation_entries_for_so_items as custom_create_stock_reservation_entries_for_so_items,
-)
-sre_module.StockReservationEntry.auto_reserve_serial_and_batch = auto_reserve_serial_and_batch
-sre_module.create_stock_reservation_entries_for_so_items = (
-	custom_create_stock_reservation_entries_for_so_items
-)
+# from erpnext.stock.doctype.stock_reservation_entry import stock_reservation_entry as sre_module
+# from madhav.madhav.monkey_patch.stock_reservation_entry import (
+# 	auto_reserve_serial_and_batch,
+# 	create_stock_reservation_entries_for_so_items as custom_create_stock_reservation_entries_for_so_items,
+# )
+# sre_module.StockReservationEntry.auto_reserve_serial_and_batch = auto_reserve_serial_and_batch
+# sre_module.create_stock_reservation_entries_for_so_items = (
+# 	custom_create_stock_reservation_entries_for_so_items
+# )
 
 # from erpnext.controllers.buying_controller import BuyingController
 # from madhav.madhav.monkey_patch.buying_controller import update_stock_ledger

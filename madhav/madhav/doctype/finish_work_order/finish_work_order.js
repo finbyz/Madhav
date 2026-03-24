@@ -2,16 +2,53 @@
 // For license information, please see license.txt
 
 frappe.ui.form.on("Finish Work Order", {
+    setup(frm) {
+        // Apply custom formatters directly to the child docfields
+        const set_df_grid_formatter = (doctype, fieldname, title_field, link_doctype) => {
+            let df = frappe.meta.get_docfield(doctype, fieldname);
+            if (df) {
+                df.formatter = function(value, df, options, doc) {
+                if (!value) return value;
+
+                let title = "";
+                if (doc && title_field && doc[title_field]) {
+                    title = doc[title_field];
+                }
+
+                if (!title) {
+                    title = frappe.utils.get_link_title(link_doctype, value) || "";
+                }
+
+                return title && title !== value ? `${value}: ${title}` : value;
+            };
+            }
+        };
+
+        [
+        ["Pending Work Orders", "item", "item_name", "Item"],
+        ["Pending Work Orders", "party_name", "party", "Customer"],
+        ["Raw Material Items", "item_code", "item_name", "Item"],
+        ["Scrap Items", "item", "item_name", "Item"]
+        ].forEach(([dt, field, title, link]) => {
+        set_df_grid_formatter(dt, field, title, link);
+        });
+    },
     refresh(frm) {
         set_unplanned_checkbox_lock(frm);
         set_batch_query(frm);
         apply_work_order_filters(frm);
         set_warehouse_filter(frm, "pending_work_orders", "target_warehouse");
         set_warehouse_filter(frm, "raw_materials", "source_warehouse");
+        fetch_missing_titles(frm);
+        frm.refresh_field("pending_work_orders");
+        frm.refresh_field("raw_materials");
+        frm.refresh_field("scrap_items");
+        
     },
     onload(frm) {
         apply_work_order_filters(frm);
     },
+    
     date(frm) {
         apply_work_order_filters(frm);
     },
@@ -46,8 +83,11 @@ frappe.ui.form.on("Finish Work Order", {
 
                         row.work_order = wo.name;
                         row.party_name = wo.customer;
+                        row.party = wo.customer_name;
+                        row.customer_name = wo.customer_name;
                         row.target_warehouse = wo.fg_warehouse;
                         row.item = wo.production_item;
+                        row.item_name = wo.item_name; // Set item_name for Pending Work Orders
                         row.stock_uom = wo.stock_uom;
                         row.grade = wo.item_name;
                         row.pieces = wo.pieces;
@@ -63,6 +103,10 @@ frappe.ui.form.on("Finish Work Order", {
                         row.ready_qty = wo.qty- wo.produced_qty;
                         row.remaining_qty = wo.qty - wo.produced_qty
                         row.sales_order = wo.sales_order;
+
+                        if (wo.customer && wo.customer_name) {
+                            frappe.utils.add_link_title("Customer", wo.customer, wo.customer_name);
+                        }
                     });
 
                     frm.refresh_field("pending_work_orders");
@@ -124,6 +168,92 @@ function set_batch_query(frm, cdt, cdn) {
         };
     };
 }
+
+function fetch_missing_titles(frm) {
+    let missing_customers = [];
+    let missing_items = [];
+
+    const check_missing = (rows, link_field, title_field, missing_list) => {
+        (rows || []).forEach(row => {
+            if (row[link_field] && !row[title_field]) {
+                missing_list.push(row[link_field]);
+            }
+        });
+    };
+
+    check_missing(frm.doc.pending_work_orders, "party_name", "party", missing_customers);
+    check_missing(frm.doc.pending_work_orders, "item", "item_name", missing_items);
+    check_missing(frm.doc.raw_materials, "item_code", "item_name", missing_items);
+    check_missing(frm.doc.scrap_items, "item", "item_name", missing_items);
+
+    missing_customers = [...new Set(missing_customers)];
+    missing_items = [...new Set(missing_items)];
+
+    if (missing_customers.length > 0) {
+        frappe.call({
+            method: "frappe.client.get_list",
+            args: { 
+                doctype: "Customer", 
+                filters: { name: ["in", missing_customers] }, 
+                fields: ["name", "customer_name"] 
+            },
+            callback: function(r) {
+                if (r.message) {
+                    r.message.forEach(c => {
+                        frappe.utils.add_link_title("Customer", c.name, c.customer_name);
+                        (frm.doc.pending_work_orders || []).forEach(row => {
+                            if (row.party_name === c.name) {
+                                frappe.model.set_value(row.doctype, row.name, "party", c.customer_name);
+                            }
+                        });
+                    });
+                    frm.refresh_field("pending_work_orders");
+                }
+            }
+        });
+    }
+
+    if (missing_items.length > 0) {
+        frappe.call({
+            method: "frappe.client.get_list",
+            args: { 
+                doctype: "Item", 
+                filters: { name: ["in", missing_items] }, 
+                fields: ["name", "item_name"] 
+            },
+            callback: function(r) {
+                if (r.message) {
+                    r.message.forEach(i => {
+                        frappe.utils.add_link_title("Item", i.name, i.item_name);
+                        
+                        (frm.doc.pending_work_orders || []).forEach(row => {
+                            if (row.item === i.name) {
+                                frappe.model.set_value(row.doctype, row.name, "item_name", i.item_name);
+                                frappe.model.set_value(row.doctype, row.name, "grade", i.item_name);
+                            }
+                        });
+
+                        (frm.doc.raw_materials || []).forEach(row => {
+                            if (row.item_code === i.name) {
+                                frappe.model.set_value(row.doctype, row.name, "item_name", i.item_name);
+                            }
+                        });
+
+                        (frm.doc.scrap_items || []).forEach(row => {
+                            if (row.item === i.name) {
+                                frappe.model.set_value(row.doctype, row.name, "item_name", i.item_name);
+                            }
+                        });
+                    });
+                    frm.refresh_field("pending_work_orders");
+                    frm.refresh_field("raw_materials");
+                    frm.refresh_field("scrap_items");
+                }
+            }
+        });
+    }
+}
+
 frappe.ui.form.on("Pending Work Orders", {
     ready_qty(frm, cdt, cdn) {
         let row = locals[cdt][cdn];
@@ -169,6 +299,7 @@ frappe.ui.form.on("Pending Work Orders", {
     
             check_weight_variance(frm, cdt, cdn);
         });
+        frappe.model.set_value(cdt,cdn,"calculated_qty",row.ready_pieces * row.length_size * row.standard_weight/1000)
     },
 
     length_size(frm, cdt, cdn) {
@@ -366,3 +497,5 @@ function set_empty_filters(frm) {
     frm.set_query('wo_number', () => ({ filters: { name: ['in', ['']] } }));
     frm.set_query('customer', () => ({ filters: { name: ['in', ['']] } }));
 }
+
+

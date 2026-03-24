@@ -7,7 +7,7 @@ from frappe.utils import now
 from frappe.utils import flt
 
 class FinishWorkOrder(Document):
-
+        
     def on_update(self):
         self.create_unplanned_work_orders()
         
@@ -20,6 +20,8 @@ class FinishWorkOrder(Document):
 
     def validate(self):
         self.update_totals()
+        for row in self.pending_work_orders:
+            row.calculated_qty = (flt(row.ready_pieces) * flt(row.standard_weight) * flt(row.length_size)) /1000
 
     def update_totals(self):
         total_wo_qty = 0
@@ -298,8 +300,8 @@ class FinishWorkOrder(Document):
                 # ==============================
                 se.append("items", {
                     "item_code": pwo.item,
-                    "t_warehouse": pwo.target_warehouse,
-                    "qty": pwo.ready_qty,
+                    "t_warehouse": pwo.target_warehouse,                        
+                    "qty": round(pwo.ready_qty if pwo.deliver_as_qty == 1 else pwo.calculated_qty , 2) ,
                     "pieces": pwo.ready_pieces,
                     "average_length": pwo.length_size,
                     "section_weight": pwo.standard_weight,
@@ -307,14 +309,13 @@ class FinishWorkOrder(Document):
                     "required_stock_in_pieces": 1
                 })
 
-                se.fg_completed_qty = pwo.ready_qty
-
+                se.fg_completed_qty = round(pwo.ready_qty if pwo.deliver_as_qty == 1 else pwo.calculated_qty,2)
                 se.insert()
                 se.submit()
                 self.create_fg_stock_reservation(
                     item_code=pwo.item,
                     warehouse=pwo.target_warehouse,
-                    qty=pwo.ready_qty,
+                    qty=round(pwo.ready_qty if pwo.deliver_as_qty == 1 else pwo.calculated_qty,2),
                     so_qty=pwo.qty,
                     name=pwo.name,
                     stock_uom=pwo.stock_uom,
