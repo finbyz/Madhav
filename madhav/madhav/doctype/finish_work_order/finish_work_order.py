@@ -303,7 +303,7 @@ class FinishWorkOrder(Document):
                 se.append("items", {
                     "item_code": pwo.item,
                     "t_warehouse": pwo.target_warehouse,                        
-                    "qty": round(pwo.ready_qty if pwo.deliver_as_qty == 1 else pwo.calculated_qty , 2) ,
+                    "qty": round(pwo.ready_qty if pwo.deliver_as_qty == 1 else pwo.calculated_qty , 3) ,
                     "pieces": pwo.ready_pieces,
                     "average_length": pwo.length_size,
                     "section_weight": pwo.standard_weight,
@@ -311,13 +311,13 @@ class FinishWorkOrder(Document):
                     "required_stock_in_pieces": 1
                 })
 
-                se.fg_completed_qty = round(pwo.ready_qty if pwo.deliver_as_qty == 1 else pwo.calculated_qty,2)
+                se.fg_completed_qty = round(pwo.ready_qty if pwo.deliver_as_qty == 1 else pwo.calculated_qty,3)
                 se.insert()
                 se.submit()
                 self.create_fg_stock_reservation(
                     item_code=pwo.item,
                     warehouse=pwo.target_warehouse,
-                    qty=round(pwo.ready_qty if pwo.deliver_as_qty == 1 else pwo.calculated_qty,2),
+                    qty=round(pwo.ready_qty if pwo.deliver_as_qty == 1 else pwo.calculated_qty,3),
                     so_qty=pwo.qty,
                     name=pwo.name,
                     stock_uom=pwo.stock_uom,
