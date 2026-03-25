@@ -83,7 +83,7 @@ frappe.ui.form.on("Finish Work Order", {
 
                         row.work_order = wo.name;
                         row.party_name = wo.customer;
-                        row.party = wo.customer_name;
+                        row.party = wo.customer;
                         row.customer_name = wo.customer_name;
                         row.target_warehouse = wo.fg_warehouse;
                         row.item = wo.production_item;

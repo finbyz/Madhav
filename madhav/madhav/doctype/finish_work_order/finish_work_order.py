@@ -22,6 +22,8 @@ class FinishWorkOrder(Document):
         self.update_totals()
         for row in self.pending_work_orders:
             row.calculated_qty = (flt(row.ready_pieces) * flt(row.standard_weight) * flt(row.length_size)) /1000
+            if not row.sales_order:
+                row.deliver_as_qty = 1
 
     def update_totals(self):
         total_wo_qty = 0
