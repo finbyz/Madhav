@@ -133,7 +133,6 @@ frappe.ui.form.on('Sales Order', {
 
             frm.doc.items.forEach((d) => {
 
-                // ❌ HARD FILTER manufacture items
                 if (d.is_manufacture) return;
 
                 let ordered_qty =
@@ -178,6 +177,7 @@ frappe.ui.form.on('Sales Order', {
         dialog.get_field("items_for_po").refresh();
         dialog.show();
     },
+    
     create_stock_reservation_entries(frm) {
         const dialog = new frappe.ui.Dialog({
             title: __("Stock Reservation"),
@@ -248,7 +248,7 @@ frappe.ui.form.on('Sales Order', {
                                             item_code: item.item_code,
                                             warehouse: dialog.get_value("set_warehouse") || item.warehouse,
                                             length_size: item.length_size,
-                                            max_length: null,
+                                            max_length: flt(item.length_size) + 1.5,
                                             pieces: item.pieces,
                                             total_length: flt(item.pieces) * flt(item.length_size),
                                             section_weight: flt(r.message.weight_per_meter),
@@ -338,13 +338,6 @@ frappe.ui.form.on('Sales Order', {
                             columns: 1
                         },
                         {
-                            fieldname: "max_section_weight",
-                            fieldtype: "Float",
-                            label: __("Max Section Weight"),
-                            in_list_view: 1,
-                            columns: 1
-                        },
-                        {
                             fieldname: "qty_to_reserve",
                             fieldtype: "Float",
                             label: __("Qty"),
@@ -361,20 +354,20 @@ frappe.ui.form.on('Sales Order', {
 
                 if (data.items && data.items.length > 0) {
                     frappe.call({
-                        doc: frm.doc,
-                        method: "create_stock_reservation_entries",
-                        args: {
+                        method: "madhav.api.create_stock_reservation_entries",
+                        args: {     
+                            source_name: frm.doc.name,
                             items_details: data.items,
-                            notify: true,
                         },
                         freeze: true,
                         freeze_message: __("Reserving Stock..."),
                         callback: (r) => {
+                            dialog.hide();
                             frm.reload_doc();
                         },
                     });
 
-                    dialog.hide();
+                    
                 } else {
                     frappe.msgprint(__("Please select items to reserve."));
                 }
@@ -421,7 +414,7 @@ frappe.ui.form.on('Sales Order', {
                                 item_code: item.item_code,
                                 warehouse: item.warehouse,
                                 length_size: item.length_size,
-                                max_length: null,
+                                max_length: flt(item.length_size) + 1.5,
                                 pieces: item.pieces,
                                 total_length: flt(item.pieces) * flt(item.length_size),
                                 section_weight: flt(weights[item.item_code] || 0),
@@ -432,6 +425,9 @@ frappe.ui.form.on('Sales Order', {
                     }
                 });
 
+                all_eligible_items.sort((a, b) => {
+                    return flt(a.length_size) - flt(b.length_size);
+                });
                 dialog.fields_dict.items.df.data = all_eligible_items;
                 dialog.fields_dict.items.grid.refresh();
                 dialog.show();

@@ -1,382 +1,1195 @@
-from __future__ import annotations
+# from __future__ import annotations
+# import frappe
+# from frappe import _
+# from frappe.utils import flt
 
+
+# def _get_batch_constraints(
+# 	voucher_type: str | None, voucher_detail_no: str | None, item_code: str | None = None
+# ) -> frappe._dict:
+# 	constraints = frappe._dict({"min_length": None, "max_length": None})
+
+# 	if voucher_type != "Sales Order" or not voucher_detail_no:
+# 		return constraints
+
+# 	if not frappe.db.has_column("Sales Order Item", "length_size"):
+# 		return constraints
+
+# 	length_size = flt(frappe.db.get_value("Sales Order Item", voucher_detail_no, "length_size"))
+
+# 	flag_constraints = (
+# 		getattr(frappe.flags, "stock_reservation_item_ranges", {}).get(voucher_detail_no, {})
+# 		if getattr(frappe.flags, "stock_reservation_item_ranges", None)
+# 		else {}
+# 	)
+
+# 	raw_max_length = flag_constraints.get("max_length")
+# 	if raw_max_length not in (None, "", 0):
+# 		resolved_max_length = flt(raw_max_length)
+# 	else:
+# 		resolved_max_length = (length_size + 1.5) if length_size > 0 else None
+
+# 	min_length = length_size if length_size > 0 else None
+# 	max_length = resolved_max_length
+
+# 	if min_length is not None and max_length is not None and min_length > max_length:
+# 		min_length, max_length = max_length, min_length
+
+# 	constraints.update({"min_length": min_length, "max_length": max_length})
+# 	return constraints
+
+
+# def _get_eligible_batches_ordered(batch_nos, min_length=None, max_length=None):
+# 	"""
+# 	Return batch names whose average_length is within [min_length, max_length],
+# 	ordered shortest-first (length-FIFO). Both bounds applied at DB level.
+# 	"""
+# 	if not batch_nos:
+# 		return []
+
+# 	min_length = flt(min_length) if min_length not in (None, "") else None
+# 	max_length = flt(max_length) if max_length not in (None, "") else None
+
+# 	batch_table = frappe.qb.DocType("Batch")
+
+# 	# query = (
+# 	# 	frappe.qb.from_(batch_table)
+# 	# 	.select(batch_table.name, batch_table.average_length)
+# 	# 	.where(batch_table.name.isin(list(set(batch_nos))))
+# 	# 	.where(batch_table.disabled == 0)
+# 	# 	.orderby(batch_table.average_length)
+
+# 	# )
+# 	query = (
+# 		frappe.qb.from_(batch_table)
+# 		.select(batch_table.name, batch_table.average_length)
+# 		.where(batch_table.name.isin(list(set(batch_nos))))
+# 		.where(batch_table.disabled == 0)
+# 		.orderby(batch_table.average_length)
+# 		.orderby(batch_table.creation)
+# 	)
+
+# 	if min_length is not None:
+# 		query = query.where(batch_table.average_length >= min_length)
+
+# 	if max_length is not None:
+# 		query = query.where(batch_table.average_length <= max_length)
+
+# 	rows = query.run(as_dict=True)
+# 	return [r.name for r in rows]
+
+
+# def _get_eligible_batches(batch_nos, min_length=None, max_length=None):
+# 	return set(_get_eligible_batches_ordered(batch_nos, min_length=min_length, max_length=max_length))
+
+
+# def _get_filtered_available_qty(item_code: str, warehouse: str, constraints: frappe._dict) -> float:
+# 	import erpnext.stock.doctype.serial_and_batch_bundle.serial_and_batch_bundle as _sabb
+
+# 	available_batches = _sabb.get_auto_batch_nos(
+# 		frappe._dict({
+# 			"item_code": item_code,
+# 			"warehouse": warehouse,
+# 			"qty": 0,
+# 			"based_on": frappe.db.get_single_value("Stock Settings", "pick_serial_and_batch_based_on"),
+# 		})
+# 	)
+# 	if not available_batches:
+# 		return 0
+
+# 	eligible_set = _get_eligible_batches(
+# 		[b.batch_no for b in available_batches if b.batch_no],
+# 		min_length=constraints.get("min_length"),
+# 		max_length=constraints.get("max_length"),
+# 	)
+# 	return sum(flt(b.qty) for b in available_batches if b.batch_no in eligible_set)
+
+
+# def _get_batch_debug_details(item_code: str, warehouse: str, constraints: frappe._dict) -> frappe._dict:
+# 	import erpnext.stock.doctype.serial_and_batch_bundle.serial_and_batch_bundle as _sabb
+
+# 	available_batches = _sabb.get_auto_batch_nos(
+# 		frappe._dict({
+# 			"item_code": item_code,
+# 			"warehouse": warehouse,
+# 			"qty": 0,
+# 			"based_on": frappe.db.get_single_value("Stock Settings", "pick_serial_and_batch_based_on"),
+# 		})
+# 	) or []
+
+# 	available_batch_nos = [b.batch_no for b in available_batches if b.batch_no]
+# 	eligible_batch_nos = _get_eligible_batches_ordered(
+# 		available_batch_nos,
+# 		min_length=constraints.get("min_length"),
+# 		max_length=constraints.get("max_length"),
+# 	)
+
+# 	return frappe._dict({
+# 		"warehouse": warehouse,
+# 		"available_batches": available_batch_nos,
+# 		"eligible_batches": eligible_batch_nos,
+# 	})
+
+
+# def _update_sb_entries_custom_fields(doc):
+# 	"""Stamp length, pieces and section_weight on each Serial and Batch Entry row."""
+# 	if doc.voucher_type != "Sales Order" or not doc.voucher_detail_no:
+# 		return
+
+# 	so_item = frappe.get_doc("Sales Order Item", doc.voucher_detail_no)
+# 	weight_per_meter = flt(frappe.db.get_value("Item", so_item.item_code, "weight_per_meter"))
+
+# 	for row in doc.get("sb_entries", []):
+# 		row.peices = flt(so_item.get("pieces"))
+# 		row.length = flt(so_item.get("length_size"))
+# 		row.section_weight = (
+# 			flt(so_item.get("pieces")) * flt(so_item.get("length_size")) * weight_per_meter
+# 		) / 1000
+
+
+# def auto_reserve_serial_and_batch(self, based_on=None):
+# 	"""
+# 	Patched auto_reserve_serial_and_batch.
+
+# 	Key fix: patch get_auto_batch_nos on the serial_and_batch_bundle MODULE
+# 	(not the sre module), because ERPNext does a local import inside
+# 	auto_reserve_serial_and_batch like:
+# 	    from erpnext.stock.doctype.serial_and_batch_bundle.serial_and_batch_bundle import get_auto_batch_nos
+# 	Patching the module attribute is the only way to intercept that.
+# 	"""
+# 	import erpnext.stock.doctype.serial_and_batch_bundle.serial_and_batch_bundle as _sabb
+
+# 	constraints = _get_batch_constraints(self.voucher_type, self.voucher_detail_no, self.item_code)
+
+# 	# No length constraints — just run original
+# 	if constraints.get("min_length") is None and constraints.get("max_length") is None:
+# 		_ORIGINAL_AUTO_RESERVE_SERIAL_AND_BATCH(self, based_on=based_on)
+# 		_update_sb_entries_custom_fields(self)
+# 		return
+
+# 	based_on_value = based_on or frappe.db.get_single_value(
+# 		"Stock Settings", "pick_serial_and_batch_based_on"
+# 	)
+
+# 	# Step 1: Fetch all available batches
+# 	available_batches = _sabb.get_auto_batch_nos(
+# 		frappe._dict({
+# 			"item_code": self.item_code,
+# 			"warehouse": self.warehouse,
+# 			"qty": 0,
+# 			"based_on": based_on_value,
+# 		})
+# 	)
+
+# 	if not available_batches:
+# 		_ORIGINAL_AUTO_RESERVE_SERIAL_AND_BATCH(self, based_on=based_on)
+# 		_update_sb_entries_custom_fields(self)
+# 		return
+
+# 	# Step 2: Filter by average_length, sort shortest-first
+# 	all_batch_nos = [b.batch_no for b in available_batches if b.batch_no]
+# 	eligible_ordered = _get_eligible_batches_ordered(
+# 		all_batch_nos,
+# 		min_length=constraints.get("min_length"),
+# 		max_length=constraints.get("max_length"),
+# 	)
+
+# 	if not eligible_ordered:
+# 		frappe.msgprint(
+# 			_("No batches found with average length between {0} and {1} for Item {2}.").format(
+# 				frappe.bold(constraints.get("min_length")),
+# 				frappe.bold(constraints.get("max_length")),
+# 				frappe.bold(self.item_code),
+# 			),
+# 			title=_("No Eligible Batches"),
+# 			indicator="orange",
+# 		)
+# 		_update_sb_entries_custom_fields(self)
+# 		return
+
+# 	# Step 3: Build ordered batch list preserving qty from get_auto_batch_nos
+# 	eligible_set = set(eligible_ordered)
+# 	batch_qty_map = {b.batch_no: b for b in available_batches if b.batch_no in eligible_set}
+# 	ordered_batches = [batch_qty_map[bn] for bn in eligible_ordered if bn in batch_qty_map]
+
+# 	# Step 4: Patch get_auto_batch_nos at the MODULE level so ERPNext's
+# 	# local import inside auto_reserve_serial_and_batch is intercepted.
+# 	_original_get_auto_batch_nos = _sabb.get_auto_batch_nos
+
+# 	def _patched_get_auto_batch_nos(kwargs):
+# 		if (
+# 			kwargs.get("item_code") == self.item_code
+# 			and kwargs.get("warehouse") == self.warehouse
+# 		):
+# 			qty = flt(kwargs.get("qty"))
+# 			if qty:
+# 				return _sabb.get_qty_based_available_batches(ordered_batches, qty)
+# 			return ordered_batches
+# 		# Different item/warehouse — use original
+# 		return _original_get_auto_batch_nos(kwargs)
+
+# 	# Patch on the module so all local imports see it
+# 	_sabb.get_auto_batch_nos = _patched_get_auto_batch_nos
+
+# 	try:
+# 		_ORIGINAL_AUTO_RESERVE_SERIAL_AND_BATCH(self, based_on=based_on)
+# 	finally:
+# 		# Always restore — even on exception
+# 		_sabb.get_auto_batch_nos = _original_get_auto_batch_nos
+
+# 	_update_sb_entries_custom_fields(self)
+
+
+# def create_stock_reservation_entries_for_so_items(
+# 	sales_order,
+# 	items_details=None,
+# 	from_voucher_type=None,
+# 	notify=True,
+# ):
+# 	"""Patch ERPNext creation flow to apply per-item length-based batch constraints."""
+# 	items_details = list(items_details or [])
+# 	frappe.flags.stock_reservation_item_ranges = {}
+
+# 	try:
+# 		if items_details:
+# 			so_item.length_size = flt(item.get("length_size"))
+# 			so_item.max_length = flt(item.get("max_length"))
+# 			updated_items_details = []
+# 			filtered_out_items = []
+
+# 			for row in items_details:
+# 				row = frappe._dict(row)
+# 				so_item = frappe.get_doc("Sales Order Item", row.get("sales_order_item"))
+# 				warehouse = row.get("warehouse") or so_item.warehouse
+# 				has_batch_no = frappe.get_cached_value("Item", so_item.item_code, "has_batch_no")
+
+# 				dialog_max_length = row.get("max_length")
+# 				if dialog_max_length in (None, "", 0):
+# 					dialog_max_length = (flt(so_item.length_size) + 1.5) if flt(so_item.length_size) > 0 else None
+
+# 				frappe.flags.stock_reservation_item_ranges[so_item.name] = {
+# 					"max_length": dialog_max_length,
+# 				}
+# 				constraints = _get_batch_constraints("Sales Order", so_item.name, so_item.item_code)
+
+# 				if has_batch_no:
+# 					eligible_stock_qty = _get_filtered_available_qty(so_item.item_code, warehouse, constraints)
+
+# 					if eligible_stock_qty <= 0:
+# 						debug_details = _get_batch_debug_details(so_item.item_code, warehouse, constraints)
+# 						filtered_out_items.append(
+# 							_(
+# 								"Row #{0}: No eligible batch found for Item {1}. Warehouse: {2}. "
+# 								"Length Range: {3} to {4}. Available Batches: {5}. Eligible Batches: {6}."
+# 							).format(
+# 								so_item.idx,
+# 								frappe.bold(so_item.item_code),
+# 								frappe.bold(debug_details.warehouse or "-"),
+# 								frappe.bold(constraints.get("min_length") if constraints.get("min_length") is not None else "-"),
+# 								frappe.bold(constraints.get("max_length") if constraints.get("max_length") is not None else "-"),
+# 								frappe.bold(", ".join(debug_details.available_batches) or "None"),
+# 								frappe.bold(", ".join(debug_details.eligible_batches) or "None"),
+# 							)
+# 						)
+# 						continue
+
+# 					conversion_factor = flt(row.get("conversion_factor")) or flt(so_item.conversion_factor) or 1
+# 					requested_qty = flt(row.get("qty_to_reserve"))
+# 					if from_voucher_type not in ["Pick List", "Purchase Receipt"]:
+# 						requested_qty = requested_qty * conversion_factor
+
+# 					requested_qty = min(requested_qty, eligible_stock_qty)
+# 					if requested_qty <= 0:
+# 						filtered_out_items.append(
+# 							_(
+# 								"Row #{0}: Quantity to reserve for Item {1} becomes 0 after applying the length range."
+# 							).format(so_item.idx, frappe.bold(so_item.item_code))
+# 						)
+# 						continue
+
+# 					row.qty_to_reserve = (
+# 						requested_qty
+# 						if from_voucher_type in ["Pick List", "Purchase Receipt"]
+# 						else requested_qty / conversion_factor
+# 					)
+
+# 				updated_items_details.append(row)
+
+# 			items_details = updated_items_details
+
+# 			if filtered_out_items:
+# 				frappe.msgprint(
+# 					"<br>".join(filtered_out_items),
+# 					title=_("Stock Reservation"),
+# 					indicator="orange",
+# 				)
+
+# 			if not items_details:
+# 				return
+
+# 		else:
+# 			for so_item in sales_order.get("items") or []:
+# 				if not so_item.get("reserve_stock"):
+# 					continue
+
+# 				has_batch_no = frappe.get_cached_value("Item", so_item.item_code, "has_batch_no")
+# 				constraints = _get_batch_constraints("Sales Order", so_item.name, so_item.item_code)
+
+# 				if has_batch_no:
+# 					so_item.qty_to_reserve = _get_filtered_available_qty(
+# 						so_item.item_code, so_item.warehouse, constraints
+# 					)
+
+# 		return _ORIGINAL_CREATE_STOCK_RESERVATION_ENTRIES_FOR_SO_ITEMS(
+# 			sales_order=sales_order,
+# 			items_details=items_details or None,
+# 			from_voucher_type=from_voucher_type,
+# 			notify=notify,
+# 		)
+# 	finally:
+# 		frappe.flags.stock_reservation_item_ranges = {}
+
+
+# # ---------------------------------------------------------------------------
+# # Bind patches at import time
+# # ---------------------------------------------------------------------------
+
+# from erpnext.stock.doctype.stock_reservation_entry import stock_reservation_entry as _sre_module
+
+# _ORIGINAL_CREATE_STOCK_RESERVATION_ENTRIES_FOR_SO_ITEMS = (
+# 	_sre_module.create_stock_reservation_entries_for_so_items
+# )
+# _ORIGINAL_AUTO_RESERVE_SERIAL_AND_BATCH = (
+# 	_sre_module.StockReservationEntry.auto_reserve_serial_and_batch
+# )
+
+
+from __future__ import annotations
 import frappe
 from frappe import _
 from frappe.utils import flt
 
 
-def _get_item_weight_per_meter(item_code: str | None) -> float:
-	if not item_code:
-		return 0
-
-	return flt(frappe.db.get_value("Item", item_code, "weight_per_meter"))
+# ---------------------------------------------------------------------------
+# Batch constraint helpers
+# ---------------------------------------------------------------------------
 
 
-def _normalize_range(min_value: float | None = None, max_value: float | None = None) -> tuple[float | None, float | None]:
-	min_bound = flt(min_value) if min_value not in (None, "") else None
-	max_bound = flt(max_value) if max_value not in (None, "") else None
+def _get_batch_constraints(voucher_type, voucher_detail_no, item_code=None):
+    """
+    Read length_size from SO Item and return min/max length constraints.
+    min_length = length_size
+    max_length = length_size + 1.5
+    These can be overridden per-item via frappe.flags.stock_reservation_item_ranges
+    """
+    constraints = frappe._dict({"min_length": None, "max_length": None})
 
-	if min_bound is not None and max_bound is not None and min_bound > max_bound:
-		min_bound, max_bound = max_bound, min_bound
+    if voucher_type != "Sales Order" or not voucher_detail_no:
+        return constraints
 
-	return min_bound, max_bound
+    if not frappe.db.has_column("Sales Order Item", "length_size"):
+        return constraints
 
+    length_size = flt(
+        frappe.db.get_value("Sales Order Item", voucher_detail_no, "length_size")
+    )
 
-def _get_batch_constraints(
-	voucher_type: str | None, voucher_detail_no: str | None, item_code: str | None = None
-) -> frappe._dict:
-	constraints = frappe._dict(
-		{
-			"min_length": None,
-			"max_length": None,
-			"min_section_weight": None,
-			"max_section_weight": None,
-		}
-	)
+    if length_size <= 0:
+        return constraints
 
-	if voucher_type != "Sales Order" or not voucher_detail_no:
-		return constraints
+    # Check if dialog passed a custom max_length for this item
+    flag_ranges = getattr(frappe.flags, "stock_reservation_item_ranges", {}) or {}
+    flag_data = flag_ranges.get(voucher_detail_no, {})
 
-	if not frappe.db.has_column("Sales Order Item", "length_size"):
-		return constraints
+    raw_max = flag_data.get("max_length")
+    max_length = flt(raw_max) if raw_max not in (None, "", 0) else length_size + 1.5
 
-	length_size = flt(frappe.db.get_value("Sales Order Item", voucher_detail_no, "length_size"))
-	item_code = item_code or frappe.db.get_value("Sales Order Item", voucher_detail_no, "item_code")
-	section_weight = _get_item_weight_per_meter(item_code)
-	flag_constraints = (
-		getattr(frappe.flags, "stock_reservation_item_ranges", {}).get(voucher_detail_no, {})
-		if getattr(frappe.flags, "stock_reservation_item_ranges", None)
-		else {}
-	)
+    min_length = length_size
+    if min_length > max_length:
+        min_length, max_length = max_length, min_length
 
-	min_length, max_length = _normalize_range(
-		length_size if length_size > 0 else None, flag_constraints.get("max_length")
-	)
-	min_section_weight, max_section_weight = _normalize_range(
-		section_weight if section_weight > 0 else None,
-		flag_constraints.get("max_section_weight"),
-	)
-
-	constraints.update(
-		{
-			"min_length": min_length,
-			"max_length": max_length,
-			"min_section_weight": min_section_weight,
-			"max_section_weight": max_section_weight,
-		}
-	)
-	return constraints
+    constraints.update({"min_length": min_length, "max_length": max_length})
+    return constraints
 
 
-def _get_eligible_batches(
-	batch_nos,
-	min_length=None,
-	max_length=None,
-	min_section_weight=None,
-	max_section_weight=None,
-):
+def _get_eligible_batches_ordered(batch_nos, min_length=None, max_length=None):
+    """
+    From the given batch_nos list, return only those whose average_length
+    is within [min_length, max_length], sorted shortest-first (length FIFO).
+    Both bounds are inclusive and applied at DB level.
+    """
+    if not batch_nos:
+        return []
 
-	if not batch_nos:
-		return set()
+    min_length = flt(min_length) if min_length not in (None, "") else None
+    max_length = flt(max_length) if max_length not in (None, "") else None
 
-	# normalize values
-	min_length = flt(min_length) if min_length not in (None, "") else None
-	max_length = flt(max_length) if max_length not in (None, "") else None
-	min_section_weight = flt(min_section_weight) if min_section_weight not in (None, "") else None
-	max_section_weight = flt(max_section_weight) if max_section_weight not in (None, "") else None
+    batch_table = frappe.qb.DocType("Batch")
+    query = (
+        frappe.qb.from_(batch_table)
+        .select(batch_table.name, batch_table.average_length)
+        .where(batch_table.name.isin(list(set(batch_nos))))
+        .where(batch_table.disabled == 0)
+        .orderby(batch_table.average_length)
+        .orderby(batch_table.creation)
+    )
 
-	filters = {
-		"name": ["in", list(set(batch_nos))]
-	}
+    if min_length is not None:
+        query = query.where(batch_table.average_length >= min_length)
+    if max_length is not None:
+        query = query.where(batch_table.average_length <= max_length)
 
-	# length filters
-	if frappe.db.has_column("Batch", "average_length"):
-		if min_length is not None:
-			filters["average_length"] = [">=", min_length]
-		if max_length is not None:
-			filters["average_length"] = ["<=", max_length]
-
-	# section weight filters
-	if frappe.db.has_column("Batch", "section_weight"):
-		if min_section_weight is not None:
-			filters["section_weight"] = [">=", min_section_weight]
-		if max_section_weight is not None:
-			filters["section_weight"] = ["<=", max_section_weight]
-		return set(
-			frappe.get_all(
-				"Batch",
-				filters=filters,
-				pluck="name",
-			)
-		)
-
-def _get_filtered_available_qty(item_code: str, warehouse: str, constraints: frappe._dict) -> float:
-	from erpnext.stock.doctype.batch.batch import get_available_batches
-
-	kwargs = frappe._dict(
-		{
-			"item_code": item_code,
-			"warehouse": warehouse,
-			"qty": 0,
-			"based_on": frappe.db.get_single_value("Stock Settings", "pick_serial_and_batch_based_on"),
-		}
-	)
-	batchwise_qty = get_available_batches(kwargs)
-	if not batchwise_qty:
-		return 0
-
-	eligible_batches = _get_eligible_batches(
-		list(batchwise_qty.keys()),
-		min_length=constraints.get("min_length"),
-		max_length=constraints.get("max_length"),
-		min_section_weight=constraints.get("min_section_weight"),
-		max_section_weight=constraints.get("max_section_weight"),
-	)
-	return sum(flt(qty) for batch_no, qty in batchwise_qty.items() if batch_no in eligible_batches)
+    rows = query.run(as_dict=True)
+    return [r.name for r in rows]
 
 
-def _get_batch_debug_details(item_code: str, warehouse: str, constraints: frappe._dict) -> frappe._dict:
-	from erpnext.stock.doctype.batch.batch import get_available_batches
-
-	kwargs = frappe._dict(
-		{
-			"item_code": item_code,
-			"warehouse": warehouse,
-			"qty": 0,
-			"based_on": frappe.db.get_single_value("Stock Settings", "pick_serial_and_batch_based_on"),
-		}
-	)
-	batchwise_qty = get_available_batches(kwargs) or {}
-	available_batch_nos = list(batchwise_qty.keys())
-	eligible_batch_nos = list(
-		_get_eligible_batches(
-			available_batch_nos,
-			min_length=constraints.get("min_length"),
-			max_length=constraints.get("max_length"),
-			min_section_weight=constraints.get("min_section_weight"),
-			max_section_weight=constraints.get("max_section_weight"),
-		)
-	)
-
-	return frappe._dict(
-		{
-			"warehouse": warehouse,
-			"available_batches": available_batch_nos,
-			"eligible_batches": eligible_batch_nos,
-			"batchwise_qty": batchwise_qty,
-		}
-	)
+def _get_eligible_batches(batch_nos, min_length=None, max_length=None):
+    return set(
+        _get_eligible_batches_ordered(
+            batch_nos, min_length=min_length, max_length=max_length
+        )
+    )
 
 
-def _filter_sb_entries_by_batch_constraints(doc, constraints: frappe._dict) -> None:
-	if not doc.get("has_batch_no") or not doc.get("sb_entries"):
-		return
+def _get_filtered_available_qty(item_code, warehouse, constraints):
+    """
+    Return total available qty considering only batches that pass length filter.
+    """
+    import erpnext.stock.doctype.serial_and_batch_bundle.serial_and_batch_bundle as _sabb
 
-	batch_nos = [d.batch_no for d in doc.sb_entries if d.batch_no]
-	eligible_batches = _get_eligible_batches(
-		batch_nos,
-		min_length=constraints.get("min_length"),
-		max_length=constraints.get("max_length"),
-		min_section_weight=constraints.get("min_section_weight"),
-		max_section_weight=constraints.get("max_section_weight"),
-	)
+    available_batches = _sabb.get_auto_batch_nos(
+        frappe._dict(
+            {
+                "item_code": item_code,
+                "warehouse": warehouse,
+                "qty": 0,
+                "based_on": frappe.db.get_single_value(
+                    "Stock Settings", "pick_serial_and_batch_based_on"
+                ),
+            }
+        )
+    )
 
-	target_qty = abs(flt(doc.get("reserved_qty")))
-	target_pieces = abs(flt(doc.get("pieces")))
+    if not available_batches:
+        return 0.0
 
-	picked_qty = 0
-	picked_pieces = 0
-	filtered_rows = []
+    eligible_set = _get_eligible_batches(
+        [b.batch_no for b in available_batches if b.batch_no],
+        min_length=constraints.get("min_length"),
+        max_length=constraints.get("max_length"),
+    )
 
-	for entry in doc.sb_entries:
-		if entry.batch_no and entry.batch_no in eligible_batches:
-
-			qty = 1 if doc.get("has_serial_no") else flt(entry.qty)
-			pieces = flt(entry.get("pieces")) or 0
-
-			if target_qty > 0:
-				if picked_qty >= target_qty:
-					continue
-
-			if target_pieces > 0:
-				if picked_pieces >= target_pieces:
-					continue
-
-			if target_qty > 0 and not doc.get("has_serial_no"):
-				qty = min(qty, target_qty - picked_qty)
-
-			if target_pieces > 0:
-				pieces = min(pieces, target_pieces - picked_pieces)
-
-			if qty <= 0:
-				continue
-
-			filtered_rows.append(
-				{
-					"serial_no": entry.serial_no,
-					"batch_no": entry.batch_no,
-					"qty": qty,
-					"pieces": pieces,
-					"warehouse": entry.warehouse or doc.warehouse,
-				}
-			)
-
-			picked_qty += qty
-			picked_pieces += pieces
-		
-	doc.set("sb_entries", [])
-	for row in filtered_rows:
-		doc.append("sb_entries", row)
+    return sum(flt(b.qty) for b in available_batches if b.batch_no in eligible_set)
 
 
-def create_stock_reservation_entries_for_so_items(
-	sales_order,
-	items_details=None,
-	from_voucher_type=None,
-	notify=True,
-):
-	"""Patch ERPNext creation flow to apply per-item batch constraints."""
-	items_details = list(items_details or [])
-	frappe.flags.stock_reservation_item_ranges = {}
+def _get_batch_debug_details(item_code, warehouse, constraints):
+    """For error messages — show what batches exist vs what passed the filter."""
+    import erpnext.stock.doctype.serial_and_batch_bundle.serial_and_batch_bundle as _sabb
 
-	try:
-		if items_details:
-			updated_items_details = []
-			filtered_out_items = []
-			for row in items_details:
-				row = frappe._dict(row)
-				so_item = frappe.get_doc("Sales Order Item", row.get("sales_order_item"))
-				warehouse = row.get("warehouse") or so_item.warehouse
-				has_batch_no = frappe.get_cached_value("Item", so_item.item_code, "has_batch_no")
-				frappe.flags.stock_reservation_item_ranges[so_item.name] = {
-					"max_length": row.get("max_length"),
-					"max_section_weight": row.get("max_section_weight"),
-				}
-				constraints = _get_batch_constraints("Sales Order", so_item.name, so_item.item_code)
+    available_batches = (
+        _sabb.get_auto_batch_nos(
+            frappe._dict(
+                {
+                    "item_code": item_code,
+                    "warehouse": warehouse,
+                    "qty": 0,
+                    "based_on": frappe.db.get_single_value(
+                        "Stock Settings", "pick_serial_and_batch_based_on"
+                    ),
+                }
+            )
+        )
+        or []
+    )
 
-				if has_batch_no:
-					eligible_stock_qty = _get_filtered_available_qty(
-						so_item.item_code, warehouse, constraints
-					)
-					if eligible_stock_qty <= 0:
-						debug_details = _get_batch_debug_details(
-							so_item.item_code, warehouse, constraints
-						)
-						filtered_out_items.append(
-							_(
-								"Row #{0}: No eligible batch found for Item {1}. Warehouse: {2}. Length Range: {3} to {4}. Section Weight Range: {5} to {6}. Available Batches: {7}. Eligible Batches: {8}."
-							).format(
-								so_item.idx,
-								frappe.bold(so_item.item_code),
-								frappe.bold(debug_details.warehouse or "-"),
-								frappe.bold(constraints.get("min_length") if constraints.get("min_length") is not None else "-"),
-								frappe.bold(constraints.get("max_length") if constraints.get("max_length") is not None else "-"),
-								frappe.bold(constraints.get("min_section_weight") if constraints.get("min_section_weight") is not None else "-"),
-								frappe.bold(constraints.get("max_section_weight") if constraints.get("max_section_weight") is not None else "-"),
-								frappe.bold(", ".join(debug_details.available_batches) or "None"),
-								frappe.bold(", ".join(debug_details.eligible_batches) or "None"),
-							)
-						)
-						continue
+    available_batch_nos = [b.batch_no for b in available_batches if b.batch_no]
+    eligible_batch_nos = _get_eligible_batches_ordered(
+        available_batch_nos,
+        min_length=constraints.get("min_length"),
+        max_length=constraints.get("max_length"),
+    )
 
-					conversion_factor = flt(row.get("conversion_factor")) or flt(so_item.conversion_factor) or 1
-					requested_qty = flt(row.get("qty_to_reserve"))
-					if from_voucher_type not in ["Pick List", "Purchase Receipt"]:
-						requested_qty = requested_qty * conversion_factor
+    return frappe._dict(
+        {
+            "warehouse": warehouse,
+            "available_batches": available_batch_nos,
+            "eligible_batches": eligible_batch_nos,
+        }
+    )
 
-					requested_qty = min(requested_qty, eligible_stock_qty)
-					if requested_qty <= 0:
-						filtered_out_items.append(
-							_(
-								"Row #{0}: Quantity to reserve for Item {1} becomes 0 after applying the row range."
-							).format(
-								so_item.idx,
-								frappe.bold(so_item.item_code),
-							)
-						)
-						continue
 
-					row.qty_to_reserve = (
-						requested_qty
-						if from_voucher_type in ["Pick List", "Purchase Receipt"]
-						else requested_qty / conversion_factor
-					)
-
-				updated_items_details.append(row)
-
-			items_details = updated_items_details
-			if filtered_out_items:
-				frappe.msgprint(
-					"<br>".join(filtered_out_items),
-					title=_("Stock Reservation"),
-					indicator="orange",
-				)
-
-			if not items_details:
-				return
-		else:
-			for so_item in sales_order.get("items") or []:
-				if not so_item.get("reserve_stock"):
-					continue
-
-				has_batch_no = frappe.get_cached_value("Item", so_item.item_code, "has_batch_no")
-				constraints = _get_batch_constraints("Sales Order", so_item.name, so_item.item_code)
-
-				if has_batch_no:
-					so_item.qty_to_reserve = _get_filtered_available_qty(
-						so_item.item_code, so_item.warehouse, constraints
-					)
-
-		return _ORIGINAL_CREATE_STOCK_RESERVATION_ENTRIES_FOR_SO_ITEMS(
-			sales_order=sales_order,
-			items_details=items_details or None,
-			from_voucher_type=from_voucher_type,
-			notify=notify,
-		)
-	finally:
-		frappe.flags.stock_reservation_item_ranges = {}
+# ---------------------------------------------------------------------------
+# Stamp custom fields on SRE sb_entries after reservation
+# ---------------------------------------------------------------------------
 
 
 def _update_sb_entries_custom_fields(doc):
-	"""Update custom fields in Serial and Batch Entry rows"""
+    """Stamp length, pieces and section_weight on each Serial and Batch Entry row."""
+    if doc.voucher_type != "Sales Order" or not doc.voucher_detail_no:
+        return
 
-	if doc.voucher_type != "Sales Order" or not doc.voucher_detail_no:
-		return
+    so_item = frappe.get_doc("Sales Order Item", doc.voucher_detail_no)
+    weight_per_meter = flt(
+        frappe.db.get_value("Item", so_item.item_code, "weight_per_meter")
+    )
 
-	# get sales order item
-	so_item = frappe.get_doc("Sales Order Item", doc.voucher_detail_no)
+    for row in doc.get("sb_entries", []):
+        row.peices = flt(so_item.get("pieces"))
+        row.length = flt(so_item.get("length_size"))
+        row.section_weight = (
+            flt(so_item.get("pieces"))
+            * flt(so_item.get("length_size"))
+            * weight_per_meter
+        ) / 1000
 
-	# get item weight
-	weight_per_meter = flt(
-		frappe.db.get_value("Item", so_item.item_code, "weight_per_meter")
-	)
 
-	for row in doc.get("sb_entries", []):
-		row.peices = flt(so_item.get("pieces"))
-		row.length = flt(so_item.get("length_size"))
+# ---------------------------------------------------------------------------
+# Patched auto_reserve_serial_and_batch
+# ---------------------------------------------------------------------------
 
-		# section weight calculation
-		row.section_weight = (
-			flt(so_item.get("pieces"))
-			* flt(so_item.get("length_size"))
-			* weight_per_meter
-		) / 1000
+# def auto_reserve_serial_and_batch(self, based_on=None):
+#     """
+#     Intercept ERPNext's auto batch picking.
+#     Instead of picking any available batch, only pick batches whose
+#     average_length is within [SO item length_size, length_size + 1.5],
+#     sorted shortest-first.
+#     """
+#     import erpnext.stock.doctype.serial_and_batch_bundle.serial_and_batch_bundle as _sabb
 
+#     constraints = _get_batch_constraints(
+#         self.voucher_type, self.voucher_detail_no, self.item_code
+#     )
+
+#     # No length constraints on this item — run original unchanged
+#     if constraints.get("min_length") is None and constraints.get("max_length") is None:
+#         _ORIGINAL_AUTO_RESERVE_SERIAL_AND_BATCH(self, based_on=based_on)
+#         _update_sb_entries_custom_fields(self)
+#         return
+
+#     based_on_value = based_on or frappe.db.get_single_value(
+#         "Stock Settings", "pick_serial_and_batch_based_on"
+#     )
+
+#     # Step 1: Get all available batches for this item+warehouse
+#     available_batches = _sabb.get_auto_batch_nos(frappe._dict({
+#         "item_code": self.item_code,
+#         "warehouse": self.warehouse,
+#         "qty": 0,
+#         "based_on": based_on_value,
+#     }))
+
+#     if not available_batches:
+#         _ORIGINAL_AUTO_RESERVE_SERIAL_AND_BATCH(self, based_on=based_on)
+#         _update_sb_entries_custom_fields(self)
+#         return
+
+#     # Step 2: Filter by average_length, sort shortest-first (length FIFO)
+#     all_batch_nos = [b.batch_no for b in available_batches if b.batch_no]
+#     eligible_ordered = _get_eligible_batches_ordered(
+#         all_batch_nos,
+#         min_length=constraints.get("min_length"),
+#         max_length=constraints.get("max_length"),
+#     )
+
+#     if not eligible_ordered:
+#         frappe.msgprint(
+#             _("No batches found with average length between {0}m and {1}m for Item {2}.").format(
+#                 frappe.bold(constraints.get("min_length")),
+#                 frappe.bold(constraints.get("max_length")),
+#                 frappe.bold(self.item_code),
+#             ),
+#             title=_("No Eligible Batches"),
+#             indicator="orange",
+#         )
+#         _update_sb_entries_custom_fields(self)
+#         return
+
+#     # Step 3: Build ordered batch list preserving qty from get_auto_batch_nos
+#     eligible_set = set(eligible_ordered)
+#     batch_qty_map = {b.batch_no: b for b in available_batches if b.batch_no in eligible_set}
+#     ordered_batches = [batch_qty_map[bn] for bn in eligible_ordered if bn in batch_qty_map]
+
+#     # Step 4: Patch get_auto_batch_nos at MODULE level so ERPNext's local
+#     # import inside auto_reserve_serial_and_batch is intercepted
+#     _original_get_auto_batch_nos = _sabb.get_auto_batch_nos
+
+#     def _patched_get_auto_batch_nos(kwargs):
+#         if (
+#             kwargs.get("item_code") == self.item_code
+#             and kwargs.get("warehouse") == self.warehouse
+#         ):
+#             qty = flt(kwargs.get("qty"))
+#             if qty:
+#                 return _sabb.get_qty_based_available_batches(ordered_batches, qty)
+#             return ordered_batches
+#         return _original_get_auto_batch_nos(kwargs)
+
+#     _sabb.get_auto_batch_nos = _patched_get_auto_batch_nos
+
+#     try:
+#         _ORIGINAL_AUTO_RESERVE_SERIAL_AND_BATCH(self, based_on=based_on)
+#     finally:
+#         _sabb.get_auto_batch_nos = _original_get_auto_batch_nos
+
+#     _update_sb_entries_custom_fields(self)
 
 
 def auto_reserve_serial_and_batch(self, based_on=None):
-	"""Patch ERPNext auto batch selection to keep only eligible batches by row constraints."""
-	_ORIGINAL_AUTO_RESERVE_SERIAL_AND_BATCH(self, based_on=based_on)
+    """
+    Intercept ERPNext's auto batch picking.
+    Instead of picking any available batch, pick ALL batches whose
+    average_length is within [SO item length_size, length_size + 1.5],
+    sorted shortest-first.
+    """
+    import erpnext.stock.doctype.serial_and_batch_bundle.serial_and_batch_bundle as _sabb
 
-	constraints = _get_batch_constraints(self.voucher_type, self.voucher_detail_no, self.item_code)
-	_filter_sb_entries_by_batch_constraints(self, constraints)
+    constraints = _get_batch_constraints(
+        self.voucher_type, self.voucher_detail_no, self.item_code
+    )
 
-	_update_sb_entries_custom_fields(self)
+    # No length constraints on this item — run original unchanged
+    if constraints.get("min_length") is None and constraints.get("max_length") is None:
+        _ORIGINAL_AUTO_RESERVE_SERIAL_AND_BATCH(self, based_on=based_on)
+        _update_sb_entries_custom_fields(self)
+        return
+
+    based_on_value = based_on or frappe.db.get_single_value(
+        "Stock Settings", "pick_serial_and_batch_based_on"
+    )
+
+    # Step 1: Get all available batches for this item+warehouse
+    available_batches = _sabb.get_auto_batch_nos(
+        frappe._dict(
+            {
+                "item_code": self.item_code,
+                "warehouse": self.warehouse,
+                "qty": 0,
+                "based_on": based_on_value,
+            }
+        )
+    )
+
+    if not available_batches:
+        _ORIGINAL_AUTO_RESERVE_SERIAL_AND_BATCH(self, based_on=based_on)
+        _update_sb_entries_custom_fields(self)
+        return
+
+    # Step 2: Filter by average_length, sort shortest-first (length FIFO)
+    all_batch_nos = [b.batch_no for b in available_batches if b.batch_no]
+    eligible_ordered = _get_eligible_batches_ordered(
+        all_batch_nos,
+        min_length=constraints.get("min_length"),
+        max_length=constraints.get("max_length"),
+    )
+
+    if not eligible_ordered:
+        frappe.msgprint(
+            _(
+                "No batches found with average length between {0}m and {1}m for Item {2}."
+            ).format(
+                frappe.bold(constraints.get("min_length")),
+                frappe.bold(constraints.get("max_length")),
+                frappe.bold(self.item_code),
+            ),
+            title=_("No Eligible Batches"),
+            indicator="orange",
+        )
+        _update_sb_entries_custom_fields(self)
+        return
+
+    # Step 3: Build ordered batch list preserving qty from get_auto_batch_nos
+    eligible_set = set(eligible_ordered)
+    batch_qty_map = {
+        b.batch_no: b for b in available_batches if b.batch_no in eligible_set
+    }
+
+    # CRITICAL FIX: Create ordered batches with ALL eligible batches
+    # Don't filter by quantity - we want ALL batches within the length range
+    ordered_batches = []
+    for bn in eligible_ordered:
+        if bn in batch_qty_map:
+            batch_info = batch_qty_map[bn]
+            # IMPORTANT: Set qty to the actual available quantity for ALL batches
+            # This ensures all eligible batches are included in the reservation
+            batch_info.qty = batch_info.qty  # Keep the full available qty
+            ordered_batches.append(batch_info)
+
+    # Debug: Log how many eligible batches we found
+    frappe.log_error(
+        f"Found {len(ordered_batches)} eligible batches for item {self.item_code}",
+        "Stock Reservation Debug",
+    )
+
+    # Step 4: Patch get_auto_batch_nos to return ALL eligible batches
+    _original_get_auto_batch_nos = _sabb.get_auto_batch_nos
+
+    def _patched_get_auto_batch_nos(kwargs):
+        if (
+            kwargs.get("item_code") == self.item_code
+            and kwargs.get("warehouse") == self.warehouse
+        ):
+            qty = flt(kwargs.get("qty"))
+
+            # If we're requesting the full quantity for reservation
+            if qty > 0:
+                # We need to return batches that can fulfill the required qty
+                # BUT we should include all eligible batches in the selection
+                # Let's calculate cumulative qty and include all batches until we meet the requirement
+                cumulative_qty = 0
+                selected_batches = []
+
+                for batch in ordered_batches:
+                    if cumulative_qty < qty:
+                        # Include this batch in the selection
+                        # Calculate how much to take from this batch
+                        remaining_needed = qty - cumulative_qty
+                        take_qty = min(batch.qty, remaining_needed)
+
+                        # Create a copy with the taken qty
+                        batch_copy = frappe._dict(batch)
+                        batch_copy.qty = take_qty
+                        selected_batches.append(batch_copy)
+                        cumulative_qty += take_qty
+                    else:
+                        break
+
+                # If we still need more quantity but have no more batches,
+                # return what we have (will trigger shortage error)
+                if cumulative_qty < qty:
+                    frappe.msgprint(
+                        _(
+                            "Insufficient eligible batches for item {0}. Only {1} {2} available out of required {3} {2}."
+                        ).format(
+                            frappe.bold(self.item_code),
+                            frappe.bold(cumulative_qty),
+                            self.stock_uom,
+                            frappe.bold(qty),
+                        ),
+                        title=_("Partial Stock Availability"),
+                        indicator="orange",
+                    )
+
+                return selected_batches if selected_batches else ordered_batches
+            else:
+                # When qty is 0, return ALL eligible batches (this is for the initial selection)
+                return ordered_batches
+
+        return _original_get_auto_batch_nos(kwargs)
+
+    _sabb.get_auto_batch_nos = _patched_get_auto_batch_nos
+
+    try:
+        _ORIGINAL_AUTO_RESERVE_SERIAL_AND_BATCH(self, based_on=based_on)
+
+        # After reservation, check how many batches were actually reserved
+        if hasattr(self, "sb_entries") and self.sb_entries:
+            batch_count = len(
+                set([entry.batch_no for entry in self.sb_entries if entry.batch_no])
+            )
+            frappe.msgprint(
+                _(
+                    "Stock reserved successfully using {0} batch(es) for item {1}."
+                ).format(frappe.bold(str(batch_count)), frappe.bold(self.item_code)),
+                title=_("Stock Reserved"),
+                indicator="green",
+            )
+    finally:
+        _sabb.get_auto_batch_nos = _original_get_auto_batch_nos
+
+    _update_sb_entries_custom_fields(self)
 
 
-from erpnext.stock.doctype.stock_reservation_entry import stock_reservation_entry as _sre_module
+# ---------------------------------------------------------------------------
+# Patched create_stock_reservation_entries_for_so_items
+# ---------------------------------------------------------------------------
+
+# def create_stock_reservation_entries_for_so_items(
+#     sales_order,
+#     items_details=None,
+#     from_voucher_type=None,
+#     notify=True,
+# ):
+#     """
+#     Before calling ERPNext's original function:
+#     1. Read max_length per item from the dialog (via items_details)
+#     2. Set frappe.flags so auto_reserve_serial_and_batch can read constraints
+#     3. Filter out items with no eligible batches (show clear warning)
+#     4. Cap qty_to_reserve to eligible batch stock
+#     """
+#     items_details = list(items_details or [])
+#     frappe.flags.stock_reservation_item_ranges = {}
+
+#     try:
+#         if items_details:
+#             updated_items_details = []
+#             filtered_out_items = []
+
+#             for row in items_details:
+#                 row = frappe._dict(row)
+#                 so_item = frappe.get_doc("Sales Order Item", row.get("sales_order_item"))
+#                 warehouse = row.get("warehouse") or so_item.warehouse
+#                 has_batch_no = frappe.get_cached_value("Item", so_item.item_code, "has_batch_no")
+
+#                 # max_length from dialog, fallback to length_size + 1.5
+#                 dialog_max_length = row.get("max_length")
+#                 if dialog_max_length in (None, "", 0):
+#                     dialog_max_length = (
+#                         flt(so_item.length_size) + 1.5
+#                     ) if flt(so_item.length_size) > 0 else None
+
+#                 # Store in flags so auto_reserve_serial_and_batch reads it
+#                 frappe.flags.stock_reservation_item_ranges[so_item.name] = {
+#                     "max_length": dialog_max_length,
+#                 }
+
+#                 constraints = _get_batch_constraints(
+#                     "Sales Order", so_item.name, so_item.item_code
+#                 )
+
+#                 if has_batch_no:
+#                     eligible_stock_qty = _get_filtered_available_qty(
+#                         so_item.item_code, warehouse, constraints
+#                     )
+
+#                     if eligible_stock_qty <= 0:
+#                         debug = _get_batch_debug_details(so_item.item_code, warehouse, constraints)
+#                         filtered_out_items.append({
+#                             "item_code": so_item.item_code,
+#                             "message": _(
+#                                 "Row #{0}: No eligible batch for Item {1}. "
+#                                 "Length range: {2}m – {3}m. "
+#                                 "Available batches: [{4}]. "
+#                                 "Eligible batches: [{5}]."
+#                             ).format(
+#                                 so_item.idx,
+#                                 frappe.bold(so_item.item_code),
+#                                 frappe.bold(constraints.get("min_length", "-")),
+#                                 frappe.bold(constraints.get("max_length", "-")),
+#                                 frappe.bold(", ".join(debug.available_batches) or "None"),
+#                                 frappe.bold(", ".join(debug.eligible_batches) or "None"),
+#                             )
+#                         })
+#                         continue
+
+#                     # Cap qty to what's actually available in eligible batches
+#                     conversion_factor = (
+#                         flt(row.get("conversion_factor"))
+#                         or flt(so_item.conversion_factor)
+#                         or 1
+#                     )
+#                     requested_qty = flt(row.get("qty_to_reserve"))
+
+#                     if from_voucher_type not in ["Pick List", "Purchase Receipt"]:
+#                         requested_qty = requested_qty * conversion_factor
+
+#                     requested_qty = min(requested_qty, eligible_stock_qty)
+
+#                     if requested_qty <= 0:
+#                         filtered_out_items.append({
+#                             "item_code": so_item.item_code,
+#                             "message": _(
+#                                 "Row #{0}: Quantity to reserve for Item {1} becomes 0 after length filter."
+#                             ).format(so_item.idx, frappe.bold(so_item.item_code))
+#                         })
+#                         continue
+
+#                     row.qty_to_reserve = (
+#                         requested_qty
+#                         if from_voucher_type in ["Pick List", "Purchase Receipt"]
+#                         else requested_qty / conversion_factor
+#                     )
+
+#                 updated_items_details.append(row)
+
+#             if filtered_out_items:
+#                 item_list = []
+
+#                 for entry in filtered_out_items:
+#                     item_list.append(entry.get("item_code"))
+
+#                 frappe.msgprint({
+#                     "title": _("Stock Reservation Notice"),
+#                     "indicator": "orange",
+#                     "message": _(
+#                         "Stock reservation could not be completed for some items.<br><br>"
+#                         "<b>Items:</b><br>{0}<br><br>"
+#                         "<b>Reason:</b> Required length is not available in stock.<br><br>"
+#                         "Please adjust the length or check available inventory."
+#                     ).format("<br>".join([f"• {item}" for item in item_list]))
+#                 })
+
+#             if not updated_items_details:
+#                 return
+
+#             items_details = updated_items_details
+
+#         else:
+#             # Called on SO submit (no dialog) — apply length filter per item
+#             for so_item in sales_order.get("items") or []:
+#                 if not so_item.get("reserve_stock"):
+#                     continue
+#                 has_batch_no = frappe.get_cached_value(
+#                     "Item", so_item.item_code, "has_batch_no"
+#                 )
+#                 constraints = _get_batch_constraints(
+#                     "Sales Order", so_item.name, so_item.item_code
+#                 )
+#                 if has_batch_no:
+#                     so_item.qty_to_reserve = _get_filtered_available_qty(
+#                         so_item.item_code, so_item.warehouse, constraints
+#                     )
+
+#         return _ORIGINAL_CREATE_STOCK_RESERVATION_ENTRIES_FOR_SO_ITEMS(
+#             sales_order=sales_order,
+#             items_details=items_details or None,
+#             from_voucher_type=from_voucher_type,
+#             notify=notify,
+#         )
+#     finally:
+#         frappe.flags.stock_reservation_item_ranges = {}
+
+
+def create_stock_reservation_entries_for_so_items(
+    sales_order,
+    items_details=None,
+    from_voucher_type=None,
+    notify=True,
+):
+    """
+    Before calling ERPNext's original function:
+    1. Read max_length per item from the dialog (via items_details)
+    2. Set frappe.flags so auto_reserve_serial_and_batch can read constraints
+    3. Filter out items with no eligible batches (show clear warning)
+    4. Cap qty_to_reserve to eligible batch stock
+    """
+    if from_voucher_type in ["Purchase Receipt","Stock Entry"]:
+        return _ORIGINAL_CREATE_STOCK_RESERVATION_ENTRIES_FOR_SO_ITEMS(
+            sales_order=sales_order,
+            items_details=items_details,
+            from_voucher_type=from_voucher_type,
+            notify=notify,
+        )
+        
+    items_details = list(items_details or [])
+    frappe.flags.stock_reservation_item_ranges = {}
+
+    try:
+        if items_details:
+            updated_items_details = []
+            filtered_out_items = []
+            successful_items = []
+
+            for row in items_details:
+                row = frappe._dict(row)
+                so_item = frappe.get_doc(
+                    "Sales Order Item", row.get("sales_order_item")
+                )
+                warehouse = row.get("warehouse") or so_item.warehouse
+                has_batch_no = frappe.get_cached_value(
+                    "Item", so_item.item_code, "has_batch_no"
+                )
+
+                # max_length from dialog, fallback to length_size + 1.5
+                dialog_max_length = row.get("max_length")
+                if dialog_max_length in (None, "", 0):
+                    dialog_max_length = (
+                        (flt(so_item.length_size) + 1.5)
+                        if flt(so_item.length_size) > 0
+                        else None
+                    )
+
+                # Store in flags so auto_reserve_serial_and_batch reads it
+                frappe.flags.stock_reservation_item_ranges[so_item.name] = {
+                    "max_length": dialog_max_length,
+                }
+
+                constraints = _get_batch_constraints(
+                    "Sales Order", so_item.name, so_item.item_code
+                )
+
+                if has_batch_no:
+                    eligible_stock_qty = _get_filtered_available_qty(
+                        so_item.item_code, warehouse, constraints
+                    )
+
+                    # Get batch details for debugging
+                    debug = _get_batch_debug_details(
+                        so_item.item_code, warehouse, constraints
+                    )
+
+                    if eligible_stock_qty <= 0:
+                        filtered_out_items.append(
+                            {
+                                "item_code": so_item.item_code,
+                                "message": _(
+                                    "Row #{0}: No eligible batch for Item {1}. "
+                                    "Length range: {2}m – {3}m. "
+                                    "Available batches: [{4}]. "
+                                    "Eligible batches: [{5}]."
+                                ).format(
+                                    so_item.idx,
+                                    frappe.bold(so_item.item_code),
+                                    frappe.bold(constraints.get("min_length", "-")),
+                                    frappe.bold(constraints.get("max_length", "-")),
+                                    frappe.bold(
+                                        ", ".join(debug.available_batches) or "None"
+                                    ),
+                                    frappe.bold(
+                                        ", ".join(debug.eligible_batches) or "None"
+                                    ),
+                                ),
+                            }
+                        )
+                        continue
+
+                    # Log eligible batches count
+                    frappe.log_error(
+                        f"Item {so_item.item_code}: Found {len(debug.eligible_batches)} eligible batches with total qty {eligible_stock_qty}",
+                        "Stock Reservation Debug",
+                    )
+
+                    # Cap qty to what's actually available in eligible batches
+                    conversion_factor = (
+                        flt(row.get("conversion_factor"))
+                        or flt(so_item.conversion_factor)
+                        or 1
+                    )
+                    requested_qty = flt(row.get("qty_to_reserve"))
+
+                    requested_qty = requested_qty * conversion_factor
+
+                    requested_qty = min(requested_qty, eligible_stock_qty)
+
+                    if requested_qty <= 0:
+                        filtered_out_items.append(
+                            {
+                                "item_code": so_item.item_code,
+                                "message": _(
+                                    "Row #{0}: Quantity to reserve for Item {1} becomes 0 after length filter."
+                                ).format(so_item.idx, frappe.bold(so_item.item_code)),
+                            }
+                        )
+                        continue
+
+                    row.qty_to_reserve = requested_qty / conversion_factor
+
+                    successful_items.append(
+                        {
+                            "item_code": so_item.item_code,
+                            "eligible_batches": len(debug.eligible_batches),
+                            "total_eligible_qty": eligible_stock_qty,
+                            "requested_qty": requested_qty,
+                        }
+                    )
+
+                updated_items_details.append(row)
+
+            # Show success message if items were successfully prepared
+            if successful_items and notify:
+                success_msg = _("Prepared for stock reservation:\n")
+                for item in successful_items:
+                    success_msg += _(
+                        "• {0}: {1} eligible batch(es) found with {2} {3} available (requested: {4})\n"
+                    ).format(
+                        frappe.bold(item["item_code"]),
+                        item["eligible_batches"],
+                        frappe.bold(item["total_eligible_qty"]),
+                        "units",
+                        frappe.bold(item["requested_qty"]),
+                    )
+                frappe.msgprint(
+                    success_msg,
+                    title=_("Stock Reservation Preparation"),
+                    indicator="blue",
+                )
+
+            if filtered_out_items:
+                item_list = []
+                for entry in filtered_out_items:
+                    item_list.append(entry.get("item_code"))
+
+                frappe.msgprint(
+                    {
+                        "title": _("Stock Reservation Notice"),
+                        "indicator": "orange",
+                        "message": _(
+                            "Stock reservation could not be completed for some items.<br><br>"
+                            "<b>Items:</b><br>{0}<br><br>"
+                            "<b>Reason:</b> Required length is not available in stock.<br><br>"
+                            "Please adjust the length or check available inventory."
+                        ).format("<br>".join([f"• {item}" for item in item_list])),
+                    }
+                )
+
+            if not updated_items_details:
+                return
+
+            items_details = updated_items_details
+
+        else:
+            # Called on SO submit (no dialog) — apply length filter per item
+            for so_item in sales_order.get("items") or []:
+                if not so_item.get("reserve_stock"):
+                    continue
+                has_batch_no = frappe.get_cached_value(
+                    "Item", so_item.item_code, "has_batch_no"
+                )
+                constraints = _get_batch_constraints(
+                    "Sales Order", so_item.name, so_item.item_code
+                )
+                if has_batch_no:
+                    so_item.qty_to_reserve = _get_filtered_available_qty(
+                        so_item.item_code, so_item.warehouse, constraints
+                    )
+
+
+        for row in items_details:
+            row["reserve_stock"] = 1
+
+        # Call the original function
+        result = _ORIGINAL_CREATE_STOCK_RESERVATION_ENTRIES_FOR_SO_ITEMS(
+            sales_order=sales_order,
+            items_details=items_details or None,
+            from_voucher_type=from_voucher_type,
+            notify=notify,
+        )
+        # 🚨 IMPORTANT FIX
+        if from_voucher_type == "Purchase Receipt":
+            # Do NOT apply batch filtering logic
+            return _ORIGINAL_CREATE_STOCK_RESERVATION_ENTRIES_FOR_SO_ITEMS(
+                sales_order=sales_order,
+                items_details=items_details,
+                from_voucher_type=from_voucher_type,
+                notify=notify,
+            )
+
+        # Show final success message after reservation
+        if result and notify and items_details:
+            frappe.msgprint(
+                _(
+                    "Stock reservation completed successfully. Check the Stock Reservation document for details."
+                ),
+                title=_("Reservation Complete"),
+                indicator="green",
+            )
+
+        return result
+
+    finally:
+        frappe.flags.stock_reservation_item_ranges = {}
+
+
+# ---------------------------------------------------------------------------
+# Bind patches — runs once at import time via hooks.py
+# ---------------------------------------------------------------------------
+
+from erpnext.stock.doctype.stock_reservation_entry import (
+    stock_reservation_entry as _sre_module,
+)
 
 _ORIGINAL_CREATE_STOCK_RESERVATION_ENTRIES_FOR_SO_ITEMS = (
-	_sre_module.create_stock_reservation_entries_for_so_items
+    _sre_module.create_stock_reservation_entries_for_so_items
 )
-_ORIGINAL_AUTO_RESERVE_SERIAL_AND_BATCH = _sre_module.StockReservationEntry.auto_reserve_serial_and_batch
+_ORIGINAL_AUTO_RESERVE_SERIAL_AND_BATCH = (
+    _sre_module.StockReservationEntry.auto_reserve_serial_and_batch
+)

@@ -13,7 +13,7 @@ def validate_limit_on_save(self, method):
             )
 
     """
-    Ensure 'Limit Crossed' validation triggers on Save for Purchase Receipts.
+    Ensure 'Limit Crossed' validation triggers on Save for Purchase Receipts.     
     """
     if hasattr(self, "validate_qty"):
         try:
@@ -285,6 +285,7 @@ def create_fg_stock_reservation(company, item_code, warehouse, qty, so_qty, stoc
         sre.stock_uom = stock_uom
         sre.flags.ignore_permissions = True
         sre.insert()
+        sre.save()
         sre.submit()
 
     except Exception:

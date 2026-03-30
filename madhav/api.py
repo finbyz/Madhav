@@ -67,6 +67,33 @@ def get_employee_checkin_entries(employee, attendance_date):
         "out_time": out_time_doc[0].time if out_time_doc else None
     }
 
+
+@frappe.whitelist()
+def create_stock_reservation_entries(source_name, items_details):
+
+    import json
+    from madhav.madhav.monkey_patch.stock_reservation_entry import (
+        create_stock_reservation_entries_for_so_items,
+    )
+
+    if isinstance(items_details, str):
+        items_details = json.loads(items_details)
+
+    sales_order = frappe.get_doc("Sales Order", source_name)
+
+    create_stock_reservation_entries_for_so_items(
+        sales_order=sales_order,
+        items_details=items_details,
+        notify=True,
+    )
+
+    # ✅ ADD THIS
+    return {
+        "status": "success",
+        "message": "Stock Reservation Created Successfully"
+    }
+    
+
 @frappe.whitelist()
 def get_offday_status(employee, attendance_date,attendance):
     

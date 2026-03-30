@@ -265,27 +265,27 @@ function open_sales_order_items_selector_for_delivery_note(frm) {
 				freeze: true,
 				freeze_message: __("Mapping Sales Order ..."),
 				callback: function (r) {
-				if (!r.exc) {
-					frappe.model.sync(r.message);
+					if (!r.exc) {
+						frappe.model.sync(r.message);
 
-					// ✅ Step 3: Remove duplicate rows with same so_detail
-					const seen_so_details = new Set();
-					frm.doc.items = (frm.doc.items || []).filter(dn_item => {
-						if (dn_item.so_detail) {
-							if (seen_so_details.has(dn_item.so_detail)) return false;
-							seen_so_details.add(dn_item.so_detail);
-						}
-						return true;
-					});
+						// ✅ Step 3: Remove duplicate rows with same so_detail
+						const seen_so_details = new Set();
+						frm.doc.items = (frm.doc.items || []).filter(dn_item => {
+							if (dn_item.so_detail) {
+								if (seen_so_details.has(dn_item.so_detail)) return false;
+								seen_so_details.add(dn_item.so_detail);
+							}
+							return true;
+						});
 
-					// ✅ Step 4: Remove items that were NOT selected
-					frm.doc.items = (frm.doc.items || []).filter(dn_item => {
-						if (dn_item.so_detail && !filtered_children.includes(dn_item.so_detail)) {
-							frappe.model.clear_doc(dn_item.doctype, dn_item.name);
-							return false;
-						}
-						return true;
-					});
+						// ✅ Step 4: Remove items that were NOT selected
+						frm.doc.items = (frm.doc.items || []).filter(dn_item => {
+							if (dn_item.so_detail && !filtered_children.includes(dn_item.so_detail)) {
+								frappe.model.clear_doc(dn_item.doctype, dn_item.name);
+								return false;
+							}
+							return true;
+						});
 
 					// ✅ Step 5: Map custom fields for selected items
 					(frm.doc.items || []).forEach(dn_item => {
@@ -306,10 +306,10 @@ function open_sales_order_items_selector_for_delivery_note(frm) {
 						}
 					});
 
-					frm.dirty();
-					frm.refresh();
-				}
-			},
+						frm.dirty();
+						frm.refresh();
+					}
+				},
 			});
 		},
 	});
@@ -389,11 +389,11 @@ function open_sales_order_items_selector_for_delivery_note(frm) {
 		let filtered_rows = state.rows.filter((row) => {
 			if (!show_all_items && flt(row.reserved_qty) <= 0 && flt(row.reserved_pieces) <= 0) return false;
 			if (customer_filter && row.customer !== customer_filter) return false;
-			if (item_filter && !( 
+			if (item_filter && !(
 				(row.item_code || "").toLowerCase().includes(item_filter.toLowerCase()) ||
 				(row.item_name || "").toLowerCase().includes(item_filter.toLowerCase())
 			)) return false;
-			
+
 			const row_length = flt(row.length_size !== undefined ? row.length_size : row.length);
 			if (min_length > 0 || max_length > 0) {
 				if (row_length <= 0) return false; // hide rows with no length when filter is active
@@ -625,60 +625,60 @@ function open_sales_order_items_selector_for_delivery_note(frm) {
 	// 	});
 	// }
 	function setup_table_events(wrapper, show_items, rows) {
-	if (show_items) {
-		wrapper.find(".selector-check").on("change", function () {
-			const row_name = this.getAttribute("data-name");
-			if (this.checked) state.selected_children.add(row_name);
-			else state.selected_children.delete(row_name);
-		});
-
-		wrapper.find(".col-filter").on("input", function () {
-			const col_filters = {};
-			wrapper.find(".col-filter").each(function () {
-				const col = this.getAttribute("data-col");
-				const val = this.value.toLowerCase().trim();
-				if (val) col_filters[col] = val;
+		if (show_items) {
+			wrapper.find(".selector-check").on("change", function () {
+				const row_name = this.getAttribute("data-name");
+				if (this.checked) state.selected_children.add(row_name);
+				else state.selected_children.delete(row_name);
 			});
 
-			wrapper.find("tbody tr").each(function () {
-				const $row = $(this);
-				const row_name = $row.find(".selector-check").data("name");
-				const row_data = rows.find(r => r.name === row_name);
-				if (!row_data) return;
-
-				const visible = Object.entries(col_filters).every(([col, val]) => {
-					// for number columns: get the actual value, handle length_size alias
-					let cell_val;
-					if (col === "length_size") {
-						cell_val = String(flt(row_data.length_size ?? row_data.length ?? 0));
-					} else {
-						cell_val = String(row_data[col] !== undefined ? row_data[col] : "").toLowerCase();
-					}
-					return cell_val.includes(val);
+			wrapper.find(".col-filter").on("input", function () {
+				const col_filters = {};
+				wrapper.find(".col-filter").each(function () {
+					const col = this.getAttribute("data-col");
+					const val = this.value.toLowerCase().trim();
+					if (val) col_filters[col] = val;
 				});
 
-				$row.toggle(visible);
-			});
-		});
+				wrapper.find("tbody tr").each(function () {
+					const $row = $(this);
+					const row_name = $row.find(".selector-check").data("name");
+					const row_data = rows.find(r => r.name === row_name);
+					if (!row_data) return;
 
-	} else {
-		wrapper.find(".so-selector-check").on("change", function () {
-			const parent = this.getAttribute("data-parent");
-			const so_items = rows.filter(r => r.parent === parent);
-			so_items.forEach(item => {
-				if (this.checked) state.selected_children.add(item.name);
-				else state.selected_children.delete(item.name);
+					const visible = Object.entries(col_filters).every(([col, val]) => {
+						// for number columns: get the actual value, handle length_size alias
+						let cell_val;
+						if (col === "length_size") {
+							cell_val = String(flt(row_data.length_size ?? row_data.length ?? 0));
+						} else {
+							cell_val = String(row_data[col] !== undefined ? row_data[col] : "").toLowerCase();
+						}
+						return cell_val.includes(val);
+					});
+
+					$row.toggle(visible);
+				});
+			});
+
+		} else {
+			wrapper.find(".so-selector-check").on("change", function () {
+				const parent = this.getAttribute("data-parent");
+				const so_items = rows.filter(r => r.parent === parent);
+				so_items.forEach(item => {
+					if (this.checked) state.selected_children.add(item.name);
+					else state.selected_children.delete(item.name);
+				});
+			});
+		}
+
+		wrapper.find(".check-all-visible").on("change", function () {
+			const checked = this.checked;
+			const selector = show_items ? ".selector-check" : ".so-selector-check";
+			wrapper.find(selector).each(function () {
+				this.checked = checked;
+				$(this).trigger("change");
 			});
 		});
 	}
-
-	wrapper.find(".check-all-visible").on("change", function () {
-		const checked = this.checked;
-		const selector = show_items ? ".selector-check" : ".so-selector-check";
-		wrapper.find(selector).each(function () {
-			this.checked = checked;
-			$(this).trigger("change");
-		});
-	});
-}
 }
