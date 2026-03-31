@@ -344,7 +344,9 @@ def create_stock_reconciliation(self):
                 "warehouse": row.warehouse or self.set_warehouse,
                 "batch_no": row.batch_no or None,
                 "use_serial_batch_fields": cint(row.get("use_serial_batch_fields")),
-                "serial_and_batch_bundle": row.serial_and_batch_bundle,
+                "serial_and_batch_bundle":(
+                     row.serial_and_batch_bundle if not row.use_serial_batch_fields else ""
+                ),
                 "qty": row.invoice_qty,
                 "difference_qty": flt(row.difference_qty),
                 "reconcile_all_serial_batch": (
