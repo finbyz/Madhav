@@ -79,9 +79,9 @@ frappe.ui.form.on('Delivery Note Item', {
 		let d = locals[cdt][cdn];
 		if (!d.item_code) return;
 
-		frappe.db.get_value("Item", d.item_code, "section_weight", (r) => {
-			if (r && r.section_weight) {
-				frappe.model.set_value(cdt, cdn, "section_weight", r.section_weight);
+		frappe.db.get_value("Item", d.item_code, "weight_per_meter", (r) => {
+			if (r && r.weight_per_meter) {
+				frappe.model.set_value(cdt, cdn, "section_weight", r.weight_per_meter);
 				calculate_qty(cdt, cdn);
 			}
 		});
