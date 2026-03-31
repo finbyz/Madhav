@@ -2,7 +2,7 @@ import frappe
 import json
 from frappe.utils import flt, cint, nowtime
 from frappe import _
-
+from erpnext.stock.doctype.stock_reservation_entry.stock_reservation_entry import get_stock_reservation_entries_for_voucher
 
 def on_submit(doc, method=None):
     if not doc.items:
@@ -237,6 +237,12 @@ def get_sales_order_items_for_selector(filters=None):
 
 def validate(self, method):
     for row in self.items:
+        if row.serial_and_batch_bundle:
+            data = frappe.get_doc("Serial and Batch Bundle", row.serial_and_batch_bundle)
+            if len(data.entries) == 1:
+                for doc in data.entries:
+                    if not row.batch_no:
+                        row.batch_no = doc.batch_no
         if row.against_sales_order:
             deliver_as_qty = frappe.db.get_value(
                 "Sales Order", row.against_sales_order, "deliver_as_qty"
