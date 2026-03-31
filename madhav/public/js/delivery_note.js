@@ -387,7 +387,7 @@ function open_sales_order_items_selector_for_delivery_note(frm) {
 		const so_filter = d.get_value("sales_order_filter");
 
 		let filtered_rows = state.rows.filter((row) => {
-			if (!show_all_items && flt(row.reserved_qty) <= 0 && flt(row.reserved_pieces) <= 0) return false;
+			if (!show_all_items && flt(row.reserved_qty) <= 0 ) return false;
 			if (customer_filter && row.customer !== customer_filter) return false;
 			if (item_filter && !(
 				(row.item_code || "").toLowerCase().includes(item_filter.toLowerCase()) ||
@@ -422,57 +422,6 @@ function open_sales_order_items_selector_for_delivery_note(frm) {
 		setup_table_events(wrapper, show_items, filtered_rows);
 	}
 
-	// function render_items_table(rows) {
-	// 	let last_so = null;
-	// 	let color_band = 0;
-
-	// 	const rows_html = rows.map((row) => {
-	// 		if (row.parent !== last_so) {
-	// 			if (last_so !== null) color_band = color_band ? 0 : 1;
-	// 			last_so = row.parent;
-	// 		}
-	// 		const bg_color = color_band ? "#f0faff" : "#fff";
-	// 		const checked = state.selected_children.has(row.name) ? "checked" : "";
-
-	// 		return `
-	// 			<tr style="background-color:${bg_color}">
-	// 				<td><input type="checkbox" class="selector-check" data-name="${frappe.utils.escape_html(row.name)}" ${checked}></td>
-	// 				<td>${frappe.utils.escape_html(row.parent || "")}</td>
-	// 				<td>${frappe.utils.escape_html(row.transaction_date || "")}</td>
-	// 				<td>${frappe.utils.escape_html(row.item_code || "")}</td>
-	// 				<td>${frappe.utils.escape_html(row.item_name || "")}</td>
-	// 				<td class="text-right">${format_number(flt(row.qty || 0))}</td>
-	// 				<td class="text-right">${format_number(flt(row.length_size ?? row.length ?? 0))}</td>
-	// 				<td class="text-right">${format_number(flt(row.pieces || 0))}</td>
-	// 				<td class="text-right">${format_number(flt(row.reserved_qty || 0))}</td>
-	// 				<td class="text-right">${format_number(flt(row.reserved_pieces || 0))}</td>
-	// 				<td class="text-right">${format_number(flt(row.section_weight || 0))}</td>
-	// 			</tr>`;
-	// 	}).join("");
-
-	// 	return `
-	// 		${get_table_header()}
-	// 		<div style="max-height:420px;overflow:auto;border:1px solid var(--border-color);border-radius:6px;">
-	// 			<table class="table table-bordered" style="margin-bottom:0;min-width:1200px;">
-	// 				<thead>
-	// 					<tr>
-	// 						<th style="width:40px;"></th>
-	// 						<th>${__("Sales Order")}</th>
-	// 						<th>${__("Date")}</th>
-	// 						<th>${__("Item Code")}</th>
-	// 						<th>${__("Item Name")}</th>
-	// 						<th class="text-right">${__("SO Qty")}</th>
-	// 						<th class="text-right">${__("Length")}</th>
-	// 						<th class="text-right">${__("Pieces")}</th>
-	// 						<th class="text-right">${__("Reserved Qty")}</th>
-	// 						<th class="text-right">${__("Reserved Pieces")}</th>
-	// 						<th class="text-right">${__("Section Weight")}</th>
-	// 					</tr>
-	// 				</thead>
-	// 				<tbody>${rows_html}</tbody>
-	// 			</table>
-	// 		</div>`;
-	// }
 	function render_items_table(rows) {
 		let last_so = null;
 		let color_band = 0;
@@ -496,7 +445,6 @@ function open_sales_order_items_selector_for_delivery_note(frm) {
 					<td class="text-right">${format_number(flt(row.length_size ?? row.length ?? 0))}</td>
 					<td class="text-right">${format_number(flt(row.pieces || 0))}</td>
 					<td class="text-right">${format_number(flt(row.reserved_qty || 0))}</td>
-					<td class="text-right">${format_number(flt(row.reserved_pieces || 0))}</td>
 					<td class="text-right">${format_number(flt(row.section_weight || 0))}</td>
 				</tr>`;
 		}).join("");
@@ -535,7 +483,6 @@ function open_sales_order_items_selector_for_delivery_note(frm) {
 							${filter_number_input("length_size")}
 							${filter_number_input("pieces")}
 							${filter_number_input("reserved_qty")}
-							${filter_number_input("reserved_pieces")}
 							${filter_number_input("section_weight")}
 						</tr>
 					</thead>

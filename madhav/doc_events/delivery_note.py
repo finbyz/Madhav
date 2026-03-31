@@ -183,8 +183,7 @@ def get_sales_order_items_for_selector(filters=None):
         """
         SELECT
             sre.voucher_detail_no,
-            SUM(sre.reserved_qty) AS reserved_qty,
-            SUM(sbe.peices) AS reserved_pieces
+            SUM(sre.reserved_qty) AS reserved_qty
         FROM `tabStock Reservation Entry` sre
         LEFT JOIN `tabSerial and Batch Entry` sbe
             ON sbe.parent = sre.name
@@ -228,7 +227,6 @@ def get_sales_order_items_for_selector(filters=None):
                 "section_weight": flt(row.section_weight),
                 # reservation data
                 "reserved_qty": flt(reservation.get("reserved_qty")),
-                "reserved_pieces": flt(reservation.get("reserved_pieces")),
             }
         )
 
