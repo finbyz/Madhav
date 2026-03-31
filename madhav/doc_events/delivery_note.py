@@ -243,6 +243,25 @@ def validate(self, method):
                 for doc in data.entries:
                     if not row.batch_no:
                         row.batch_no = doc.batch_no
+                        if row.serial_and_batch_bundle:
+                            try:
+                                sbb = frappe.get_doc("Serial and Batch Bundle", row.serial_and_batch_bundle)
+
+                                # If submitted → cancel first
+                                if sbb.docstatus == 1:
+                                    sbb.cancel()
+
+                                # Delete document
+                                frappe.delete_doc("Serial and Batch Bundle", sbb.name, force=1)
+
+                                # Clear reference
+                                row.serial_and_batch_bundle = ""
+
+                            except Exception:
+                                frappe.log_error(
+                                    title="SBB Delete Error",
+                                    message=frappe.get_traceback()
+                                )
         if row.against_sales_order:
             deliver_as_qty = frappe.db.get_value(
                 "Sales Order", row.against_sales_order, "deliver_as_qty"
@@ -255,9 +274,50 @@ from frappe.utils import get_datetime, add_to_date, nowtime
 
 
 def before_submit(self, method):
+    # Step 1: Set difference qty
     for i in self.items:
         i.difference_qty = i.invoice_qty - i.qty
+
+    # Step 2: Cancel Stock Reservation linked with Sales Order
+    cancel_stock_reservations_from_so(self)
+
+    # Step 3: Create Stock Reconciliation
     create_stock_reconciliation(self)
+
+
+def cancel_stock_reservations_from_so(doc):
+    """
+    Cancel Stock Reservation Entries created against Sales Order
+    using DN item references
+    """
+
+    for row in doc.items:
+        if not row.against_sales_order or not row.so_detail:
+            continue
+
+        sre_list = frappe.get_all(
+            "Stock Reservation Entry",
+            filters={
+                "voucher_type": "Sales Order",
+                "voucher_no": row.against_sales_order,
+                "voucher_detail_no": row.so_detail,
+                "docstatus": 1
+            },
+            pluck="name"
+        )
+
+        for sre_name in sre_list:
+            try:
+                sre = frappe.get_doc("Stock Reservation Entry", sre_name)
+
+                if sre.docstatus == 1:
+                    sre.cancel()
+
+            except Exception:
+                frappe.log_error(
+                    title="SRE Cancel Error",
+                    message=f"{sre_name}\n{frappe.get_traceback()}"
+                )
 
 
 @frappe.whitelist()
