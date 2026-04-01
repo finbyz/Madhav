@@ -1,4 +1,4 @@
-frappe.ui.form.on("Sales Invoice", {
+frappe.ui.form.on("Purchase Invoice", {
    cost_center: function(frm) {
         update_taxes_fields(frm);
     },

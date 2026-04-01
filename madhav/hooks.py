@@ -49,17 +49,20 @@ doctype_js = {
     "Stock Entry": "public/js/stock_entry.js",
     "BOM": "public/js/bom.js",
     "Sales Order": "public/js/sales_order.js",
+    "Sales Invoice": "public/js/sales_invoice.js",
     "Work Order": "public/js/work_order.js",
     "Production Plan": "public/js/production_plan.js",
     "Material Request": "public/js/material_request.js",
     "Quality Inspection": "public/js/quality_inspection.js",
     "Delivery Note": "public/js/delivery_note.js",
+    "Purchase Order": "public/js/purchase_order.js",
+    "Purchase Invoice": "public/js/purchase_invoice.js",
     # "Purchase Receipt": "public/js/purchase_receipt.js"
 }
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
 doctype_list_js = {
     "Attendance" : "public/js/attendance_list.js",
-    "Purchase Order" : "public/js/purchase_order.js"
+    "Purchase Order" : "public/js/purchase_order_list.js"
 }
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
 # doctype_calendar_js = {"doctype" : "public/js/doctype_calendar.js"}
@@ -188,6 +191,7 @@ doc_events = {
         "madhav.doc_events.purchase_invoice.validate_pr_rejected_qty_has_return"
     ],
     "before_cancel": "madhav.doc_events.stock_entry.cancel_linked_psles"
+    # "on_submit": "madhav.doc_events.purchase_invoice.on_submit"
 },
     "Purchase Receipt": {
         "before_save": [
