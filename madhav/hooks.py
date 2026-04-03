@@ -57,6 +57,7 @@ doctype_js = {
     "Delivery Note": "public/js/delivery_note.js",
     "Purchase Order": "public/js/purchase_order.js",
     "Purchase Invoice": "public/js/purchase_invoice.js",
+    "Journal Entry": "public/js/journal_entry.js",
     # "Purchase Receipt": "public/js/purchase_receipt.js"
 }
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
@@ -188,10 +189,10 @@ doc_events = {
     "before_save": [
         # "madhav.doc_events.purchase_invoice.validate_limit_on_saved_before_submit",
         # "madhav.madhav.override.purchase_invoice.before_save",
-        "madhav.doc_events.purchase_invoice.validate_pr_rejected_qty_has_return"
+        "madhav.doc_events.purchase_invoice.validate_pr_rejected_qty_has_return",
     ],
-    "before_cancel": "madhav.doc_events.stock_entry.cancel_linked_psles"
-    # "on_submit": "madhav.doc_events.purchase_invoice.on_submit"
+    "before_cancel": "madhav.doc_events.stock_entry.cancel_linked_psles",
+    "on_submit": "madhav.doc_events.purchase_invoice.on_submit",
 },
     "Purchase Receipt": {
         "before_save": [

@@ -5,6 +5,7 @@ frappe.ui.form.on('Sales Order', {
     branch: function(frm) {
         update_taxes_fields(frm);
     },
+
     refresh(frm) {
 
         frm.remove_custom_button(__('Material Request'), __('Create'));
@@ -447,6 +448,7 @@ frappe.ui.form.on('Sales Order', {
         });
     },
     validate(frm) {
+        update_taxes_fields(frm);
         if (frm.is_new()) {  // Only set if new
             if (frm.doc.company === "MADHAV UDYOG PRIVATE LIMITED") {
                 frm.set_value("naming_series", "MU-SO.YY.-");

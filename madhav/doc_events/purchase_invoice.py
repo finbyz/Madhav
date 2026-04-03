@@ -127,3 +127,47 @@ def validate_pr_rejected_qty_has_return(doc, method=None):
 					"but no Purchase Return exists against it."
 				).format(pr_name)
 			)
+   
+def on_submit(self, method=None):
+    if not (self.internal_supplier and self.repack_item):
+        return
+
+    # Create Stock Entry
+    se = frappe.new_doc("Stock Entry")
+    se.stock_entry_type = "Repack"
+    se.purpose = "Repack"
+    se.company = self.company
+    se.branch = self.branch
+    se.cost_center = self.cost_center
+
+    # Loop through Purchase Invoice Items (Raw Material)
+    for row in self.items:
+        if not row.item_code:
+            continue
+
+        # 🔴 Raw Material (Source)
+        se.append("items", {
+            "item_code": row.item_code,
+            "qty": row.qty or 1,
+            "s_warehouse": row.warehouse,
+            "batch_no": row.batch_no,
+            "use_serial_batch_fields":row.use_serial_batch_fields
+            # "serial_and_batch_bundle": row.serial_and_batch_bundle,
+        })
+
+    # 🟢 Finished Good (Target)
+    se.append("items", {
+        "item_code": self.repack_item,
+        "qty": 1,
+        "t_warehouse": self.repack_warehouse,
+        "is_finished_item": 1,
+    })
+
+    # Save & Submit
+    se.insert(ignore_permissions=True)
+    # se.submit()
+
+    # # Optional: Link back
+    self.db_set("repack_stock_entry_reference", se.name)
+    frappe.msgprint(f"Repack Stock Entry <b>{se.name}</b> created successfully.")
+        

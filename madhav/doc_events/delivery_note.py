@@ -2,7 +2,6 @@ import frappe
 import json
 from frappe.utils import flt, cint, nowtime
 from frappe import _
-from erpnext.stock.doctype.stock_reservation_entry.stock_reservation_entry import get_stock_reservation_entries_for_voucher
 
 def on_submit(doc, method=None):
     if not doc.items:
@@ -234,32 +233,7 @@ def get_sales_order_items_for_selector(filters=None):
 
 
 def validate(self, method):
-    for row in self.items:
-        if row.serial_and_batch_bundle:
-            data = frappe.get_doc("Serial and Batch Bundle", row.serial_and_batch_bundle)
-            if len(data.entries) == 1:
-                for doc in data.entries:
-                    if not row.batch_no:
-                        row.batch_no = doc.batch_no
-                        if row.serial_and_batch_bundle:
-                            try:
-                                sbb = frappe.get_doc("Serial and Batch Bundle", row.serial_and_batch_bundle)
-
-                                # If submitted → cancel first
-                                if sbb.docstatus == 1:
-                                    sbb.cancel()
-
-                                # Delete document
-                                frappe.delete_doc("Serial and Batch Bundle", sbb.name, force=1)
-
-                                # Clear reference
-                                row.serial_and_batch_bundle = ""
-
-                            except Exception:
-                                frappe.log_error(
-                                    title="SBB Delete Error",
-                                    message=frappe.get_traceback()
-                                )
+    for row in self.items: 
         if row.against_sales_order:
             deliver_as_qty = frappe.db.get_value(
                 "Sales Order", row.against_sales_order, "deliver_as_qty"
@@ -299,9 +273,9 @@ def cancel_stock_reservations_from_so(doc):
                 "voucher_type": "Sales Order",
                 "voucher_no": row.against_sales_order,
                 "voucher_detail_no": row.so_detail,
-                "docstatus": 1
+                "docstatus": 1,
             },
-            pluck="name"
+            pluck="name",
         )
 
         for sre_name in sre_list:
@@ -314,7 +288,7 @@ def cancel_stock_reservations_from_so(doc):
             except Exception:
                 frappe.log_error(
                     title="SRE Cancel Error",
-                    message=f"{sre_name}\n{frappe.get_traceback()}"
+                    message=f"{sre_name}\n{frappe.get_traceback()}",
                 )
 
 
@@ -326,53 +300,47 @@ def create_sr_from_dn(delivery_note):
 
 
 def create_stock_reconciliation(self):
-    """
-    Before DN submits:
-    1. Collect all items with invoice_qty > 0 into ONE Stock Reconciliation.
-    2. For each item: qty = invoice_qty, valuation_rate = amount / invoice_qty (amount unchanged).
-    3. Insert + submit the SR (triggers SR on_submit which updates DN item rows in DB).
-    4. Reload updated qty/valuation_rate back into in-memory doc items so DN submits with correct values.
-    """
+    import frappe
+    from frappe.utils import flt, nowtime, get_datetime, add_to_date
 
     items_with_invoice_qty = [row for row in self.items if flt(row.invoice_qty) > 0]
 
     if not items_with_invoice_qty:
         return
 
-    # ── Cancel & delete any stale SRs from previous failed DN submit attempts ──
-    # If DN submission failed before, the SR it created is still submitted.
-    # That leftover SR blocks the next attempt with a "future transaction" error.
+    # ── Remove stale SRs ─────────────────────────────────────────────
     stale_srs = frappe.get_all(
         "Stock Reconciliation Item",
         filters={"delivery_note_ref": self.name},
-        fields=["parent"],
         pluck="parent",
     )
+
     for sr_name in set(stale_srs):
         try:
             stale_sr = frappe.get_doc("Stock Reconciliation", sr_name)
             if stale_sr.docstatus == 1:
                 stale_sr.flags.ignore_permissions = True
                 stale_sr.cancel()
+
             frappe.delete_doc(
-                "Stock Reconciliation", sr_name, ignore_permissions=True, force=True
+                "Stock Reconciliation",
+                sr_name,
+                ignore_permissions=True,
+                force=True,
             )
         except Exception:
             frappe.log_error(
                 frappe.get_traceback(), f"Failed to cancel stale SR {sr_name}"
             )
 
+    # ── Create SR ────────────────────────────────────────────────────
     sr = frappe.new_doc("Stock Reconciliation")
     sr.purpose = "Stock Reconciliation"
-    from frappe.utils import add_to_date
 
-    # IMPORTANT: During before_submit, self.posting_time may already be overridden
-    # to the current time by the Frappe submit flow. Read from DB to get the actual
-    # saved posting_date/time, then post SR 1 second BEFORE it so it is never
-    # a "future" entry relative to the DN's Serial and Batch Bundle.
     db_posting = frappe.db.get_value(
         "Delivery Note", self.name, ["posting_date", "posting_time"], as_dict=True
     )
+
     dn_posting_date = db_posting.posting_date if db_posting else self.posting_date
     dn_posting_time = (
         db_posting.posting_time if db_posting else (self.posting_time or nowtime())
@@ -380,14 +348,16 @@ def create_stock_reconciliation(self):
 
     dt = get_datetime(f"{dn_posting_date} {dn_posting_time}")
     before_dt = add_to_date(dt, seconds=-10)
+
     sr.set_posting_time = 1
     sr.posting_date = before_dt.date()
-
     sr.posting_time = before_dt.time()
     sr.company = self.company
+
     if self.set_warehouse:
         sr.set_warehouse = self.set_warehouse
 
+    # ── Add Items ────────────────────────────────────────────────────
     for row in items_with_invoice_qty:
         total_qty = flt(row.qty) + flt(row.difference_qty)
 
@@ -395,101 +365,157 @@ def create_stock_reconciliation(self):
         if total_qty:
             valuation_rate = flt(row.amount) / total_qty
 
+        # ── CASE 1: Bundle ───────────────────────────────────────────
+        if row.serial_and_batch_bundle:
+            sbb = frappe.get_doc("Serial and Batch Bundle", row.serial_and_batch_bundle)
+
+            batch_entries = [e for e in sbb.entries if e.batch_no]
+            batch_count = len(batch_entries)
+
+            if batch_count > 0:
+                total_bundle_qty = sum(abs(flt(e.qty)) for e in batch_entries)
+
+                for entry in batch_entries:
+                    batch_qty = abs(flt(entry.qty))
+
+                    ratio = (
+                        batch_qty / total_bundle_qty
+                        if total_bundle_qty
+                        else 1.0 / batch_count
+                    )
+
+                    entry_invoice_qty = flt(row.invoice_qty) * ratio
+                    entry_diff_qty = entry_invoice_qty - batch_qty
+                    entry_dn_qty = batch_qty
+
+                    sr.append(
+                        "items",
+                        {
+                            "item_code": row.item_code,
+                            "warehouse": row.warehouse or self.set_warehouse,
+                            "use_serial_batch_fields": 1,
+                            "batch_no": entry.batch_no,
+                            "qty": entry_invoice_qty,
+                            "difference_qty": entry_diff_qty,
+                            "reconcile_all_serial_batch": 0,
+                            "delivery_note_qty": entry_dn_qty,
+                            "valuation_rate": valuation_rate,
+                            "current_rate": flt(row.incoming_rate),
+                            "pieces": (
+                                flt(row.get("pieces")) * ratio
+                                if row.get("pieces")
+                                else 0
+                            ),
+                            "length": flt(row.get("length")),
+                            "average_length": flt(row.get("average_length")),
+                            "section_weight": flt(row.get("section_weight")),
+                            "delivery_note_ref": self.name,
+                            "serial_and_batch_bundle": None,
+                        },
+                    )
+                continue
+
+        # ── CASE 2: Normal ───────────────────────────────────────────
         sr.append(
             "items",
             {
                 "item_code": row.item_code,
                 "warehouse": row.warehouse or self.set_warehouse,
                 "batch_no": row.batch_no or None,
-                "use_serial_batch_fields": cint(row.get("use_serial_batch_fields")),
-                "serial_and_batch_bundle":(
-                     row.serial_and_batch_bundle if not row.use_serial_batch_fields else ""
-                ),
+                "use_serial_batch_fields": 1,
                 "qty": row.invoice_qty,
                 "difference_qty": flt(row.difference_qty),
-                "reconcile_all_serial_batch": (
-                    1 if not row.use_serial_batch_fields else 0
-                ),
+                "reconcile_all_serial_batch": 0,
                 "delivery_note_qty": flt(row.qty),
                 "amount": flt(row.amount),
+                "valuation_rate": valuation_rate,
                 "current_rate": flt(row.incoming_rate),
                 "pieces": flt(row.get("pieces")),
                 "length": flt(row.get("length")),
                 "average_length": flt(row.get("average_length")),
                 "section_weight": flt(row.get("section_weight")),
                 "delivery_note_ref": self.name,
+                "serial_and_batch_bundle": None,
             },
         )
 
+    # ── Insert SR ───────────────────────────────────────────────────
     sr.flags.ignore_permissions = True
-    # sr.flags.ignore_validate_serial_batch = True
-
-    # ── Manually trigger current stock calculations ──────────────────────────
-    # SR's validate() skips these if use_serial_batch_fields=True and save=False.
-    # Calling it with save=True here ensures current_qty/valuation_rate are set.
-    sr.set_current_serial_and_batch_bundle(save=True)
     sr.insert(ignore_permissions=True)
+
+    # ── Adjust valuation ─────────────────────────────────────────────
+    for sr_item in sr.items:
+        if flt(sr_item.qty) and flt(sr_item.current_qty):
+            sr_item.valuation_rate = flt(
+                flt(sr_item.current_qty)
+                * flt(sr_item.current_valuation_rate)
+                / flt(sr_item.qty)
+            )
+            sr_item.amount = flt(sr_item.qty) * flt(sr_item.valuation_rate)
+
     sr.save(ignore_permissions=True)
 
-    # Set a process-level flag so check_future_entries_exists skips this specific SR
-    # for BOTH the SR bundle validation AND the subsequent DN bundle validation.
-    # frappe.flags is reset automatically between requests — no manual cleanup needed.
-    # frappe.flags.skip_future_check_for_sr = sr.name
-    updated_map = {
-        sr_row.item_code + "|" + (sr_row.batch_no or ""): sr_row for sr_row in sr.items
-    }
+    # ── Submit SR ───────────────────────────────────────────────────
+    sr.submit()
 
+    # ── 🔥 Update SBB & DN AFTER SUBMIT ─────────────────────────────
     for dn_row in self.items:
-        key = dn_row.item_code + "|" + (dn_row.batch_no or "")
-        sr_row = updated_map.get(key)
+        if not dn_row.serial_and_batch_bundle:
+            continue
 
-        if sr_row:
-            dn_row.qty = sr_row.delivery_note_qty + sr_row.difference_qty
-            dn_row.incoming_rate = sr_row.valuation_rate
+        sbb = frappe.get_doc("Serial and Batch Bundle", dn_row.serial_and_batch_bundle)
 
-    # Reset dependent fields
+        # Map SR qty by batch
+        batch_map = {
+            d.batch_no: d.qty
+            for d in sr.items
+            if d.item_code == dn_row.item_code and d.batch_no
+        }
+
+        updated_total = 0
+
+        for entry in sbb.entries:
+            if entry.batch_no in batch_map:
+                entry.qty = flt(batch_map[entry.batch_no])
+                updated_total += entry.qty
+
+        # Save SBB
+        sbb.flags.ignore_permissions = True
+        sbb.save()
+
+        # Update DN qty
+        dn_row.qty = updated_total
+
+    # ── Recalculate DN ──────────────────────────────────────────────
     for row in self.items:
         row.amount = 0
         row.base_amount = 0
         row.net_amount = 0
         row.base_net_amount = 0
 
-    # Recalculate base values
     self.set_missing_values()
 
-    # Apply pricing rules (if exists)
     if hasattr(self, "apply_pricing_rule"):
         self.apply_pricing_rule()
 
-    # Recalculate item amounts
     for row in self.items:
         row.amount = flt(row.qty) * flt(row.rate)
         row.base_amount = flt(row.amount) * flt(self.conversion_rate or 1)
 
-    # Taxes & totals
     self.calculate_taxes_and_totals()
 
-    # 🔥 Re-run full validation
     self.run_method("validate")
 
-    # Stock validations
     if hasattr(self, "validate_stock"):
         self.validate_stock()
 
     if hasattr(self, "validate_with_previous_doc"):
         self.validate_with_previous_doc()
 
-    # Optional (version dependent)
     if hasattr(self, "recalculate_rate_and_amount"):
         self.recalculate_rate_and_amount()
-
-    sr.submit()
 
     frappe.msgprint(
         f"Stock Reconciliation <b>{sr.name}</b> created and submitted for Delivery Note <b>{self.name}</b>.",
         alert=True,
     )
-
-    # ── Reload updated values back into in-memory doc items ──────────────────
-    # SR on_submit already updated DN Item rows in DB; reflect those changes
-    # in the in-memory doc so the DN stock ledger uses invoice_qty as qty.

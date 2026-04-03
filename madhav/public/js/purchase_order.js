@@ -4,7 +4,10 @@ frappe.ui.form.on("Purchase Order", {
     },
     branch: function(frm) {
         update_taxes_fields(frm);
-    }
+    },
+    validate(frm){
+        update_taxes_fields(frm);
+    },
 });
 function update_taxes_fields(frm) {
     if (!frm.doc.taxes) return;

@@ -4,6 +4,17 @@ frappe.ui.form.on("Purchase Invoice", {
     },
     branch: function(frm) {
         update_taxes_fields(frm);
+    },
+    validate(frm){
+        update_taxes_fields(frm);
+    },
+     naming_series: function(frm) {
+        if (frm.doc.naming_series == "RDP/26-27-.#####.") {
+            frm.set_value("branch", "Rolling Division");
+        }
+        else if (frm.doc.naming_series == "MUP/26-27-.#####.") {
+            frm.set_value("branch", "Fabrication/Galvanization");
+        }
     }
 });
 function update_taxes_fields(frm) {
