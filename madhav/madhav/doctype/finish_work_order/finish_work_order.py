@@ -371,7 +371,7 @@ class FinishWorkOrder(Document):
 
                     se.append("items", {
                         "item_code": sc_row["item_code"],
-                        "t_warehouse": "Cutting Scrap - MS",
+                        "t_warehouse": sc_row["target_warehouse"],
                         "qty": consume_scrap,
                         "is_scrap_item": 1,
                         "required_stock_in_pieces": 1
