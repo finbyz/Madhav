@@ -7,13 +7,16 @@
  "engine": "InnoDB",
  "field_order": [
   "filters_section",
+  "posting_date",
   "date",
   "item_name",
   "wo_number",
+  "cost_center",
   "column_break_kfdf",
   "customer",
   "sales_order",
   "company",
+  "branch",
   "section_break_aojs",
   "fetch_pending_work_orders",
   "pending_work_orders",
@@ -200,13 +203,32 @@
    "fieldtype": "Float",
    "hidden": 1,
    "label": "Excess RM Qty"
+  },
+  {
+   "fieldname": "cost_center",
+   "fieldtype": "Link",
+   "label": "Cost Center",
+   "options": "Cost Center"
+  },
+  {
+   "default": "Now",
+   "fieldname": "posting_date",
+   "fieldtype": "Date",
+   "label": "Posting Date",
+   "reqd": 1
+  },
+  {
+   "fieldname": "branch",
+   "fieldtype": "Link",
+   "label": "Branch",
+   "options": "Branch"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-02-18 13:38:52.814210",
+ "modified": "2026-04-08 09:54:43.061286",
  "modified_by": "Administrator",
  "module": "Madhav",
  "name": "Finish Work Order",

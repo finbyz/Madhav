@@ -263,7 +263,9 @@ class FinishWorkOrder(Document):
                     "batch_no": rm.batch_no,
                     "pieces": rm.pieces,
                     "length": rm.length,
-                    "section_weight": rm.section_weight
+                    "section_weight": rm.section_weight,
+                    "cost_center:": self.cost_center,
+                    "branch": self.branch
                 })
 
         rm_index = 0
@@ -277,6 +279,7 @@ class FinishWorkOrder(Document):
                 scrap_pool.append({
                     "item_code": sc.item,
                     "remaining_qty": sc.qty,
+                    "warehouse": sc.warehouse
                 })
 
         scrap_index = 0
@@ -340,7 +343,9 @@ class FinishWorkOrder(Document):
                         "section_weight": rm_row["section_weight"],
                         "batch_no": rm_row["batch_no"],
                         "required_stock_in_pieces": 1,
-                        "use_serial_batch_fields": 1
+                        "use_serial_batch_fields": 1,
+                        "cost_center": rm_row["cost_center:"],
+                        "branch": rm_row["branch"]
                     })
 
                     rm_row["remaining_qty"] -= consume
@@ -374,7 +379,9 @@ class FinishWorkOrder(Document):
                         "t_warehouse": sc_row["warehouse"],
                         "qty": consume_scrap,
                         "is_scrap_item": 1,
-                        "required_stock_in_pieces": 1
+                        "required_stock_in_pieces": 1,
+                        "cost_center": self.cost_center,
+                        "branch": self.branch
                     })
 
                     sc_row["remaining_qty"] -= consume_scrap
@@ -399,7 +406,9 @@ class FinishWorkOrder(Document):
                     "average_length": pwo.length_size,
                     "section_weight": pwo.standard_weight,
                     "is_finished_item": 1,
-                    "required_stock_in_pieces": 1
+                    "required_stock_in_pieces": 1,
+                    "cost_center": self.cost_center,
+                    "branch": self.branch
                 })
 
                 se.fg_completed_qty = fg_final_qty
