@@ -86,7 +86,7 @@ class FinishWorkOrder(Document):
         wo.production_item = row.item
         wo.qty = row.ready_qty
         wo.stock_uom = row.stock_uom
-        wo.company = "MADHAV STELCO PRIVATE LIMITED"
+        wo.company = self.company
         wo.fg_warehouse = row.target_warehouse
         wo.finish_work_order = row.parent
         bom = frappe.get_value("BOM", {"item": row.item, "is_default": 1}, "name")
