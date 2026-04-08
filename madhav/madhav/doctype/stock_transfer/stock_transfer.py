@@ -70,6 +70,8 @@ class StockTransfer(Document):
                     "pieces": item.pieces,
                     "average_length": item.length,
                     "section_weight": item.section_weight,
+                    "cost_center": self.cost_center,
+                    "branch": self.branch,
                 },
             )
 

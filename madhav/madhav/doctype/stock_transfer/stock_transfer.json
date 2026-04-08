@@ -7,10 +7,13 @@
  "engine": "InnoDB",
  "field_order": [
   "section_break_tzn1",
+  "posting_date",
   "company",
   "item_name",
   "source_warehouse",
   "amended_from",
+  "cost_center",
+  "branch",
   "column_break_ielr",
   "from_date",
   "to_date",
@@ -128,6 +131,25 @@
    "no_copy": 1,
    "options": "Stock Entry",
    "read_only": 1
+  },
+  {
+   "default": "Now",
+   "fieldname": "posting_date",
+   "fieldtype": "Date",
+   "label": "Posting Date",
+   "reqd": 1
+  },
+  {
+   "fieldname": "cost_center",
+   "fieldtype": "Link",
+   "label": "Cost Center",
+   "options": "Cost Center"
+  },
+  {
+   "fieldname": "branch",
+   "fieldtype": "Link",
+   "label": "Branch",
+   "options": "Branch"
   }
  ],
  "grid_page_length": 50,
@@ -139,7 +161,7 @@
    "link_fieldname": "stock_transfer"
   }
  ],
- "modified": "2026-03-11 11:56:52.005284",
+ "modified": "2026-04-08 11:19:29.236622",
  "modified_by": "Administrator",
  "module": "Madhav",
  "name": "Stock Transfer",
