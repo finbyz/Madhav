@@ -5,10 +5,32 @@ frappe.ui.form.on('Material Request', {
         } else if (frm.doc.company === "MADHAV STELCO PRIVATE LIMITED") {
             frm.set_value("naming_series", "MSMR.YY.-");
         } 
-    
-},
+	},
+	cost_center: function (frm) {
+        update_items_fields(frm);
+    },
+    branch: function (frm) {
+        update_items_fields(frm);
+    },
 })
 
+function update_items_fields(frm) {
+    if (!frm.doc.items) return;
+
+    frm.doc.items.forEach(row => {
+
+        if (frm.doc.cost_center) {
+            frappe.model.set_value(row.doctype, row.name, "cost_center", frm.doc.cost_center);
+        }
+
+        if (frm.doc.branch) {
+            frappe.model.set_value(row.doctype, row.name, "branch", frm.doc.branch);
+        }
+
+    });
+
+    frm.refresh_field('items');
+}
 
 frappe.ui.form.on('Material Request Item', {
 	qty: function (frm,cdt,cdn) {
