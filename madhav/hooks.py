@@ -311,6 +311,11 @@ from erpnext.controllers import item_variant
 from madhav.api import custom_make_variant_item_code
 item_variant.make_variant_item_code = custom_make_variant_item_code
 
+import erpnext.manufacturing.doctype.blanket_order.blanket_order as bo
+from madhav.madhav.override.blanket_order import validate_against_blanket_order
+
+bo.validate_against_blanket_order = validate_against_blanket_order
+
 # Scheduled Tasks
 # ---------------
 
@@ -343,7 +348,8 @@ item_variant.make_variant_item_code = custom_make_variant_item_code
 override_whitelisted_methods = {
     "erpnext.manufacturing.doctype.work_order.work_order.make_stock_entry": "madhav.madhav.override.work_order.make_stock_entry",
     "erpnext.stock.doctype.purchase_receipt.purchase_receipt.make_purchase_invoice": "madhav.madhav.override.purchase_invoice.custom_make_purchase_invoice",
-    "erpnext.manufacturing.doctype.production_plan.production_plan.get_open_sales_orders":"madhav.madhav.override.production_plan.get_open_sales_orders"
+    "erpnext.manufacturing.doctype.production_plan.production_plan.get_open_sales_orders":"madhav.madhav.override.production_plan.get_open_sales_orders",
+    "erpnext.manufacturing.doctype.blanket_order.blanket_order.make_order":"madhav.madhav.override.blanket_order.make_order",
 }
 
 # after_migrate = [
