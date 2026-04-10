@@ -12,6 +12,9 @@ frappe.ui.form.on('Material Request', {
     branch: function (frm) {
         update_items_fields(frm);
     },
+	validate: function(frm) {
+		update_items_fields(frm);
+	}
 })
 
 function update_items_fields(frm) {

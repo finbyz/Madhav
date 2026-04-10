@@ -1,5 +1,12 @@
 frappe.ui.form.on('Stock Entry', {
+    cost_center: function (frm) {
+        update_items_fields(frm);
+    },
+    branch: function (frm) {
+        update_items_fields(frm);
+    },
     validate(frm){
+        update_items_fields(frm);
         if (frm.is_new()) { 
             if (frm.doc.company === "MADHAV UDYOG PRIVATE LIMITED") {
                 frm.set_value("naming_series", "MUST.YY.-");
@@ -282,4 +289,22 @@ function update_totals(frm) {
             }
         });
     }
+}
+
+function update_items_fields(frm) {
+    if (!frm.doc.items) return;
+
+    frm.doc.items.forEach(row => {
+
+        if (frm.doc.cost_center) {
+            frappe.model.set_value(row.doctype, row.name, "cost_center", frm.doc.cost_center);
+        }
+
+        if (frm.doc.branch) {
+            frappe.model.set_value(row.doctype, row.name, "branch", frm.doc.branch);
+        }
+
+    });
+
+    frm.refresh_field('items');
 }

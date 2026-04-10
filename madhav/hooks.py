@@ -63,7 +63,7 @@ doctype_js = {
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
 doctype_list_js = {
     "Attendance" : "public/js/attendance_list.js",
-    "Purchase Order" : "public/js/purchase_order_list.js"
+    # "Purchase Order" : "public/js/purchase_order_list.js"
 }
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
 # doctype_calendar_js = {"doctype" : "public/js/doctype_calendar.js"}
@@ -159,7 +159,8 @@ override_doctype_class = {
     "BOM":"madhav.madhav.override.bom.BOM",
     "Production Plan":"madhav.madhav.override.production_plan.CustomProductionPlan",
     "Purchase Receipt": "madhav.madhav.override.purchase_receipt.PurchaseReceipt",
-    "Stock Entry": "madhav.madhav.override.stock_entry.CustomStockEntry"
+    "Stock Entry": "madhav.madhav.override.stock_entry.CustomStockEntry",
+    "Blanket Order": "madhav.madhav.override.blanket_order.BlanketOrder",
     # "Purchase Receipt": "madhav.madhav.override.purchase_rPurchaseReceipteceipt.",
 }
 
