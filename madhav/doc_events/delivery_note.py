@@ -336,6 +336,8 @@ def create_stock_reconciliation(self):
     # ── Create SR ────────────────────────────────────────────────────
     sr = frappe.new_doc("Stock Reconciliation")
     sr.purpose = "Stock Reconciliation"
+    sr.cost_center = self.cost_center
+    sr.branch = self.branch
 
     db_posting = frappe.db.get_value(
         "Delivery Note", self.name, ["posting_date", "posting_time"], as_dict=True

@@ -161,6 +161,7 @@ override_doctype_class = {
     "Purchase Receipt": "madhav.madhav.override.purchase_receipt.PurchaseReceipt",
     "Stock Entry": "madhav.madhav.override.stock_entry.CustomStockEntry",
     "Blanket Order": "madhav.madhav.override.blanket_order.BlanketOrder",
+    "Stock Reconciliation" : "madhav.madhav.override.stock_reconciliation.StockReconciliation",
     # "Purchase Receipt": "madhav.madhav.override.purchase_rPurchaseReceipteceipt.",
 }
 
@@ -283,6 +284,12 @@ sre_module.create_stock_reservation_entries_for_so_items = (
 	custom_create_stock_reservation_entries_for_so_items
 )
 
+import erpnext.stock.doctype.stock_reservation_entry.stock_reservation_entry as sre
+from madhav.madhav.monkey_patch.stock_reservation_entry import (
+    get_sre_reserved_qty_for_items_and_warehouses as custom_func
+)
+
+sre.get_sre_reserved_qty_for_items_and_warehouses = custom_func
 # from erpnext.controllers.buying_controller import BuyingController
 # from madhav.madhav.monkey_patch.buying_controller import update_stock_ledger
 # BuyingController.update_stock_ledger = update_stock_ledger
