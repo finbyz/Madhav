@@ -219,9 +219,9 @@ doc_events = {
     "Purchase Order": {
         "before_save": [
             "madhav.doc_events.purchase_order.validate_limit_on_save"],
-        # "on_submit": [
-        #     "madhav.doc_events.purchase_order.round_off_stock_qty"
-        #     ]
+        "validate": [
+            "madhav.doc_events.purchase_order.validate"
+            ]
     },
     "Batch Group":{
         "autoname":"madhav.doc_events.batch_group.autoname"

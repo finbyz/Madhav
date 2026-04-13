@@ -80,128 +80,99 @@ def round_off_stock_qty(doc, method=None):
 			if row.get("stock_qty") is not None:
 				row.db_set("stock_qty",round(flt(row.stock_qty)))
     
-    
-from frappe.model.mapper import get_mapped_doc
+def validate(self,method):
+    for row in self.items:
+        if row.blanket_order:
+            row.against_blanket_order = 1 
+            
 import frappe
-import json
+from frappe.model.mapper import get_mapped_doc
+from frappe.utils import flt
 
+import json
 
 @frappe.whitelist()
 def make_purchase_order_from_blanket(source_name, target_doc=None, args=None):
-    def set_missing_values(source, target):
+    if args is None:
+        args = {}
+    elif isinstance(args, str):
+        args = json.loads(args)
 
+    def set_missing_values(source, target):
         target.supplier = source.supplier
         target.company = source.company
-
-        # Set flag if the field exists in Purchase Order
-        if hasattr(target, "against_blanket_order"):
-            target.against_blanket_order = 1
-
+        target.against_blanket_order = 1
 
     def update_item(source, target, source_parent):
-        # Calculate remaining quantity to order
-        # remaining_qty = Total qty in blanket order - Already ordered qty
-        remaining_qty = source.qty - (source.ordered_qty or 0)
+        remaining_qty = flt(source.qty) - flt(source.ordered_qty)
+        if remaining_qty <= 0:
+            return
 
-        # Set the quantity for this Purchase Order
         target.qty = remaining_qty
-        
-        # Set the rate from blanket order
         target.rate = source.rate
-        
-        # Store the blanket order rate for reference
-        if hasattr(target, "blanket_order_rate"):
-            target.blanket_order_rate = source.rate
-        
-        # Link back to the source Blanket Order
+        target.blanket_order_rate = source.rate
         target.blanket_order = source_parent.name
         target.blanket_order_item = source.name
+        target.against_blanket_order = 1
 
-        # Set flag if the field exists
-        if hasattr(target, "against_blanket_order"):
-            target.against_blanket_order = 1
+    def select_item(item):
+        filtered_items = args.get("filtered_children", [])
+        child_filter = item.name in filtered_items if filtered_items else True
+        return flt(item.qty) > flt(item.ordered_qty) and child_filter
 
-
-    # Use get_mapped_doc to handle the mapping
-    doc = get_mapped_doc(
-        "Blanket Order",                          
-        source_name,                               
+    return get_mapped_doc(
+        "Blanket Order",
+        source_name,
         {
-            # Map parent Blanket Order to Purchase Order
             "Blanket Order": {
                 "doctype": "Purchase Order",
-                
-                # Only map from docstatus = 1 (Submitted) blanket orders
-                "validation": {
-                    "docstatus": ["=", 1]          
-                },
-                
-                # Map these fields from Blanket Order to Purchase Order
+                "validation": {"docstatus": ["=", 1]},
                 "field_map": {
-                    "name": "name", 
-                    "supplier": "supplier", 
+                    "supplier": "supplier",
                     "company": "company"
                 },
             },
-            
-            # Map child items from Blanket Order Item to Purchase Order Item
             "Blanket Order Item": {
                 "doctype": "Purchase Order Item",
-                
-                # Run update_item function after mapping to calculate remaining qty
-                "postprocess": update_item,
-                
-                # IMPORTANT: Only map item_code, item_name, and rate
-                # Do NOT map qty or ordered_qty - postprocess calculates remaining_qty
                 "field_map": {
-                    "item_code": "item_code", 
-                    "item_name": "item_name", 
-                    "rate": "rate"
+                    "item_code": "item_code",
+                    "item_name": "item_name",
+                    "uom": "uom",
+                    "rate": "rate",
+                    "blanket_order_rate":"rate"
                 },
-                
-                # Filter: Only include items with remaining quantity to order
-                # This ensures only items where ordered_qty < qty are included
-                "filter": lambda item: (
-                    item.qty and 
-                    (item.ordered_qty is None or item.ordered_qty < item.qty)
-                ),    
+                "postprocess": update_item,
+                "condition": select_item,
             }
         },
         target_doc,
         set_missing_values
     )
-    
-    # Log the result for debugging
-    frappe.logger().info(
-        f"Created Purchase Order with {len(doc.items)} items from Blanket Order {source_name}"
-    )
-    
-    return doc
+
 
 
 @frappe.whitelist()
 def get_blanket_order_items(doctype, txt, searchfield, start, page_len, filters):
-    data = frappe.db.sql("""
+    filters = frappe._dict(filters or {})
+
+    return frappe.db.sql("""
         SELECT
             bo.name as name,
-            bo.name as parent,    
             bo.company as company,
-            bo.supplier as supplier,
-            boi.name as child_name,
-            boi.item_code,
-            boi.item_name,
-            boi.qty,
-            boi.ordered_qty,
-            boi.rate
+            bo.supplier as supplier
         FROM `tabBlanket Order` bo
-        JOIN `tabBlanket Order Item` boi
-            ON bo.name = boi.parent
         WHERE
             bo.docstatus = 1
-            AND IFNULL(boi.qty, 0) > IFNULL(boi.ordered_qty, 0)
+            AND bo.blanket_order_type = 'Purchasing'
             AND (%(supplier)s IS NULL OR bo.supplier = %(supplier)s)
             AND (%(company)s IS NULL OR bo.company = %(company)s)
             AND bo.name LIKE %(txt)s
+            AND EXISTS (
+                SELECT 1
+                FROM `tabBlanket Order Item` boi
+                WHERE boi.parent = bo.name
+                  AND IFNULL(boi.qty, 0) > IFNULL(boi.ordered_qty, 0)
+            )
         ORDER BY bo.creation DESC
         LIMIT %(start)s, %(page_len)s
     """, {
@@ -210,6 +181,4 @@ def get_blanket_order_items(doctype, txt, searchfield, start, page_len, filters)
         "company": filters.get("company"),
         "start": int(start),
         "page_len": int(page_len)
-    }, as_dict=1)   # 🔥 THIS IS THE MAIN FIX
-
-    return data
+    }, as_dict=1)
