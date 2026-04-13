@@ -24,6 +24,9 @@ class FinishWorkOrder(Document):
             row.calculated_qty = (flt(row.ready_pieces) * flt(row.standard_weight) * flt(row.length_size)) /1000
             if not row.sales_order:
                 row.deliver_as_qty = 1
+            if row.make_it_unplanned:
+                row.qty = row.ready_qty
+                row.pieces = row.ready_pieces
 
     def update_totals(self):
         total_wo_qty = 0
@@ -33,8 +36,8 @@ class FinishWorkOrder(Document):
         total_scrap_qty = 0
         
         for row in self.pending_work_orders:
-            total_wo_qty += row.qty or 0
-            total_wo_pieces += row.pieces or 0
+            total_wo_qty += row.ready_qty or 0
+            total_wo_pieces += row.ready_pieces or 0
             
         for row in self.raw_materials:
             total_rm_qty += row.qty or 0
