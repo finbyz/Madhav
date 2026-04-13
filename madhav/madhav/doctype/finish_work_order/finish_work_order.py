@@ -7,6 +7,11 @@ from frappe.utils import now
 from frappe.utils import flt
 
 class FinishWorkOrder(Document):
+    def on_cancel(self):
+        for row in self.pending_work_orders:
+            data = frappe.get_doc("Stock Entry",row.stock_entry_reference)
+            data.cancel()
+            row.db_set("stock_entry_reference","")
         
     def on_update(self):
         self.create_unplanned_work_orders()
@@ -419,7 +424,7 @@ class FinishWorkOrder(Document):
                 # ✅ Submit Stock Entry
                 se.insert()
                 se.submit()
-
+                pwo.db_set("stock_entry_reference",se.name)
                 # ==============================
                 # 🔥 IMPROVED: GET FG BATCH FROM STOCK ENTRY
                 # ==============================

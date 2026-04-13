@@ -42,6 +42,7 @@
   "section_break_nnyc",
   "consumption",
   "scrap_qty",
+  "stock_entry_reference",
   "section_break_ifob",
   "actual_weight",
   "actual_average_length",
@@ -312,13 +313,20 @@
    "label": "Party",
    "options": "Customer",
    "read_only": 1
+  },
+  {
+   "fieldname": "stock_entry_reference",
+   "fieldtype": "Link",
+   "label": "Stock Entry Reference",
+   "options": "Stock Entry",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-03-23 16:19:10.412565",
+ "modified": "2026-04-13 15:25:52.935804",
  "modified_by": "Administrator",
  "module": "Madhav",
  "name": "Pending Work Orders",
