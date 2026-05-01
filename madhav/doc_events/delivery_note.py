@@ -86,151 +86,6 @@ def on_submit(doc, method=None):
             )
 
 
-@frappe.whitelist()
-def get_sales_order_items_for_selector(filters=None):
-
-    if isinstance(filters, str):
-        filters = json.loads(filters)
-
-    filters = filters or {}
-
-    so_filters = [
-        ["docstatus", "=", 1],
-    ]
-
-    # Handle filters from frontend (status, per_delivered, company, customer, project)
-    for key, val in filters.items():
-        if key in ("dynamic_filters", "project"):
-            continue
-
-        if val:
-            if isinstance(val, list) and len(val) == 2:
-                # Array format like ["not in", [...]] or ["<", 99.99]
-                so_filters.append([key, val[0], val[1]])
-            else:
-                so_filters.append([key, "=", val])
-
-    if filters.get("project"):
-        so_filters.append(["project", "=", filters.get("project")])
-
-    # Handle dynamic filters from FilterGroup
-    if filters.get("dynamic_filters"):
-        dynamic_filters = filters.get("dynamic_filters")
-        if isinstance(dynamic_filters, str):
-            dynamic_filters = json.loads(dynamic_filters)
-
-        for df in dynamic_filters:
-            if len(df) >= 4:
-                # df format: [doctype, fieldname, operator, value]
-                fieldname = df[1]
-                operator = df[2]
-                value = df[3]
-
-                if operator == "Between" and isinstance(value, str) and " to " in value:
-                    value = value.split(" to ")
-
-                so_filters.append([fieldname, operator, value])
-
-    sales_orders = frappe.get_all(
-        "Sales Order",
-        fields=["name", "customer", "transaction_date", "currency"],
-        filters=so_filters,
-        order_by="transaction_date desc",
-    )
-
-    if not sales_orders:
-        return []
-
-    so_names = [d.name for d in sales_orders]
-    so_map = {d.name: d for d in sales_orders}
-
-    # -------------------------
-    # Fetch Sales Order Items + Item section weight
-    # -------------------------
-
-    items = frappe.db.sql(
-        """
-        SELECT
-            soi.name,
-            soi.parent,
-            soi.item_code,
-            soi.item_name,
-            soi.qty,
-            soi.rate,
-            soi.amount,
-            soi.billed_amt,
-            soi.uom,
-            soi.pieces,
-            soi.length_size,
-            soi.description,
-            item.weight_per_meter as section_weight
-        FROM `tabSales Order Item` soi
-        LEFT JOIN `tabItem` item
-            ON item.name = soi.item_code
-        WHERE soi.parent IN %(so_names)s
-        ORDER BY soi.parent asc, soi.idx asc
-        """,
-        {"so_names": so_names},
-        as_dict=True,
-    )
-
-    # -----------------------------
-    # Fetch reserved quantities
-    # -----------------------------
-
-    reservation_rows = frappe.db.sql(
-        """
-        SELECT
-            sre.voucher_detail_no,
-            SUM(sre.reserved_qty) AS reserved_qty
-        FROM `tabStock Reservation Entry` sre
-        LEFT JOIN `tabSerial and Batch Entry` sbe
-            ON sbe.parent = sre.name
-        WHERE sre.docstatus = 1
-        AND sre.voucher_type = 'Sales Order'
-        GROUP BY sre.voucher_detail_no
-        """,
-        as_dict=True,
-    )
-
-    reservation_map = {r.voucher_detail_no: r for r in reservation_rows}
-
-    rows = []
-
-    for row in items:
-
-        billed_qty = flt(row.billed_amt) / flt(row.rate) if flt(row.rate) else 0
-        pending_qty = flt(row.qty) - billed_qty
-
-        if pending_qty <= 0:
-            continue
-
-        so = so_map.get(row.parent) or {}
-
-        reservation = reservation_map.get(row.name, {})
-
-        rows.append(
-            {
-                "name": row.name,
-                "parent": row.parent,
-                "customer": so.get("customer"),
-                "transaction_date": so.get("transaction_date"),
-                "item_code": row.item_code,
-                "item_name": row.item_name,
-                "qty": flt(row.qty),
-                "pending_qty": pending_qty,
-                "uom": row.uom,
-                "pieces": row.pieces,
-                "length": row.length_size,
-                # section weight from Item
-                "section_weight": flt(row.section_weight),
-                # reservation data
-                "reserved_qty": flt(reservation.get("reserved_qty")),
-            }
-        )
-
-    return rows
-
 
 def validate(self, method):
     for row in self.items: 
@@ -521,3 +376,303 @@ def create_stock_reconciliation(self):
         f"Stock Reconciliation <b>{sr.name}</b> created and submitted for Delivery Note <b>{self.name}</b>.",
         alert=True,
     )
+    
+import frappe
+import json
+from frappe.utils import flt
+from erpnext.stock.doctype.stock_reservation_entry.stock_reservation_entry import (
+    get_sre_details_for_voucher,
+    get_ssb_bundle_for_voucher,
+)
+from erpnext.stock.doctype.packed_item.packed_item import make_packing_list
+from frappe.model.mapper import get_mapped_doc
+
+
+@frappe.whitelist()
+def make_delivery_note_custom(source_name, target_doc=None, kwargs=None):
+
+    # =====================================================
+    # ✅ SAFE KWARGS PARSING (FIXED)
+    # =====================================================
+    if not kwargs:
+        kwargs = frappe.flags.args or {}
+
+    # if string → parse JSON
+    if isinstance(kwargs, str):
+        try:
+            kwargs = json.loads(kwargs)
+        except Exception:
+            kwargs = {}
+
+    # if list → merge dicts
+    if isinstance(kwargs, list):
+        temp = {}
+        for k in kwargs:
+            if isinstance(k, dict):
+                temp.update(k)
+        kwargs = temp
+
+    # final safety
+    if not isinstance(kwargs, dict):
+        kwargs = {}
+
+    kwargs = frappe._dict(kwargs)
+
+    # =====================================================
+    selected_sre = kwargs.get("selected_sre", [])
+    for_reserved_stock = kwargs.get("for_reserved_stock")
+
+    so = frappe.get_doc("Sales Order", source_name)
+
+    def set_missing_values(source, target):
+        target.run_method("set_missing_values")
+        target.run_method("calculate_taxes_and_totals")
+        target.run_method("set_use_serial_batch_fields")
+        make_packing_list(target)
+
+    def update_item(source, target, source_parent):
+        target.qty = flt(source.qty) - flt(source.delivered_qty)
+        target.amount = target.qty * flt(source.rate)
+        target.base_amount = target.qty * flt(source.base_rate)
+
+    # =====================================================
+    # STEP 1: MAP BASIC DOC
+    # =====================================================
+    target_doc = get_mapped_doc(
+        "Sales Order",
+        so.name,
+        {
+            "Sales Order": {
+                "doctype": "Delivery Note",
+                "validation": {"docstatus": ["=", 1]},
+            },
+            "Sales Order Item": {
+                "doctype": "Delivery Note Item",
+                "field_map": {
+                    "name": "so_detail",
+                    "parent": "against_sales_order",
+                    "rate": "rate",
+                },
+                "postprocess": update_item,
+            },
+        },
+        target_doc,
+    )
+
+    # remove default mapped items
+    target_doc.items = []
+
+    # =====================================================
+    # STEP 2: SRE LOGIC
+    # =====================================================
+    if for_reserved_stock:
+        sre_list = get_sre_details_for_voucher("Sales Order", source_name)
+
+        so_items = {d.name: d for d in so.items}
+
+        for sre in sre_list:
+
+            # filter selected SRE
+            if selected_sre and sre.voucher_detail_no not in selected_sre:
+                continue
+
+            so_item = so_items.get(sre.voucher_detail_no)
+            if not so_item:
+                continue
+
+            dn_item = get_mapped_doc(
+                "Sales Order Item",
+                so_item.name,
+                {
+                    "Sales Order Item": {
+                        "doctype": "Delivery Note Item",
+                        "field_map": {
+                            "name": "so_detail",
+                            "parent": "against_sales_order",
+                            "rate": "rate",
+                        },
+                    }
+                },
+                ignore_permissions=True,
+            )
+
+            # qty from reserved
+            dn_item.qty = flt(sre.reserved_qty) / flt(dn_item.conversion_factor or 1)
+
+            # batch / serial handling
+            if sre.reservation_based_on == "Serial and Batch":
+                dn_item.serial_and_batch_bundle = get_ssb_bundle_for_voucher(sre)
+
+            # set custom field (no db_set!)
+            dn_item.custom_sre = sre.name
+
+            target_doc.append("items", dn_item)
+
+    # =====================================================
+    # FINALIZE
+    # =====================================================
+    set_missing_values(so, target_doc)
+
+    return target_doc
+
+import frappe
+import json
+from frappe.utils import flt, cstr
+
+
+@frappe.whitelist()
+def get_sales_order_items_for_selector(filters=None):
+
+    # -----------------------------
+    # Parse filters safely
+    # -----------------------------
+    if isinstance(filters, str):
+        filters = json.loads(filters)
+
+    filters = filters or {}
+
+    so_filters = [["docstatus", "=", 1]]
+
+    # -----------------------------
+    # Static Filters (from frontend)
+    # -----------------------------
+    for key, val in filters.items():
+        if key in ("dynamic_filters", "project"):
+            continue
+
+        if val:
+            if isinstance(val, list) and len(val) == 2:
+                so_filters.append([key, val[0], val[1]])
+            else:
+                so_filters.append([key, "=", val])
+
+    # Project filter
+    if filters.get("project"):
+        so_filters.append(["project", "=", filters.get("project")])
+
+    # -----------------------------
+    # Dynamic Filters (FilterGroup)
+    # -----------------------------
+    dynamic_filters = filters.get("dynamic_filters")
+
+    if dynamic_filters:
+        if isinstance(dynamic_filters, str):
+            dynamic_filters = json.loads(dynamic_filters)
+
+        for df in dynamic_filters:
+            if len(df) >= 4:
+                fieldname = df[1]
+                operator = df[2]
+                value = df[3]
+
+                if operator == "Between" and isinstance(value, str) and " to " in value:
+                    value = value.split(" to ")
+
+                so_filters.append([fieldname, operator, value])
+
+    # -----------------------------
+    # Fetch Sales Orders
+    # -----------------------------
+    sales_orders = frappe.get_all(
+        "Sales Order",
+        fields=["name", "customer", "transaction_date", "currency", "company"],
+        filters=so_filters,
+        order_by="transaction_date desc",
+    )
+
+    if not sales_orders:
+        return []
+
+    so_names = [d.name for d in sales_orders]
+    so_map = {d.name: d for d in sales_orders}
+
+    # -----------------------------
+    # Fetch SO Items (Optimized)
+    # -----------------------------
+    items = frappe.db.sql(
+        """
+        SELECT
+            soi.name,
+            soi.parent,
+            soi.item_code,
+            soi.item_name,
+            soi.qty,
+            soi.delivered_qty,
+            soi.rate,
+            soi.amount,
+            soi.uom,
+            soi.pieces,
+            soi.length_size,
+            soi.description,
+            item.weight_per_meter AS section_weight
+        FROM `tabSales Order Item` soi
+        LEFT JOIN `tabItem` item
+            ON item.name = soi.item_code
+        WHERE soi.parent IN %(so_names)s
+        ORDER BY soi.parent ASC, soi.idx ASC
+        """,
+        {"so_names": so_names},
+        as_dict=True,
+    )
+
+    # -----------------------------
+    # Fetch Reservation (Optimized)
+    # -----------------------------
+    reservation_rows = frappe.db.sql(
+        """
+        SELECT
+            sre.voucher_detail_no,
+            SUM(sre.reserved_qty) AS reserved_qty
+        FROM `tabStock Reservation Entry` sre
+        WHERE sre.docstatus = 1
+        AND sre.voucher_type = 'Sales Order'
+        AND sre.status IN ('Reserved', 'Partially Reserved')
+        AND (%(company)s IS NULL OR sre.company = %(company)s)
+        GROUP BY sre.voucher_detail_no
+        """,
+        {"company": filters.get("company")},
+        as_dict=True,
+    )
+
+    reservation_map = {
+        r.voucher_detail_no: flt(r.reserved_qty) for r in reservation_rows
+    }
+
+    # -----------------------------
+    # Build Final Rows
+    # -----------------------------
+    rows = []
+
+    for row in items:
+
+        # ✅ correct pending logic
+        pending_qty = flt(row.qty) - flt(row.delivered_qty)
+
+        if pending_qty <= 0:
+            continue
+
+        so = so_map.get(row.parent) or {}
+
+        reserved_qty = reservation_map.get(row.name, 0)
+
+        rows.append(
+            {
+                "name": row.name,
+                "parent": row.parent,
+                "customer": so.get("customer"),
+                "transaction_date": so.get("transaction_date"),
+                "company": so.get("company"),
+                "item_code": row.item_code,
+                "item_name": row.item_name,
+                "qty": flt(row.qty),
+                "pending_qty": pending_qty,
+                "reserved_qty": reserved_qty,
+                "uom": row.uom,
+                "pieces": row.pieces,
+                "length": row.length_size,
+                "section_weight": flt(row.section_weight),
+                "description": row.description,
+            }
+        )
+
+    return rows

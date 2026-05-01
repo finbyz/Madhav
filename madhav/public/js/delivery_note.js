@@ -241,9 +241,12 @@ function open_sales_order_items_selector_for_delivery_note(frm) {
 				return;
 			}
 
+			// Get unique parent SOs for selected items
 			const source_names = [
 				...new Set(
-					state.rows.filter((row) => state.selected_children.has(row.name)).map((row) => row.parent)
+					state.rows
+						.filter((row) => state.selected_children.has(row.name))
+						.map((row) => row.parent)
 				),
 			];
 
@@ -253,63 +256,35 @@ function open_sales_order_items_selector_for_delivery_note(frm) {
 				frm.doc.items.splice(0, 1);
 			}
 
-			frappe.call({
-				type: "POST",
-				method: "frappe.model.mapper.map_docs",
-				args: {
-					method: "erpnext.selling.doctype.sales_order.sales_order.make_delivery_note",
-					source_names: JSON.stringify(source_names),
-					target_doc: frm.doc,
-					args: JSON.stringify({ filtered_children, for_reserved_stock: 1 }),
-				},
-				freeze: true,
-				freeze_message: __("Mapping Sales Order ..."),
-				callback: function (r) {
-					if (!r.exc) {
-						frappe.model.sync(r.message);
+			// ✅ Loop over all source SOs
+			const calls = source_names.map(so_name => {
+				return frappe.call({
+					method: "madhav.doc_events.delivery_note.make_delivery_note_custom",
+					args: {
+						source_name: so_name,
+						kwargs: {
+							selected_sre: filtered_children,  // SO Item row names
+							for_reserved_stock: true,
+						},
+					},
+				});
+			});
 
-						// ✅ Step 3: Remove duplicate rows with same so_detail
-						const seen_so_details = new Set();
-						frm.doc.items = (frm.doc.items || []).filter(dn_item => {
-							if (dn_item.so_detail) {
-								if (seen_so_details.has(dn_item.so_detail)) return false;
-								seen_so_details.add(dn_item.so_detail);
-							}
-							return true;
+			Promise.all(calls.map(c => c.then ? c : Promise.resolve(c))).then(results => {
+				results.forEach(r => {
+					if (r && r.message && r.message.items) {
+						r.message.items.forEach(item => {
+							const new_row = frm.add_child("items");
+							delete item.idx;   // ✅ remove server idx so Frappe assigns correct one
+							delete item.name;  // ✅ remove server name to avoid conflicts
+							Object.assign(new_row, item);
+							Object.assign(new_row, item);
 						});
-
-						// ✅ Step 4: Remove items that were NOT selected
-						frm.doc.items = (frm.doc.items || []).filter(dn_item => {
-							if (dn_item.so_detail && !filtered_children.includes(dn_item.so_detail)) {
-								frappe.model.clear_doc(dn_item.doctype, dn_item.name);
-								return false;
-							}
-							return true;
-						});
-
-					// ✅ Step 5: Map custom fields for selected items
-					(frm.doc.items || []).forEach(dn_item => {
-						if (dn_item.so_detail && filtered_children.includes(dn_item.so_detail)) {
-							const so_item_data = state.rows.find(row => row.name === dn_item.so_detail);
-							if (so_item_data) {
-								const length_val = so_item_data.length !== undefined
-									? so_item_data.length
-									: so_item_data.length_size;
-
-								frappe.model.set_value(dn_item.doctype, dn_item.name, {
-									"section_weight": so_item_data.section_weight,
-									"pieces": so_item_data.pieces,
-									"length_size": length_val,
-									"average_length": length_val,
-								});
-							}
-						}
-					});
-
-						frm.dirty();
-						frm.refresh();
 					}
-				},
+				});
+				frm.refresh_field("items");
+				frappe.model.sync && frappe.model.sync(results[0]?.message);
+				frm.refresh();
 			});
 		},
 	});
@@ -359,10 +334,10 @@ function open_sales_order_items_selector_for_delivery_note(frm) {
 			wrapper.html(`<div class="text-muted" style="padding: 8px 0;">${__("Loading Sales Order items...")}</div>`);
 
 			const dynamic_filters = filter_group.get_filters();
-			const current_filters = Object.assign({}, filters, {
-				dynamic_filters,
-				// sales_order: d.get_value("sales_order_filter"),
-			});
+			const current_filters = {
+				...filters,
+				dynamic_filters: filter_group.get_filters() || []
+			};
 
 			frappe.call({
 				method: "madhav.doc_events.delivery_note.get_sales_order_items_for_selector",
