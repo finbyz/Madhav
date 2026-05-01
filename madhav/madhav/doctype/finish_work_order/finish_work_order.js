@@ -85,6 +85,8 @@ frappe.ui.form.on("Finish Work Order", {
                         row.party_name = wo.customer;
                         row.party = wo.customer;
                         row.customer_name = wo.customer_name;
+                        row.quality_required = wo.quality_required;
+                        row.sales_order_qty = wo.qty
                         row.target_warehouse = wo.fg_warehouse;
                         row.item = wo.production_item;
                         row.item_name = wo.item_name; // Set item_name for Pending Work Orders

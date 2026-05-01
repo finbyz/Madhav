@@ -1016,6 +1016,7 @@ def populate_pending_work_orders(filters=None):
             wo.source_warehouse,
             wo.customer,
             so.customer_name,  -- ✅ ADDED
+            so.quality_required,
             wo.fg_warehouse,
             wo.production_item,
             wo.stock_uom,

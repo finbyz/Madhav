@@ -253,6 +253,7 @@ frappe.ui.form.on('Sales Order', {
                                             __checked: 1,
                                             sales_order_item: item.name,
                                             item_code: item.item_code,
+                                            item_name: item.item_name,
                                             warehouse: dialog.get_value("set_warehouse") || item.warehouse,
                                             length_size: item.length_size,
                                             max_length: flt(item.length_size) + 1.5,
@@ -302,6 +303,14 @@ frappe.ui.form.on('Sales Order', {
                             fieldtype: "Link",
                             label: __("Item Code"),
                             options: "Item",
+                            read_only: 1,
+                            in_list_view: 1,
+                            columns: 2
+                        },
+                        {
+                            fieldname: "item_name",
+                            fieldtype: "Data",
+                            label: __("Item Name"),
                             read_only: 1,
                             in_list_view: 1,
                             columns: 2
@@ -419,6 +428,7 @@ frappe.ui.form.on('Sales Order', {
                                 __checked: 1,
                                 sales_order_item: item.name,
                                 item_code: item.item_code,
+                                item_name: item.item_name,
                                 warehouse: item.warehouse,
                                 length_size: item.length_size,
                                 max_length: flt(item.length_size) + 1.5,

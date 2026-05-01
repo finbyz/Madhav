@@ -130,7 +130,7 @@ def create_qi(self,method):
             if self.company and not self.is_return and frappe.db.get_value("Item",row.item_code,"is_stock_item") == 1 and frappe.db.get_value("Item",row.item_code,"inspection_required_before_purchase") == 1:
                 default_quality_inspection_warehouse=frappe.db.get_value("Company",self.company,"default_quality_inspection_warehouse")
                 if default_quality_inspection_warehouse:
-                    row.warehouse = default_quality_inspection_warehouse
+                    # row.warehouse = default_quality_inspection_warehouse
                     
                     row.quality_inspection = make_quality_inspection(self,row)
                     created_quality_inspections.append(row.quality_inspection)

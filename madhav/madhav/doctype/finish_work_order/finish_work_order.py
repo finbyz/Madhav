@@ -128,7 +128,8 @@ class FinishWorkOrder(Document):
         stock_uom,
         work_order,
         sales_order=None,
-        batch_no=None
+        batch_no=None,
+        quality_required=False
     ):
         # ==============================
         # DEBUG INFORMATION
@@ -136,6 +137,12 @@ class FinishWorkOrder(Document):
 
 
         if not sales_order:
+            return
+        if quality_required:
+            frappe.log_error(
+                title="Quality Inspection Required - Skipping Stock Reservation",
+                message=f"Skipping stock reservation for {item_code} in WO {work_order} linked to SO {sales_order} because quality inspection is required."
+            )
             return
 
         # ==============================
@@ -183,6 +190,10 @@ class FinishWorkOrder(Document):
         """, (sales_order, so_detail, item_code))[0][0] or 0
 
         available_qty_to_reserve = flt(so_qty) - flt(already_reserved_qty)
+        frappe.log_error(
+            title="Stock Reservation Debug",
+            message=(f"SO: {sales_order}, Item: {item_code}, SO Qty: {so_qty}, Already Reserved: {already_reserved_qty}, Available to Reserve: {available_qty_to_reserve}") 
+        )
 
         if available_qty_to_reserve <= 0:
             return
@@ -254,6 +265,11 @@ class FinishWorkOrder(Document):
         sre.flags.ignore_permissions = True
         sre.insert()
         sre.submit()
+        if sre:
+            frappe.log_error(
+                title="Stock Reserved",
+                message=f"Reserved {reserve_qty} of {item_code} in {warehouse} for SO {sales_order} (Batch: {batch_no})"
+            )
 
 
 
@@ -468,12 +484,13 @@ class FinishWorkOrder(Document):
                     item_code=pwo.item,
                     warehouse=pwo.target_warehouse,
                     qty=fg_final_qty,
-                    so_qty=pwo.qty,
+                    so_qty=pwo.sales_order_qty,
                     name=pwo.name,
                     stock_uom=pwo.stock_uom,
                     work_order=pwo.work_order,
                     sales_order=pwo.sales_order,
-                    batch_no=fg_batch_no   # ✅ PASS BATCH (might be None)
+                    batch_no=fg_batch_no,   # ✅ PASS BATCH (might be None)
+                    quality_required=pwo.quality_required
                 )
 
             except Exception as e:
