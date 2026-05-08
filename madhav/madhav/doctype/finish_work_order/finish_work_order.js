@@ -257,9 +257,6 @@ function fetch_missing_titles(frm) {
 }
 
 frappe.ui.form.on("Pending Work Orders", {
-    validate(frm, cdt, cdn){
-        check_weight_variance(frm, cdt, cdn);
-    },
     ready_qty(frm, cdt, cdn) {
         let row = locals[cdt][cdn];
     

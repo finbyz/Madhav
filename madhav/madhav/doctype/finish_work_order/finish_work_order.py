@@ -26,6 +26,8 @@ class FinishWorkOrder(Document):
     def validate(self):
         self.update_totals()
         for row in self.pending_work_orders:
+            if row.ready_qty and row.ready_pieces and row.length_size:
+                row.calculated_section_weight = (flt(row.ready_qty) * 1000)/(flt(row.ready_pieces) * flt(row.length_size))
             row.calculated_qty = (flt(row.ready_pieces) * flt(row.standard_weight) * flt(row.length_size)) /1000
             if not row.sales_order:
                 row.deliver_as_qty = 1
