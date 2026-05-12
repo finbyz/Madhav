@@ -3,6 +3,14 @@ from frappe import _
 from frappe.utils import get_url_to_form
 from frappe.utils import nowdate, flt, cint, cstr, now_datetime
 
+def on_cancel(self,method):
+    if self.stock_entry_type == "Manufacture":
+        for row in self.items:
+            if row.is_finished_item:
+                doc = frappe.get_doc("Work Order",self.work_order)
+                doc.db_set("completed_pcs",doc.completed_pcs - row.pieces)
+                doc.db_set("pending_pcs",doc.pieces - doc.completed_pcs)
+
 def validate(doc, method):
     """Recalculate rates/amounts safely for this app.
 
