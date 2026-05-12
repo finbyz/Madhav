@@ -9,7 +9,7 @@
   "target_warehouse",
   "section_break_kahx",
   "item",
-  "party_name",
+  "party",
   "work_order",
   "old_work_order",
   "sales_order",
@@ -17,7 +17,7 @@
   "sales_order_qty",
   "column_break_ffue",
   "item_name",
-  "party",
+  "party_name",
   "grade",
   "section",
   "po_no",
@@ -54,10 +54,9 @@
  "fields": [
   {
    "fieldname": "party_name",
-   "fieldtype": "Link",
+   "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Party Name",
-   "options": "Customer",
    "read_only": 1
   },
   {
@@ -341,7 +340,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-05-01 12:37:31.963858",
+ "modified": "2026-05-12 11:32:34.192235",
  "modified_by": "Administrator",
  "module": "Madhav",
  "name": "Pending Work Orders",

@@ -508,7 +508,7 @@ class FinishWorkOrder(Document):
             doc = frappe.get_doc("Work Order", pwo.work_order)
             completed = flt(doc.completed_pcs or 0)
             total = flt(doc.pieces or 0)
-            pcs = flt(pwo.pieces or 0)
+            pcs = flt(pwo.ready_pieces or 0)
 
             doc.db_set("completed_pcs", completed + pcs)
             doc.db_set("pending_pcs", total - (completed + pcs))

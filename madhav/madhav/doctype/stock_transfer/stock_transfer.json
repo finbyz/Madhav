@@ -73,12 +73,14 @@
   {
    "fieldname": "sales_order",
    "fieldtype": "Link",
+   "hidden": 1,
    "label": "Sales Order",
    "options": "Sales Order"
   },
   {
    "fieldname": "customer",
    "fieldtype": "Link",
+   "hidden": 1,
    "label": "Customer",
    "options": "Customer"
   },
@@ -161,7 +163,7 @@
    "link_fieldname": "stock_transfer"
   }
  ],
- "modified": "2026-04-08 11:19:29.236622",
+ "modified": "2026-05-12 11:50:30.650256",
  "modified_by": "Administrator",
  "module": "Madhav",
  "name": "Stock Transfer",

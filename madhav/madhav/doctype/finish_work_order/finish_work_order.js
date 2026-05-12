@@ -82,7 +82,7 @@ frappe.ui.form.on("Finish Work Order", {
                         let row = frm.add_child("pending_work_orders");
 
                         row.work_order = wo.name;
-                        row.party_name = wo.customer;
+                        row.party_name = wo.customer_name;
                         row.party = wo.customer;
                         row.customer_name = wo.customer_name;
                         row.quality_required = wo.quality_required;
