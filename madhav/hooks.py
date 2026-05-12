@@ -268,6 +268,10 @@ doc_events = {
     "Quality Inspection": {
         "on_submit": "madhav.doc_events.quality_inspection.update_purchase_receipt_quantities",
         "validate": "madhav.doc_events.quality_inspection.validate"
+    },
+    "Work Order":{
+        "on_update_after_submit":"madhav.doc_events.work_order.validate",
+        "validate":"madhav.doc_events.work_order.validate"
     }
 }
 

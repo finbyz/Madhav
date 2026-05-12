@@ -92,10 +92,10 @@ frappe.ui.form.on("Finish Work Order", {
                         row.item_name = wo.item_name; // Set item_name for Pending Work Orders
                         row.stock_uom = wo.stock_uom;
                         row.grade = wo.item_name;
-                        row.pieces = wo.pieces;
+                        row.pieces = wo.pending_pcs;
                         row.length_size = wo.length;
                         row.actual_average_length = wo.length;
-                        row.ready_pieces = wo.pieces;
+                        row.ready_pieces = wo.pending_pcs;
                         row.variation = wo.variation_allowed;
                         row.po_no = wo.po_no;
                         row.actual_weight = wo.weight_per_meter;

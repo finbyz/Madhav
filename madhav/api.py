@@ -1022,6 +1022,7 @@ def populate_pending_work_orders(filters=None):
             wo.stock_uom,
             wo.item_name,
             wo.pieces,
+            wo.pending_pcs,
             wo.length,
             wo.completed_pcs,
             wo.variation_allowed,
