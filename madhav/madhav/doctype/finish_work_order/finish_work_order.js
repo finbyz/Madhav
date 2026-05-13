@@ -141,21 +141,44 @@ frappe.ui.form.on('Raw Material Items', {
 
     batch_no(frm, cdt, cdn) {
         let row = locals[cdt][cdn];
-
         if (!row.batch_no) return;
 
-        frappe.db.get_value('Batch', row.batch_no, 
-            ['pieces', 'average_length', 'section_weight'], 
-            function (r) {
-                if (r) {
-                    frappe.model.set_value(cdt, cdn, 'pieces', r.pieces);
-                    frappe.model.set_value(cdt, cdn, 'length', r.average_length);
-                    frappe.model.set_value(cdt, cdn, 'section_weight', r.section_weight);
-                }
+        frappe.db.get_value(
+            'Batch',
+            row.batch_no,
+            ['pieces', 'average_length', 'section_weight', 'reference_doctype', 'reference_name']
+        ).then((res) => {
+            let data = res.message;
+
+            if (!data) return;
+
+            frappe.model.set_value(cdt, cdn, 'pieces', data.pieces);
+            frappe.model.set_value(cdt, cdn, 'length', data.average_length);
+            frappe.model.set_value(cdt, cdn, 'section_weight', data.section_weight);
+
+            if (
+                data.reference_doctype === "Purchase Receipt" &&
+                data.reference_name
+            ) {
+
+                frappe.db.get_value(
+                    "Purchase Receipt",
+                    data.reference_name,
+                    ["supplier", "supplier_name"]
+                ).then((pr) => {
+
+                    let pr_data = pr.message;
+
+                    if (!pr_data) return;
+
+                    frappe.model.set_value(cdt, cdn, 'supplier', pr_data.supplier);
+                    frappe.model.set_value(cdt, cdn, 'supplier_name', pr_data.supplier_name);
+                });
             }
-        );
-        fetch_batch_qty(frm, cdt, cdn);
-    }
+        });
+
+    fetch_batch_qty(frm, cdt, cdn);
+}
 });
 function set_batch_query(frm, cdt, cdn) {
     frm.fields_dict.raw_materials.grid.get_field("batch_no").get_query = function(doc, cdt, cdn) {
@@ -165,7 +188,8 @@ function set_batch_query(frm, cdt, cdn) {
             query: "madhav.madhav.doctype.finish_work_order.finish_work_order.get_available_batches",
             filters: {
                 item_code: row.item_code,
-                warehouse: row.source_warehouse
+                warehouse: row.source_warehouse,
+                supplier: row.supplier
             }
         };
     };

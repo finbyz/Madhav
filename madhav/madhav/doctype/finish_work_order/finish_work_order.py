@@ -525,41 +525,64 @@ def get_available_batches(doctype, txt, searchfield, start, page_len, filters):
 
     item_code = filters.get("item_code")
     warehouse = filters.get("warehouse")
+    supplier = filters.get("supplier")
 
     if not item_code or not warehouse:
         return []
 
-    return frappe.db.sql("""
-    SELECT
-        sbe.batch_no,
-        CONCAT(
-            ROUND(SUM(sbe.qty - IFNULL(sbe.delivered_qty, 0)), 3),
-            ', ',
-            sabb.posting_date,
-            ', ',
-            sabb.voucher_no
-        ) as description
-    FROM
-        `tabSerial and Batch Entry` sbe
-    INNER JOIN
-        `tabSerial and Batch Bundle` sabb
+    supplier_condition = ""
+    if supplier:
+        supplier_condition = " AND pr.supplier = %(supplier)s "
+
+    return frappe.db.sql(f"""
+        SELECT
+            sbe.batch_no,
+            CONCAT(
+                ROUND(SUM(sbe.qty - IFNULL(sbe.delivered_qty, 0)), 3),
+                ', ',
+                sabb.posting_date,
+                ', ',
+                sabb.voucher_no
+            ) as description
+
+        FROM
+            `tabSerial and Batch Entry` sbe
+
+        INNER JOIN
+            `tabSerial and Batch Bundle` sabb
             ON sabb.name = sbe.parent
-    WHERE
-        sabb.item_code = %(item_code)s
-        AND sbe.warehouse = %(warehouse)s
-        AND sabb.is_cancelled = 0
-        AND sbe.batch_no LIKE %(txt)s
-    GROUP BY
-        sbe.batch_no
-    HAVING
-        SUM(sbe.qty - IFNULL(sbe.delivered_qty, 0)) > 0
-    ORDER BY
-        sabb.posting_date ASC
-    LIMIT %(start)s, %(page_len)s
-""", {
-    "item_code": item_code,
-    "warehouse": warehouse,
-    "txt": f"%{txt}%",
-    "start": start,
-    "page_len": page_len
-})
+
+        INNER JOIN
+            `tabBatch` b
+            ON b.name = sbe.batch_no
+
+        LEFT JOIN
+            `tabPurchase Receipt` pr
+            ON pr.name = b.reference_name
+            AND b.reference_doctype = 'Purchase Receipt'
+
+        WHERE
+            sabb.item_code = %(item_code)s
+            AND sbe.warehouse = %(warehouse)s
+            AND sabb.is_cancelled = 0
+            AND sbe.batch_no LIKE %(txt)s
+            {supplier_condition}
+
+        GROUP BY
+            sbe.batch_no
+
+        HAVING
+            SUM(sbe.qty - IFNULL(sbe.delivered_qty, 0)) > 0
+
+        ORDER BY
+            sabb.posting_date ASC
+
+        LIMIT %(start)s, %(page_len)s
+    """, {
+        "item_code": item_code,
+        "warehouse": warehouse,
+        "supplier": supplier,
+        "txt": f"%{txt}%",
+        "start": start,
+        "page_len": page_len
+    })
