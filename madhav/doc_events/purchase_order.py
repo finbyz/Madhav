@@ -83,7 +83,22 @@ def round_off_stock_qty(doc, method=None):
 def validate(self,method):
     for row in self.items:
         if row.blanket_order:
-            row.against_blanket_order = 1 
+            row.against_blanket_order = 1
+    if self.against_blanket_order and self.blanket_order:
+        doc = frappe.get_doc("Blanket Order",self.blanket_order)
+        for row in self.items:
+            row.against_blanket_order = self.against_blanket_order
+            row.blanket_order = self.blanket_order
+            row.blanket_order_item = doc.items[0].name
+            row.blanket_order_rate = doc.items[0].rate
+            
+def update_blanket_order_reference_in_item(self):
+    if self.against_blanket_order and self.blanket_order:
+        doc = frappe.get_doc("Blanket Order",self.blanket_order)
+        for row in self.items:
+            row.against_blanket_order = self.against_blanket_order
+            row.blanket_order = self.blanket_order
+            row.blanket_order_item = doc.items[0].name
             
 import frappe
 from frappe.model.mapper import get_mapped_doc

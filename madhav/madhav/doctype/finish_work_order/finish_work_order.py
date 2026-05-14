@@ -431,6 +431,7 @@ class FinishWorkOrder(Document):
                     "pieces": pwo.ready_pieces,
                     "average_length": pwo.length_size,
                     "section_weight": pwo.standard_weight,
+                    "assorted_length":pwo.assorted_length,
                     "is_finished_item": 1,
                     "required_stock_in_pieces": 1,
                     "cost_center": self.cost_center,
@@ -523,27 +524,72 @@ class FinishWorkOrder(Document):
 @frappe.validate_and_sanitize_search_inputs
 def get_available_batches(doctype, txt, searchfield, start, page_len, filters):
 
+    filters = frappe.parse_json(filters) if filters else {}
+
     item_code = filters.get("item_code")
     warehouse = filters.get("warehouse")
     supplier = filters.get("supplier")
+    current_doc = filters.get("current_doc")
 
     if not item_code or not warehouse:
         return []
 
+    values = {
+        "item_code": item_code,
+        "warehouse": warehouse,
+        "txt": f"%{txt}%",
+        "start": start,
+        "page_len": page_len
+    }
+
     supplier_condition = ""
     if supplier:
         supplier_condition = " AND pr.supplier = %(supplier)s "
+        values["supplier"] = supplier
+
+    # Exclude batches already used in Draft Finish Work Orders
+    # except current document while editing
+    if current_doc:
+        batch_condition = """
+            AND sbe.batch_no NOT IN (
+                SELECT rmi.batch_no
+                FROM `tabRaw Material Items` rmi
+                INNER JOIN `tabFinish Work Order` fwo
+                    ON fwo.name = rmi.parent
+                WHERE
+                    fwo.docstatus = 0
+                    AND fwo.name != %(current_doc)s
+                    AND rmi.batch_no IS NOT NULL
+                    AND rmi.batch_no != ''
+            )
+        """
+        values["current_doc"] = current_doc
+
+    else:
+        batch_condition = """
+            AND sbe.batch_no NOT IN (
+                SELECT rmi.batch_no
+                FROM `tabRaw Material Items` rmi
+                INNER JOIN `tabFinish Work Order` fwo
+                    ON fwo.name = rmi.parent
+                WHERE
+                    fwo.docstatus = 0
+                    AND rmi.batch_no IS NOT NULL
+                    AND rmi.batch_no != ''
+            )
+        """
 
     return frappe.db.sql(f"""
         SELECT
             sbe.batch_no,
+
             CONCAT(
                 ROUND(SUM(sbe.qty - IFNULL(sbe.delivered_qty, 0)), 3),
                 ', ',
                 sabb.posting_date,
                 ', ',
                 sabb.voucher_no
-            ) as description
+            ) AS description
 
         FROM
             `tabSerial and Batch Entry` sbe
@@ -566,7 +612,10 @@ def get_available_batches(doctype, txt, searchfield, start, page_len, filters):
             AND sbe.warehouse = %(warehouse)s
             AND sabb.is_cancelled = 0
             AND sbe.batch_no LIKE %(txt)s
+
             {supplier_condition}
+
+            {batch_condition}
 
         GROUP BY
             sbe.batch_no
@@ -578,11 +627,4 @@ def get_available_batches(doctype, txt, searchfield, start, page_len, filters):
             sabb.posting_date ASC
 
         LIMIT %(start)s, %(page_len)s
-    """, {
-        "item_code": item_code,
-        "warehouse": warehouse,
-        "supplier": supplier,
-        "txt": f"%{txt}%",
-        "start": start,
-        "page_len": page_len
-    })
+    """, values)

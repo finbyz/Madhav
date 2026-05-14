@@ -894,10 +894,9 @@ def get_so_item_pcs(sales_order, item_code, sales_order_item, row_id=None):
             "item_code": item_code,
             "name": sales_order_item
         },
-        [ "length_size", "pieces", "total_weight", "stock_reserved_qty"],
+        [ "length_size", "pieces", "total_weight", "stock_reserved_qty","assorted_length"],
         as_dict=True,
     ) or {}
-
     so = frappe.db.get_value(
         "Sales Order",
         sales_order,
@@ -948,7 +947,7 @@ def update_latest_wo_from_pp(production_plan):
         pp_item = frappe.db.get_value(
             "Production Plan Item",
             wo.production_plan_item,
-            ["length_size_m", "pieces", "po_no"],
+            ["length_size_m", "pieces", "po_no","assorted_length"],
             as_dict=True
         )
         sales_order = frappe.db.get_value(
@@ -964,6 +963,7 @@ def update_latest_wo_from_pp(production_plan):
         wo_doc.length = pp_item.length_size_m or 0
         wo_doc.pieces = pp_item.pieces or 0
         wo_doc.po_no = pp_item.po_no or ""
+        wo_doc.assorted_length = pp_item.assorted_length or ""
         wo_doc.customer = sales_order.customer
         wo_doc.customer_name = sales_order.customer_name
         wo_doc.skip_transfer = 1
@@ -988,36 +988,70 @@ def populate_pending_work_orders(filters=None):
     conditions = []
     values = {}
 
-    # Base filters
+    # Base Conditions
     conditions.append("wo.status NOT IN ('Draft', 'Completed', 'Cancelled')")
 
+    # Company Filter
+    if filters.get("company"):
+        conditions.append("wo.company = %(company)s")
+        values["company"] = filters.get("company")
+
+    # Exclude already used Work Orders in other Finish Work Orders
+    if filters.get("current_doc"):
+        conditions.append("""
+            wo.name NOT IN (
+                SELECT pwo.work_order
+                FROM `tabPending Work Orders` pwo
+                INNER JOIN `tabFinish Work Order` fwo
+                    ON fwo.name = pwo.parent
+                WHERE fwo.docstatus != 2
+                AND fwo.name != %(current_doc)s
+            )
+        """)
+        values["current_doc"] = filters.get("current_doc")
+    else:
+        conditions.append("""
+            wo.name NOT IN (
+                SELECT pwo.work_order
+                FROM `tabPending Work Orders` pwo
+                INNER JOIN `tabFinish Work Order` fwo
+                    ON fwo.name = pwo.parent
+                WHERE fwo.docstatus != 2
+            )
+        """)
+
+    # Item Name Filter
     if filters.get("item_name"):
         conditions.append("wo.item_name LIKE %(item_name)s")
-        values["item_name"] = f"%{filters['item_name']}%"
+        values["item_name"] = f"%{filters.get('item_name')}%"
 
+    # Work Order Filter
     if filters.get("wo_number"):
         conditions.append("wo.name = %(wo_number)s")
-        values["wo_number"] = filters["wo_number"]
+        values["wo_number"] = filters.get("wo_number")
 
+    # Sales Order Filter
     if filters.get("sales_order"):
         conditions.append("wo.sales_order = %(sales_order)s")
-        values["sales_order"] = filters["sales_order"]
+        values["sales_order"] = filters.get("sales_order")
 
+    # Date Filter
     if filters.get("date"):
-        conditions.append("wo.creation BETWEEN %(from)s AND %(to)s")
-        values["from"] = f"{filters['date']} 00:00:00"
-        values["to"] = f"{filters['date']} 23:59:59"
+        conditions.append("wo.creation BETWEEN %(from_date)s AND %(to_date)s")
+        values["from_date"] = f"{filters.get('date')} 00:00:00"
+        values["to_date"] = f"{filters.get('date')} 23:59:59"
 
     where_clause = " AND ".join(conditions)
 
-    return frappe.db.sql(f"""
+    query = f"""
         SELECT
             wo.name,
             wo.source_warehouse,
             wo.customer,
-            so.customer_name,  -- ✅ ADDED
+            so.customer_name,
             so.quality_required,
             wo.fg_warehouse,
+            wo.assorted_length,
             wo.production_item,
             wo.stock_uom,
             wo.item_name,
@@ -1031,14 +1065,21 @@ def populate_pending_work_orders(filters=None):
             wo.sales_order,
             wo.produced_qty,
             i.weight_per_meter
+
         FROM `tabWork Order` wo
+
         LEFT JOIN `tabItem` i
             ON i.name = wo.production_item
-        LEFT JOIN `tabSales Order` so   -- ✅ ADDED
+
+        LEFT JOIN `tabSales Order` so
             ON so.name = wo.sales_order
+
         WHERE {where_clause}
+
         ORDER BY wo.creation DESC
-    """, values=values, as_dict=True)
+    """
+
+    return frappe.db.sql(query, values=values, as_dict=True)
     
 
 @frappe.whitelist()

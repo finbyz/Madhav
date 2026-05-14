@@ -72,7 +72,7 @@ class CustomProductionPlan(ERPNextProductionPlan):
 				so_item = frappe.db.get_value(
 					"Sales Order Item",
 					row.sales_order_item,
-					["pieces", "length_size"],
+					["pieces", "length_size","assorted_length"],
 					as_dict=True,
 				)
 				if so_item:
@@ -84,6 +84,7 @@ class CustomProductionPlan(ERPNextProductionPlan):
 					if so_item.length_size:
 						row.length = meters_to_inches(so_item.length_size)
 						row.length_size_m = so_item.length_size or 0.0
+					row.assorted_length = so_item.assorted_length
 
 				# Get customer information from Sales Order
 				so_details = frappe.db.get_value(
@@ -142,6 +143,7 @@ class CustomProductionPlan(ERPNextProductionPlan):
 				so_item.parent,
 				so_item.item_code,
 				so_item.warehouse,
+				so_item.assorted_length,
 				so_item.qty,
 				so_item.work_order_qty,
 				so_item.delivered_qty,
@@ -252,7 +254,7 @@ class CustomProductionPlan(ERPNextProductionPlan):
 			)
 
 		packed_items = packed_items_query.run(as_dict=True)
-
+		# frappe.throw(str(items))
 		self.add_items(items + packed_items)
 		self.calculate_total_planned_qty()
 

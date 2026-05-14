@@ -152,6 +152,7 @@ function fetch_so_item_pcs(frm, cdt, cdn) {
             row_id: cdn
         },
         callback(r) {
+            console.log(r)
             if (r.message) {
                 const row_id = r.message.row_id;
     
@@ -160,6 +161,7 @@ function fetch_so_item_pcs(frm, cdt, cdn) {
                 frappe.model.set_value(cdt, row_id, "po_no", r.message.po_no || "");
                 // frappe.model.set_value(cdt, row_id, "section_weight", r.message.total_weight || "");
                 frappe.model.set_value(cdt, row_id, "planned_qty", r.message.planned_qty || 0);
+                frappe.model.set_value(cdt, row_id, "assorted_length", r.message.assorted_length || "");
                 frappe.model.set_value(cdt, row_id, "pending_qty", r.message.planned_qty || 0);
                 frappe.model.set_value(cdt, row_id, "customers_purchase_order", r.message.po_no || "");
                 frappe.model.set_value(cdt, row_id, "customer", r.message.customer || "");

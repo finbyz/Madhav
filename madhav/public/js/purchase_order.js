@@ -1,4 +1,27 @@
 frappe.ui.form.on("Purchase Order", {
+    setup: function(frm) {
+
+        frm.set_query("blanket_order", function () {
+            return {
+                filters: {
+                    blanket_order_type: "Purchasing",
+                    supplier: frm.doc.supplier,
+                    docstatus: 1
+                }
+            };
+        });
+    },
+    blanket_order: function(frm){
+        frm.set_query("blanket_order", function () {
+            return {
+                filters: {
+                    blanket_order_type: "Purchasing",
+                    supplier: frm.doc.supplier,
+                    docstatus: 1
+                }
+            };
+        });
+    },
     cost_center: function (frm) {
         update_taxes_fields(frm);
     },

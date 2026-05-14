@@ -57,10 +57,12 @@ frappe.ui.form.on("Finish Work Order", {
         set_warehouse_filter(frm, "raw_materials", "source_warehouse");
     },
     fetch_pending_work_orders(frm) {
+
         if (!frm.doc.company) {
             frappe.throw(__('Company field is mandatory'));
             return;
         }
+
         frappe.call({
             method: "madhav.api.populate_pending_work_orders",
             args: {
@@ -69,16 +71,20 @@ frappe.ui.form.on("Finish Work Order", {
                     item_name: frm.doc.item_name,
                     wo_number: frm.doc.wo_number,
                     sales_order: frm.doc.sales_order,
-                    company: frm.doc.company
+                    company: frm.doc.company,
+                    current_doc: frm.doc.name || ""
                 }
             },
             freeze: true,
+
             callback(r) {
+
                 if (!r.exc && r.message) {
 
                     frm.clear_table("pending_work_orders");
 
                     r.message.forEach(wo => {
+
                         let row = frm.add_child("pending_work_orders");
 
                         row.work_order = wo.name;
@@ -86,35 +92,55 @@ frappe.ui.form.on("Finish Work Order", {
                         row.party = wo.customer;
                         row.customer_name = wo.customer_name;
                         row.quality_required = wo.quality_required;
-                        row.sales_order_qty = wo.qty
+
+                        row.sales_order_qty = wo.qty;
+
                         row.target_warehouse = wo.fg_warehouse;
+
                         row.item = wo.production_item;
-                        row.item_name = wo.item_name; // Set item_name for Pending Work Orders
+                        row.item_name = wo.item_name;
+                        row.assorted_length = wo.assorted_length;
+
                         row.stock_uom = wo.stock_uom;
+
                         row.grade = wo.item_name;
+
                         row.pieces = wo.pending_pcs;
+
                         row.length_size = wo.length;
                         row.actual_average_length = wo.length;
+
                         row.ready_pieces = wo.pending_pcs;
+
                         row.variation = wo.variation_allowed;
+
                         row.po_no = wo.po_no;
+
                         row.actual_weight = wo.weight_per_meter;
                         row.standard_weight = wo.weight_per_meter;
                         row.actual_section_weight = wo.weight_per_meter;
+
                         row.qty = wo.qty - wo.produced_qty;
-                        row.ready_qty = wo.qty- wo.produced_qty;
-                        row.remaining_qty = wo.qty - wo.produced_qty
+                        row.ready_qty = wo.qty - wo.produced_qty;
+                        row.remaining_qty = wo.qty - wo.produced_qty;
+
                         row.sales_order = wo.sales_order;
 
                         if (wo.customer && wo.customer_name) {
-                            frappe.utils.add_link_title("Customer", wo.customer, wo.customer_name);
+                            frappe.utils.add_link_title(
+                                "Customer",
+                                wo.customer,
+                                wo.customer_name
+                            );
                         }
                     });
 
                     frm.refresh_field("pending_work_orders");
                     frm.dirty();
 
-                    frappe.msgprint(`Fetched ${r.message.length} Work Orders`);
+                    frappe.msgprint(
+                        __("Fetched {0} Work Orders", [r.message.length])
+                    );
                 }
             }
         });
@@ -178,7 +204,7 @@ frappe.ui.form.on('Raw Material Items', {
         });
 
     fetch_batch_qty(frm, cdt, cdn);
-}
+    }
 });
 function set_batch_query(frm, cdt, cdn) {
     frm.fields_dict.raw_materials.grid.get_field("batch_no").get_query = function(doc, cdt, cdn) {
@@ -187,9 +213,10 @@ function set_batch_query(frm, cdt, cdn) {
         return {
             query: "madhav.madhav.doctype.finish_work_order.finish_work_order.get_available_batches",
             filters: {
-                item_code: row.item_code,
-                warehouse: row.source_warehouse,
-                supplier: row.supplier
+            item_code: row.item_code,
+            warehouse: row.source_warehouse,
+            supplier: row.supplier,
+            current_doc: doc.name || ""
             }
         };
     };
