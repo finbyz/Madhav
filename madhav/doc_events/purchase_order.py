@@ -86,6 +86,7 @@ def validate(self,method):
             row.against_blanket_order = 1
     if self.against_blanket_order and self.blanket_order:
         doc = frappe.get_doc("Blanket Order",self.blanket_order)
+        self.blanket_order_qty = doc.items[0].qty - doc.items[0].ordered_qty
         for row in self.items:
             row.against_blanket_order = self.against_blanket_order
             row.blanket_order = self.blanket_order
