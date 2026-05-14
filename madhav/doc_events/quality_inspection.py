@@ -3,6 +3,10 @@ import frappe
 
 def validate(self,method):
     self.accepted_qty = (self.sample_size or 0) - (self.rejected_qty or 0)
+    if self.reference_type in ["Purchase Order","Purchase Receipt","Purchase Invoice"]:
+        doc = frappe.get_doc(self.reference_type,self.reference_name)
+        self.db_set("supplier",doc.supplier)
+        self.db_set("supplier_name",doc.supplier_name)
 def update_purchase_receipt_quantities(qi, method):
     # Only for Purchase Receipt reference
     if qi.reference_type != "Purchase Receipt":
