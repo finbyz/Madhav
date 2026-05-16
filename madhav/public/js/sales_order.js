@@ -642,7 +642,7 @@ function calculate_qty(frm, cdt, cdn) {
                 }
             });
     }
-    if (row.length_size && row.pieces && row.item_code) {
+    if (row.length_size && row.pieces && row.item_code && !row.qty) {
         frappe.db.get_value("Item", row.item_code, "weight_per_meter")
             .then(r => {
                 if (r.message && r.message.weight_per_meter) {
