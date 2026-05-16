@@ -587,7 +587,10 @@ frappe.ui.form.on('Sales Order', {
 });
 
 frappe.ui.form.on('Sales Order Item', {
-
+    qty: function (frm, cdt, cdn) {
+        calculate_qty(frm, cdt, cdn);
+        update_total_length(frm, cdt, cdn);
+    },
     length_size: function (frm, cdt, cdn) {
         calculate_qty(frm, cdt, cdn);
         update_total_length(frm, cdt, cdn);
@@ -625,7 +628,20 @@ frappe.ui.form.on('Sales Order Item', {
 
 function calculate_qty(frm, cdt, cdn) {
     let row = locals[cdt][cdn];
-
+    if (row.length_size && row.qty && row.item_code) {
+        frappe.db.get_value("Item", row.item_code, "weight_per_meter")
+            .then(r => {
+                if (r.message && r.message.weight_per_meter) {
+                    let weight_per_meter = r.message.weight_per_meter;
+                    let pieces = (row.qty * 1000) / (row.length_size * weight_per_meter);
+                    // Set lower integer value
+                    pieces = Math.floor(pieces);
+                    frappe.model.set_value(cdt, cdn, "pieces", pieces);
+                } else {
+                    frappe.msgprint("Weight per meter not found in Item master.");
+                }
+            });
+    }
     if (row.length_size && row.pieces && row.item_code) {
         frappe.db.get_value("Item", row.item_code, "weight_per_meter")
             .then(r => {
