@@ -176,9 +176,24 @@ def get_data(filters):
             filters.get("to_date")
         ]
 
-    if filters.get("party_name"):
-        so_filters["customer"] = filters.get("party_name")
+    # -----------------------------------
+    # MULTI CUSTOMER FILTER
+    # -----------------------------------
 
+    if filters.get("party_name"):
+        customers = filters.get("party_name")
+
+        if isinstance(customers, str):
+            customers = frappe.parse_json(customers)
+
+        so_filters["customer"] = ["in", customers]
+
+    # -----------------------------------
+    # PO NO FILTER
+    # -----------------------------------
+
+    if filters.get("po_no"):
+        so_filters["po_no"] = ["like", f"%{filters.get('po_no')}%"]
     # -----------------------------------
     # SALES ORDERS
     # -----------------------------------
@@ -199,13 +214,30 @@ def get_data(filters):
 
     data = []
 
+    # -----------------------------------
+    # ITEM FILTER
+    # -----------------------------------
+
+    item_filter = []
+
+    if filters.get("item_code"):
+        item_filter = filters.get("item_code")
+
+        if isinstance(item_filter, str):
+            item_filter = frappe.parse_json(item_filter)
+
     for so in sales_orders:
+
+        so_item_filters = {
+            "parent": so.name
+        }
+
+        if item_filter:
+            so_item_filters["item_code"] = ["in", item_filter]
 
         so_items = frappe.get_all(
             "Sales Order Item",
-            filters={
-                "parent": so.name
-            },
+            filters=so_item_filters,
             fields=[
                 "name",
                 "item_code",

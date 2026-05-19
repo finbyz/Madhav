@@ -25,8 +25,24 @@ frappe.query_reports["PO Sheet"] = {
         {
             fieldname: "party_name",
             label: __("Party Name"),
-            fieldtype: "Link",
-            options: "Customer"
+            fieldtype: "MultiSelectList",
+            get_data: function(txt) {
+                return frappe.db.get_link_options("Customer", txt);
+            }
+        },
+
+        {
+            fieldname: "item_code",
+            label: __("Item"),
+            fieldtype: "MultiSelectList",
+            get_data: function(txt) {
+                return frappe.db.get_link_options("Item", txt);
+            }
+        },
+        {
+            fieldname: "po_no",
+            label: __("PO No"),
+            fieldtype: "Data"
         }
     ]
 };
