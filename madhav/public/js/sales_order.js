@@ -635,7 +635,7 @@ function calculate_qty(frm, cdt, cdn) {
                     let weight_per_meter = r.message.weight_per_meter;
                     let pieces = (row.qty * 1000) / (row.length_size * weight_per_meter);
                     // Set lower integer value
-                    pieces = Math.floor(pieces);
+                    pieces = Math.ceil(pieces);
                     frappe.model.set_value(cdt, cdn, "pieces", pieces);
                 } else {
                     frappe.msgprint("Weight per meter not found in Item master.");

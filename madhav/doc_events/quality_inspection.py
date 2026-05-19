@@ -20,7 +20,8 @@ def update_purchase_receipt_quantities(qi, method):
         "Purchase Receipt Item",
         {
             "parent": qi.reference_name,
-            "item_code": qi.item_code
+            "item_code": qi.item_code,
+            "name":qi.child_row_reference
         },
         "name"
     )
