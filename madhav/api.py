@@ -1076,7 +1076,7 @@ def populate_pending_work_orders(filters=None):
 
         WHERE {where_clause}
 
-        ORDER BY wo.creation DESC
+        ORDER BY wo.item_name, wo.customer_name , wo.length ASC
     """
 
     return frappe.db.sql(query, values=values, as_dict=True)
