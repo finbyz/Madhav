@@ -1,5 +1,6 @@
 import frappe
 from frappe import _
+import traceback
 
 
 def duplicate_po_items_to_assembly_items_without_consolidate(doc, method):
@@ -47,6 +48,7 @@ def duplicate_po_items_to_assembly_items_without_consolidate(doc, method):
         for field in fields_to_copy:
             target_row.set(field, getattr(row, field, None))
 
+
 def consolidate_assembly_items(doc, method):
 
     if not doc.po_items:
@@ -74,4 +76,64 @@ def consolidate_assembly_items(doc, method):
     for row in consolidated.values():
         row.section_weight = frappe.db.get_value(
             "Item", row.item_code, "weight_per_meter"
+        )
+
+
+def update_so_pieces(doc, method=None):
+    aggregated = {}
+    for item in doc.po_items:
+        if not item.sales_order_item:
+            continue
+        if item.sales_order_item not in aggregated:
+            aggregated[item.sales_order_item] = {"pieces": 0}
+        aggregated[item.sales_order_item]["pieces"] += item.pieces or 0
+
+    for so_item_name, totals in aggregated.items():
+        so_item = frappe.db.get_value(
+            "Sales Order Item",
+            so_item_name,
+            ["pieces", "production_plan_pieces"],
+            as_dict=True
+        )
+        if not so_item:
+            continue
+
+        frappe.db.set_value(
+            "Sales Order Item",
+            so_item_name,
+            {
+                "pieces":                 (so_item.pieces or 0)                 - totals["pieces"],
+                "production_plan_pieces": (so_item.production_plan_pieces or 0) + totals["pieces"],
+            },
+            update_modified=False
+        )
+
+
+def revert_so_pieces(doc, method=None):
+    aggregated = {}
+    for item in doc.po_items:
+        if not item.sales_order_item:
+            continue
+        if item.sales_order_item not in aggregated:
+            aggregated[item.sales_order_item] = {"pieces": 0}
+        aggregated[item.sales_order_item]["pieces"] += item.pieces or 0
+
+    for so_item_name, totals in aggregated.items():
+        so_item = frappe.db.get_value(
+            "Sales Order Item",
+            so_item_name,
+            ["pieces", "production_plan_pieces"],
+            as_dict=True
+        )
+        if not so_item:
+            continue
+
+        frappe.db.set_value(
+            "Sales Order Item",
+            so_item_name,
+            {
+                "pieces":                 (so_item.pieces or 0)                 + totals["pieces"],
+                "production_plan_pieces": (so_item.production_plan_pieces or 0) - totals["pieces"],
+            },
+            update_modified=False
         )

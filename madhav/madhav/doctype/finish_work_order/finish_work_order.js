@@ -8,55 +8,82 @@ frappe.ui.form.on("Finish Work Order", {
             let df = frappe.meta.get_docfield(doctype, fieldname);
             if (df) {
                 df.formatter = function(value, df, options, doc) {
-                if (!value) return value;
+                    if (!value) return value;
 
-                let title = "";
-                if (doc && title_field && doc[title_field]) {
-                    title = doc[title_field];
-                }
+                    let title = "";
 
-                if (!title) {
-                    title = frappe.utils.get_link_title(link_doctype, value) || "";
-                }
+                    if (doc && title_field && doc[title_field]) {
+                        title = doc[title_field];
+                    }
 
-                return title && title !== value ? `${value}: ${title}` : value;
-            };
+                    if (!title) {
+                        title = frappe.utils.get_link_title(link_doctype, value) || "";
+                    }
+
+                    return title && title !== value
+                        ? `${value}: ${title}`
+                        : value;
+                };
             }
         };
 
         [
-        ["Pending Work Orders", "item", "item_name", "Item"],
-        ["Pending Work Orders", "party_name", "party", "Customer"],
-        ["Raw Material Items", "item_code", "item_name", "Item"],
-        ["Scrap Items", "item", "item_name", "Item"]
+            ["Pending Work Orders", "item", "item_name", "Item"],
+            ["Pending Work Orders", "party_name", "party", "Customer"],
+            ["Raw Material Items", "item_code", "item_name", "Item"],
+            ["Scrap Items", "item", "item_name", "Item"]
         ].forEach(([dt, field, title, link]) => {
-        set_df_grid_formatter(dt, field, title, link);
+            set_df_grid_formatter(dt, field, title, link);
         });
     },
+
     refresh(frm) {
         set_unplanned_checkbox_lock(frm);
         set_batch_query(frm);
         apply_work_order_filters(frm);
         set_warehouse_filter(frm, "pending_work_orders", "target_warehouse");
         set_warehouse_filter(frm, "raw_materials", "source_warehouse");
+
         fetch_missing_titles(frm);
+
         frm.refresh_field("pending_work_orders");
         frm.refresh_field("raw_materials");
         frm.refresh_field("scrap_items");
-        
+
+        // ── FIX: hijack the button so only a real mouse-click sets the flag ──
+        frm._fetch_btn_clicked = false;
+
+        const $btn = frm.get_field("fetch_pending_work_orders").$input;
+        if ($btn && $btn.length) {
+            $btn.off("mousedown.fetch_guard click.fetch_guard");
+
+            // mousedown fires before Frappe's click handler
+            $btn.on("mousedown.fetch_guard", function () {
+                frm._fetch_btn_clicked = true;
+                // safety reset in case something swallows the click
+                setTimeout(() => { frm._fetch_btn_clicked = false; }, 1000);
+            });
+        }
     },
+
     onload(frm) {
         apply_work_order_filters(frm);
     },
-    
+
     date(frm) {
         apply_work_order_filters(frm);
     },
+
     company(frm) {
         set_warehouse_filter(frm, "pending_work_orders", "target_warehouse");
         set_warehouse_filter(frm, "raw_materials", "source_warehouse");
     },
+
     fetch_pending_work_orders(frm) {
+        // ── FIX: block every call that didn't come from a real button click ──
+        if (!frm._fetch_btn_clicked) return;
+        frm._fetch_btn_clicked = false;
+        // ─────────────────────────────────────────────────────────────────────
 
         if (!frm.doc.company) {
             frappe.throw(__('Company field is mandatory'));
@@ -78,13 +105,10 @@ frappe.ui.form.on("Finish Work Order", {
             freeze: true,
 
             callback(r) {
-
                 if (!r.exc && r.message) {
-
                     frm.clear_table("pending_work_orders");
 
                     r.message.forEach(wo => {
-
                         let row = frm.add_child("pending_work_orders");
 
                         row.work_order = wo.name;
@@ -144,25 +168,18 @@ frappe.ui.form.on("Finish Work Order", {
                 }
             }
         });
-    },
-    pending_work_orders(frm, cdt, cdn) {
-        let row = locals[cdt][cdn];
-
-        // Clear field you don't want copied
-        row.target_warehouse = "";
-        frm.refresh_field("pending_work_orders");
     }
 });
+
 frappe.ui.form.on('Raw Material Items', {
     item_code: function(frm, cdt, cdn) {
-        // Clear the batch_no if the item_code changes to prevent invalid data
         frappe.model.set_value(cdt, cdn, 'batch_no', '');
         set_batch_query(frm, cdt, cdn);
         fetch_batch_qty(frm, cdt, cdn);
     },
     source_warehouse: function(frm, cdt, cdn) {
         fetch_batch_qty(frm, cdt, cdn);
-         set_batch_query(frm, cdt, cdn);
+        set_batch_query(frm, cdt, cdn);
     },
 
     batch_no(frm, cdt, cdn) {
@@ -175,7 +192,6 @@ frappe.ui.form.on('Raw Material Items', {
             ['pieces', 'average_length', 'section_weight', 'reference_doctype', 'reference_name']
         ).then((res) => {
             let data = res.message;
-
             if (!data) return;
 
             frappe.model.set_value(cdt, cdn, 'pieces', data.pieces);
@@ -186,15 +202,12 @@ frappe.ui.form.on('Raw Material Items', {
                 data.reference_doctype === "Purchase Receipt" &&
                 data.reference_name
             ) {
-
                 frappe.db.get_value(
                     "Purchase Receipt",
                     data.reference_name,
                     ["supplier", "supplier_name"]
                 ).then((pr) => {
-
                     let pr_data = pr.message;
-
                     if (!pr_data) return;
 
                     frappe.model.set_value(cdt, cdn, 'supplier', pr_data.supplier);
@@ -203,20 +216,20 @@ frappe.ui.form.on('Raw Material Items', {
             }
         });
 
-    fetch_batch_qty(frm, cdt, cdn);
+        fetch_batch_qty(frm, cdt, cdn);
     }
 });
+
 function set_batch_query(frm, cdt, cdn) {
     frm.fields_dict.raw_materials.grid.get_field("batch_no").get_query = function(doc, cdt, cdn) {
         let row = locals[cdt][cdn];
-
         return {
             query: "madhav.madhav.doctype.finish_work_order.finish_work_order.get_available_batches",
             filters: {
-            item_code: row.item_code,
-            warehouse: row.source_warehouse,
-            supplier: row.supplier,
-            current_doc: doc.name || ""
+                item_code: row.item_code,
+                warehouse: row.source_warehouse,
+                supplier: row.supplier,
+                current_doc: doc.name || ""
             }
         };
     };
@@ -245,10 +258,10 @@ function fetch_missing_titles(frm) {
     if (missing_customers.length > 0) {
         frappe.call({
             method: "frappe.client.get_list",
-            args: { 
-                doctype: "Customer", 
-                filters: { name: ["in", missing_customers] }, 
-                fields: ["name", "customer_name"] 
+            args: {
+                doctype: "Customer",
+                filters: { name: ["in", missing_customers] },
+                fields: ["name", "customer_name"]
             },
             callback: function(r) {
                 if (r.message) {
@@ -269,16 +282,16 @@ function fetch_missing_titles(frm) {
     if (missing_items.length > 0) {
         frappe.call({
             method: "frappe.client.get_list",
-            args: { 
-                doctype: "Item", 
-                filters: { name: ["in", missing_items] }, 
-                fields: ["name", "item_name"] 
+            args: {
+                doctype: "Item",
+                filters: { name: ["in", missing_items] },
+                fields: ["name", "item_name"]
             },
             callback: function(r) {
                 if (r.message) {
                     r.message.forEach(i => {
                         frappe.utils.add_link_title("Item", i.name, i.item_name);
-                        
+
                         (frm.doc.pending_work_orders || []).forEach(row => {
                             if (row.item === i.name) {
                                 frappe.model.set_value(row.doctype, row.name, "item_name", i.item_name);
@@ -310,54 +323,51 @@ function fetch_missing_titles(frm) {
 frappe.ui.form.on("Pending Work Orders", {
     ready_qty(frm, cdt, cdn) {
         let row = locals[cdt][cdn];
-    
-        frappe.db.get_single_value("Manufacturing Settings", 
+
+        frappe.db.get_single_value("Manufacturing Settings",
             "overproduction_percentage_for_work_order"
         ).then((percentage) => {
-    
             percentage = flt(percentage) || 0;
-    
             let multiplier = 1 + (percentage / 100);
             let max_allowed = flt(row.qty) * multiplier;
-    
+
             if (flt(row.ready_qty) > max_allowed) {
                 frappe.msgprint(
                     __('Ready Qty cannot be greater than Qty by more than {0}%', [percentage])
                 );
                 frappe.model.set_value(cdt, cdn, 'ready_qty', row.qty);
             }
-    
+
             check_weight_variance(frm, cdt, cdn);
         });
     },
 
     ready_pieces(frm, cdt, cdn) {
         let row = locals[cdt][cdn];
-    
-        frappe.db.get_single_value("Manufacturing Settings", 
+
+        frappe.db.get_single_value("Manufacturing Settings",
             "overproduction_percentage_for_work_order"
         ).then((percentage) => {
-    
             percentage = flt(percentage) || 0;
-    
             let multiplier = 1 + (percentage / 100);
             let max_allowed = flt(row.pieces) * multiplier;
-    
+
             if (flt(row.ready_pieces) > max_allowed) {
                 frappe.msgprint(
                     __('Ready Pieces cannot be greater than Pieces by more than {0}%', [percentage])
                 );
                 frappe.model.set_value(cdt, cdn, 'ready_pieces', row.pieces);
             }
-    
+
             check_weight_variance(frm, cdt, cdn);
         });
-        frappe.model.set_value(cdt,cdn,"calculated_qty",row.ready_pieces * row.length_size * row.standard_weight/1000)
+        frappe.model.set_value(cdt, cdn, "calculated_qty", row.ready_pieces * row.length_size * row.standard_weight / 1000);
     },
 
     length_size(frm, cdt, cdn) {
         check_weight_variance(frm, cdt, cdn);
     },
+
     make_it_unplanned(frm, cdt, cdn) {
         let row = locals[cdt][cdn];
         if (row.make_it_unplanned) {
@@ -366,8 +376,7 @@ frappe.ui.form.on("Pending Work Orders", {
             row.old_sales_order = row.sales_order;
             row.sales_order = "";
             row.variation = 1;
-        } 
-        else {
+        } else {
             row.work_order = row.old_work_order || "";
             row.old_work_order = "";
             row.sales_order = row.old_sales_order;
@@ -376,6 +385,7 @@ frappe.ui.form.on("Pending Work Orders", {
         }
         frm.refresh_field("pending_work_orders");
     },
+
     form_render(frm, cdt, cdn) {
         let row = locals[cdt][cdn];
         let grid = frm.fields_dict.pending_work_orders.grid;
@@ -385,11 +395,12 @@ frappe.ui.form.on("Pending Work Orders", {
             grid_row.toggle_editable("make_it_unplanned", false);
         }
     },
+
     pending_work_orders_add: function(frm, cdt, cdn) {
-        // Clears the target_warehouse field when a row is duplicated or added
         frappe.model.set_value(cdt, cdn, 'target_warehouse', null);
     }
 });
+
 function check_weight_variance(frm, cdt, cdn) {
     let row = locals[cdt][cdn];
 
@@ -408,60 +419,30 @@ function check_weight_variance(frm, cdt, cdn) {
     if (!grid_row || !grid_row.row) return;
 
     if (calculated > max_allowed || calculated < min_allowed) {
-        // Highlight entire row
-        $(grid_row.on_grid_fields[0].$input).css({
-            "background-color": "#fff0f0",
-        });
-        $(grid_row.on_grid_fields[1].$input).css({
-            "background-color": "#fff0f0",
-        });
-        $(grid_row.on_grid_fields[2].$input).css({
-            "background-color": "#fff0f0",
-        });
-        $(grid_row.on_grid_fields[3].$input).css({
-            "background-color": "#fff0f0",
-        });
-        $(grid_row.on_grid_fields[4].$input).css({
-            "background-color": "#fff0f0",
-        });
-        $(grid_row.on_grid_fields[5].$input).css({
-            "background-color": "#fff0f0",
-        });
-        $(grid_row.on_grid_fields[6].$input).css({
-            "background-color": "#fff0f0",
-        });
-        $(grid_row.on_grid_fields[7].$input).css({
-            "background-color": "#fff0f0",
-        });
-        $(grid_row.on_grid_fields[8].$input).css({
-            "background-color": "#fff0f0",
-        });
-        $(grid_row.row).css({
-            "background-color": "#fff0f0",
-        });
+        $(grid_row.on_grid_fields[0].$input).css({ "background-color": "#fff0f0" });
+        $(grid_row.on_grid_fields[1].$input).css({ "background-color": "#fff0f0" });
+        $(grid_row.on_grid_fields[2].$input).css({ "background-color": "#fff0f0" });
+        $(grid_row.on_grid_fields[3].$input).css({ "background-color": "#fff0f0" });
+        $(grid_row.on_grid_fields[4].$input).css({ "background-color": "#fff0f0" });
+        $(grid_row.on_grid_fields[5].$input).css({ "background-color": "#fff0f0" });
+        $(grid_row.on_grid_fields[6].$input).css({ "background-color": "#fff0f0" });
+        $(grid_row.on_grid_fields[7].$input).css({ "background-color": "#fff0f0" });
+        $(grid_row.on_grid_fields[8].$input).css({ "background-color": "#fff0f0" });
+        $(grid_row.row).css({ "background-color": "#fff0f0" });
     } else {
-
-        // Reset highlight
-        $(grid_row.row).css({
-            "background-color": "",
-            "border-left": ""
-        });
+        $(grid_row.row).css({ "background-color": "", "border-left": "" });
     }
 }
+
 function set_warehouse_filter(frm, child_table, warehouse) {
     frm.set_query(warehouse, child_table, function(doc, cdt, cdn) {
-
-        if (!frm.doc.company) {
-            return {};
-        }
-
+        if (!frm.doc.company) return {};
         return {
-            filters: {
-                company: frm.doc.company
-            }
+            filters: { company: frm.doc.company }
         };
     });
 }
+
 function set_unplanned_checkbox_lock(frm) {
     let grid = frm.fields_dict.pending_work_orders?.grid;
     if (!grid) return;
@@ -469,18 +450,16 @@ function set_unplanned_checkbox_lock(frm) {
     (frm.doc.pending_work_orders || []).forEach(row => {
         let grid_row = grid.grid_rows_by_docname[row.name];
         if (!grid_row) return;
-
         if (row.make_it_unplanned) {
             grid_row.toggle_editable("make_it_unplanned", false);
         }
     });
 }
-function fetch_batch_qty(frm, cdt, cdn) {
 
+function fetch_batch_qty(frm, cdt, cdn) {
     let row = locals[cdt][cdn];
 
     if (row.source_warehouse && row.item_code && row.batch_no) {
-
         frappe.call({
             method: "erpnext.stock.doctype.batch.batch.get_batch_qty",
             args: {
@@ -494,12 +473,10 @@ function fetch_batch_qty(frm, cdt, cdn) {
                 }
             }
         });
-
     }
 }
-function apply_work_order_filters(frm) {
 
-    // If no date → empty filters
+function apply_work_order_filters(frm) {
     if (!frm.doc.date) {
         set_empty_filters(frm);
         return;
@@ -525,7 +502,7 @@ function apply_work_order_filters(frm) {
             }
 
             let sales_orders = [...new Set(r.message.map(d => d.sales_order).filter(Boolean))];
-            let wo_numbers  = [...new Set(r.message.map(d => d.name).filter(Boolean))];
+            let wo_numbers   = [...new Set(r.message.map(d => d.name).filter(Boolean))];
             let wo_customers = [...new Set(r.message.map(d => d.customer).filter(Boolean))];
 
             frm.set_query('sales_order', () => ({
@@ -543,12 +520,8 @@ function apply_work_order_filters(frm) {
     });
 }
 
-
-// Ensures dropdowns empty if no date
 function set_empty_filters(frm) {
     frm.set_query('sales_order', () => ({ filters: { name: ['in', ['']] } }));
-    frm.set_query('wo_number', () => ({ filters: { name: ['in', ['']] } }));
-    frm.set_query('customer', () => ({ filters: { name: ['in', ['']] } }));
+    frm.set_query('wo_number',   () => ({ filters: { name: ['in', ['']] } }));
+    frm.set_query('customer',    () => ({ filters: { name: ['in', ['']] } }));
 }
-
-

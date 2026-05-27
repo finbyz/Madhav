@@ -174,6 +174,8 @@ doc_events = {
         "before_submit": "madhav.doc_events.stock_reconciliation.on_submit",
         "validate": "madhav.doc_events.stock_reconciliation.validate",
     },
+
+    
     "BOM": {
         "on_submit": "madhav.doc_events.bom.mark_item_as_manufacture",
     },
@@ -251,12 +253,21 @@ doc_events = {
       "after_insert":"madhav.doc_events.attendance.set_short_leave_count",
       "on_update_after_submit": "madhav.doc_events.attendance.set_short_leave_count"     
     },
-    "Production Plan": {
-        "before_save": [
-            "madhav.doc_events.production_plan.duplicate_po_items_to_assembly_items_without_consolidate",
-            # "madhav.doc_events.production_plan.consolidate_assembly_items",
-        ]
-        },
+   "Production Plan": {
+    "before_save": [
+        "madhav.doc_events.production_plan.duplicate_po_items_to_assembly_items_without_consolidate",
+        # "madhav.doc_events.production_plan.consolidate_assembly_items",
+    ],
+
+    "on_submit": [
+        "madhav.doc_events.production_plan.update_so_pieces",
+    ],
+
+    "on_cancel": [
+        "madhav.doc_events.production_plan.revert_so_pieces",
+        
+    ],
+    },
     "Payment Entry": {
         "validate": "madhav.doc_events.payment_entry.validate_cash_limit",
         "on_submit": "madhav.doc_events.payment_entry.validate_cash_limit",
@@ -271,7 +282,9 @@ doc_events = {
     },
     "Work Order":{
         "on_update_after_submit":"madhav.doc_events.work_order.validate",
-        "validate":"madhav.doc_events.work_order.validate"
+        "validate":"madhav.doc_events.work_order.validate",
+        "on_submit": "madhav.doc_events.work_order.update_so_pieces_from_work_order",
+        "on_cancel": "madhav.doc_events.work_order.revert_so_pieces_from_work_order"
     }
 }
 
