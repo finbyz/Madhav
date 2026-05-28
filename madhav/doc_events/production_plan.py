@@ -102,7 +102,7 @@ def update_so_pieces(doc, method=None):
             "Sales Order Item",
             so_item_name,
             {
-                "pieces":                 (so_item.pieces or 0)                 - totals["pieces"],
+                # "pieces":                 (so_item.pieces or 0)                 - totals["pieces"],
                 "production_plan_pieces": (so_item.production_plan_pieces or 0) + totals["pieces"],
             },
             update_modified=False
@@ -132,7 +132,7 @@ def revert_so_pieces(doc, method=None):
             "Sales Order Item",
             so_item_name,
             {
-                "pieces":                 (so_item.pieces or 0)                 + totals["pieces"],
+                # "pieces":                 (so_item.pieces or 0)                 + totals["pieces"],
                 "production_plan_pieces": (so_item.production_plan_pieces or 0) - totals["pieces"],
             },
             update_modified=False
