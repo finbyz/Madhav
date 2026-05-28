@@ -445,7 +445,6 @@ function open_sales_order_items_selector_for_delivery_note(frm) {
 							<th class="text-right">${__("Length")}</th>
 							<th class="text-right">${__("Pieces")}</th>
 							<th class="text-right">${__("Reserved Qty")}</th>
-							<th class="text-right">${__("Reserved Pieces")}</th>
 							<th class="text-right">${__("Section Weight")}</th>
 						</tr>
 						<tr style="background-color:#f5f5f5;position:sticky;top:37px;z-index:1;">
