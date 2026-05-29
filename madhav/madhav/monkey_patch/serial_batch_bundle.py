@@ -24,17 +24,12 @@ def create_batch(self):
 			# "concentration": data.get("concentration")
 			"reference_detail_no": self.voucher_detail_no
 		})
-		# if data.get("quality_inspection"):
-		# 	quality_inspection = frappe.get_doc("Quality Inspection", data.get("quality_inspection"))
-		# 	retest_date = quality_inspection.retest_date
-		# 	expiry_date = quality_inspection.expiry_date
-		# 	manufacturing_date = quality_inspection.manufacturing_date
-		# 	dct.update({
-		# 	"retest_date": retest_date,
-		# 	"expiry_date":expiry_date,
-		# 	"manufacturing_date":manufacturing_date,
-		# })
-	
+		if self.voucher_type == "Purchase Receipt":
+			data = frappe.get_doc(self.voucher_type,self.voucher_no)
+		dct.update({
+			"supplier": data.get("supplier"),
+			
+		})
 	
 	dct.update({
 		"item": self.get("item_code"),

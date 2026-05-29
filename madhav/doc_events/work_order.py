@@ -35,7 +35,7 @@ def update_so_pieces_from_work_order(doc, method=None):
         "Sales Order Item",
         doc.sales_order_item,
         {
-            "pieces": new_so_pieces,
+           
             "work_order_pieces": new_wo_total
         },
         update_modified=False
@@ -70,7 +70,6 @@ def revert_so_pieces_from_work_order(doc, method=None):
         "Sales Order Item",
         doc.sales_order_item,
         {
-            "pieces": restored_so_pieces,
             "work_order_pieces": new_wo_total
         },
         update_modified=False

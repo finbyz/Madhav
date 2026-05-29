@@ -209,7 +209,7 @@ doc_events = {
             "madhav.doc_events.purchase_receipt.auto_calculation",
             "madhav.doc_events.purchase_receipt.prevent_edit_after_quality_inspection"
             ],
-        "validate": "madhav.doc_events.purchase_receipt.create_qi",
+        "validate":[ "madhav.doc_events.purchase_receipt.create_qi","madhav.doc_events.purchase_receipt.validate"],
         "before_submit": [
             "madhav.doc_events.purchase_receipt.validation_section_weight",
             "madhav.doc_events.purchase_receipt.ensure_quality_inspections_submitted"

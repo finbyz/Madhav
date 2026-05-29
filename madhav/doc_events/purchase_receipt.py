@@ -86,17 +86,6 @@ def validate_limit_on_save(self, method):
             )
             frappe.throw(msg + "<br><br>" + action_msg, OverAllowanceError, title=_("Limit Crossed"))
 
-# def round_off_stock_qty(doc, method=None):
-# 	"""Round stock_qty for rows where UOM is Kg and stock UOM is Nos."""
-	
-# 	for row in doc.items or []:
-# 		if (row.get("uom") or "").lower() == "kg" and (row.get("stock_uom") or "").lower() == "nos":
-# 			if row.get("stock_qty") is not None:
-# 				row.db_set("stock_qty", round(flt(row.stock_qty)))
-			
-# 			# check before setting received_stock_qty
-# 			if row.get("received_stock_qty") is not None:
-# 				row.db_set("received_stock_qty", round(flt(row.received_stock_qty)))
                 
 def set_actual_rate_per_kg(self, method):
     """
@@ -444,3 +433,51 @@ def validation_section_weight(doc, method):
             ))
         message = "\n".join(lines)
         frappe.throw(message)
+
+
+def validate(self, method):
+    for row in self.items:
+        row.batch_no = ""
+
+        if (
+            row.item_code
+            and frappe.db.get_value("Item", row.item_code, "is_raw_material") == 1
+        ):
+
+            batches = frappe.get_all(
+                "Batch",
+                filters={
+                    "item": row.item_code,
+                    "reference_doctype": "Purchase Receipt",
+                    "disabled": 0,
+                    "batch_qty": [">", 0],
+                },
+                fields=[
+                    "name",
+                    "reference_doctype",
+                    "reference_name",
+                    "supplier",
+                ],
+            )
+
+            selected_batch = None
+
+            for doc in batches:
+
+                # Direct supplier match from Batch
+                if doc.supplier == self.supplier:
+                    selected_batch = doc.name
+                    break
+
+                # Supplier match from reference document
+                supplier = frappe.db.get_value(
+                    doc.reference_doctype,
+                    doc.reference_name,
+                    "supplier",
+                )
+
+                if supplier == self.supplier:
+                    selected_batch = doc.name
+                    break
+
+            row.batch_no = selected_batch or ""
