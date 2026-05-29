@@ -223,13 +223,13 @@ frappe.ui.form.on('Raw Material Items', {
 function set_batch_query(frm, cdt, cdn) {
     frm.fields_dict.raw_materials.grid.get_field("batch_no").get_query = function(doc, cdt, cdn) {
         let row = locals[cdt][cdn];
+
         return {
             query: "madhav.madhav.doctype.finish_work_order.finish_work_order.get_available_batches",
             filters: {
                 item_code: row.item_code,
                 warehouse: row.source_warehouse,
-                supplier: row.supplier,
-                current_doc: doc.name || ""
+                supplier: row.supplier
             }
         };
     };
