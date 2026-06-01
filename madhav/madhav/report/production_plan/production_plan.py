@@ -81,7 +81,7 @@ def get_data(filters):
             ppi.planned_qty,
             ppi.remark
 
-        FROM `tabProduction Plan Item` ppi
+        FROM `tabProduction Plan Item Madhav` ppi
         INNER JOIN `tabProduction Plan` pp ON pp.name = ppi.parent
         LEFT JOIN `tabItem` it ON it.name = ppi.item_code
 
