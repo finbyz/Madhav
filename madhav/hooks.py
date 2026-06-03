@@ -162,6 +162,7 @@ override_doctype_class = {
     "Stock Entry": "madhav.madhav.override.stock_entry.CustomStockEntry",
     "Blanket Order": "madhav.madhav.override.blanket_order.BlanketOrder",
     "Stock Reconciliation" : "madhav.madhav.override.stock_reconciliation.StockReconciliation",
+    "Work Order": "madhav.madhav.override.work_order.WorkOrder",
     # "Purchase Receipt": "madhav.madhav.override.purchase_rPurchaseReceipteceipt.",
 }
 

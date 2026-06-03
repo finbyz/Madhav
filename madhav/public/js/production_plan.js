@@ -157,7 +157,7 @@ function fetch_so_item_pcs(frm, cdt, cdn) {
                 const row_id = r.message.row_id;
     
                 frappe.model.set_value(cdt, row_id, "length_size_m", r.message.length_size || 0);
-                frappe.model.set_value(cdt, row_id, "pieces", r.message.pieces || 0);
+                // frappe.model.set_value(cdt, row_id, "pieces", r.message.pieces || 0);
                 frappe.model.set_value(cdt, row_id, "po_no", r.message.po_no || "");
                 // frappe.model.set_value(cdt, row_id, "section_weight", r.message.total_weight || "");
                 frappe.model.set_value(cdt, row_id, "planned_qty", r.message.planned_qty || 0);

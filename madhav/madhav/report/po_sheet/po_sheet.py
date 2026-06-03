@@ -11,10 +11,24 @@ def execute(filters=None):
 def get_columns():
     return [
         {
+            "label": "Customer",
+            "fieldname": "customer",
+            "fieldtype": "Link",
+            "options": "Customer",
+            "width": 180
+        },
+        {
             "label": "Party Name",
             "fieldname": "party_name",
             "fieldtype": "Data",
             "width": 220
+        },
+        {
+            "label": "Sales Order",
+            "fieldname": "sales_order",
+            "fieldtype": "Link",
+            "options": "Sales Order",
+            "width": 180
         },
         {
             "label": "Grade",
@@ -56,6 +70,12 @@ def get_columns():
             "label": "Ready PC",
             "fieldname": "ready_pc",
             "fieldtype": "Float",
+            "width": 100
+        },
+        {
+            "label": "Assorted Length",
+            "fieldname": "assorted_length",
+            "fieldtype": "Data",
             "width": 100
         },
         {
@@ -245,7 +265,8 @@ def get_data(filters):
                 "length_size",
                 "qty",
                 "pieces",
-                "rate"
+                "rate",
+                "assorted_length",
             ]
         )
 
@@ -303,15 +324,17 @@ def get_data(filters):
                     },
                     fields=[
                         "ready_pieces",
-                        "ready_qty"
+                        "ready_qty",
+                        "sales_order",
+                        "target_warehouse"
                     ]
                 )
 
                 for pwo in pwo_rows:
-
-                    ready_pc += flt(pwo.ready_pieces)
-
-                    ready_weight += flt(pwo.ready_qty)
+                    so_doc = frappe.get_doc("Sales Order", pwo.sales_order)   # ← renamed
+                    if so_doc.set_warehouse and pwo.target_warehouse == so_doc.set_warehouse:
+                        ready_pc += flt(pwo.ready_pieces)
+                        ready_weight += flt(pwo.ready_qty)
 
             # -----------------------------------
             # FALLBACK IF NO WO
@@ -391,12 +414,15 @@ def get_data(filters):
             # -----------------------------------
 
             data.append({
+                "customer": so.customer,
                 "party_name": so.customer_name,
+                "sales_order": so.name,
                 "grade": grade,
                 "po_no": so.po_no,
                 "section": section,
                 "length": soi.length_size,
                 "pcs": total_pcs,
+                "assorted_length": soi.assorted_length,
                 "total_weight": total_weight,
                 "ready_pc": ready_pc,
                 "ready_weight": ready_weight,

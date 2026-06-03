@@ -25,31 +25,6 @@ def meters_to_inches(value):
 
 class CustomProductionPlan(ERPNextProductionPlan):
     
-	# def create_work_order(self, item):
-	# 	from erpnext.manufacturing.doctype.work_order.work_order import OverProductionError
-
-	# 	if flt(item.get("qty")) <= 0:
-	# 		return
-
-	# 	wo = frappe.new_doc("Work Order")
-	# 	wo.update(item)
-	# 	wo.planned_start_date = item.get("planned_start_date") or item.get("schedule_date")
-	# 	wo.skip_transfer = 1
-
-	# 	if item.get("warehouse"):
-	# 		wo.fg_warehouse = item.get("warehouse")
-
-	# 	wo.set_work_order_operations()
-	# 	wo.set_required_items()
-
-	# 	try:
-	# 		wo.flags.ignore_mandatory = True
-	# 		wo.insert()
-	# 		wo.submit()
-	# 		return wo.name
-	# 	except OverProductionError:
-	# 		pass
-
 	def validate(self):
 		super().validate()
 		self.validate_production_plan()
@@ -72,14 +47,16 @@ class CustomProductionPlan(ERPNextProductionPlan):
 				so_item = frappe.db.get_value(
 					"Sales Order Item",
 					row.sales_order_item,
-					["pieces", "length_size","assorted_length"],
+					["pieces", "length_size","assorted_length","production_plan_pieces"],
 					as_dict=True,
 				)
+				frappe.throw(str(so_item))
 				if so_item:
 					row.section_weight = frappe.db.get_value(
 						"Item", row.item_code, "weight_per_meter"
 					)
-					row.pieces = so_item.pieces or 0
+					# row.pieces = flt(so_item.pieces or 0) - flt(so_item.production_plan_pieces or 0)
+					row.pending_pieces = flt(so_item.production_plan_pieces or 0)
 					# Convert and store in inches as required for po_items
 					if so_item.length_size:
 						row.length = meters_to_inches(so_item.length_size)
@@ -145,6 +122,7 @@ class CustomProductionPlan(ERPNextProductionPlan):
 				so_item.warehouse,
 				so_item.assorted_length,
 				so_item.qty,
+				so_item.production_plan_pieces,
 				so_item.work_order_qty,
 				so_item.delivered_qty,
 				so_item.conversion_factor,
@@ -256,6 +234,26 @@ class CustomProductionPlan(ERPNextProductionPlan):
 		packed_items = packed_items_query.run(as_dict=True)
 		# frappe.throw(str(items))
 		self.add_items(items + packed_items)
+		# self.add_items(items + packed_items)
+
+		for row in self.po_items:
+			if row.sales_order_item:
+				so_item = frappe.db.get_value(
+					"Sales Order Item",
+					row.sales_order_item,
+					[
+						"pieces",
+						"production_plan_pieces",
+						"length_size",
+						"assorted_length",
+					],
+					as_dict=True,
+				)
+
+				if so_item:
+					row.pending_pieces = so_item.production_plan_pieces or 0
+					row.pieces = flt(so_item.pieces or 0) - flt(so_item.production_plan_pieces or 0)
+					row.assorted_length = so_item.assorted_length
 		self.calculate_total_planned_qty()
 
 def custom_get_sales_orders(self):
