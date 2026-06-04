@@ -7,13 +7,70 @@ from frappe.model.document import Document
 
 
 class StockTransfer(Document):
+    
+    def on_cancel(self):
+        for row in self.transfer_item:
+            se = frappe.get_doc("Stock Entry", self.stock_entry)
+            se.cancel()
+            row.db_set("stock_entry", "")
+            if row.stock_entry_reference:
+                # Cancel associated Stock Reservation Entry
+                sre = frappe.get_doc("Stock Reservation Entry", {"from_voucher_type": self.doctype, "from_voucher_no": self.name, "from_voucher_detail_no": row.name})
+                if sre:
+                    sre.cancel()
+                    
 
     def validate(self):
         self.validate_transfer_item_limits()
 
     def on_submit(self):
         self.create_stock_entry()
-
+        
+        for row in self.transfer_item:
+            if not row.source_document_type:
+                continue
+            
+            # Get work order name from the source document
+            wo_name = frappe.db.get_value(
+                row.source_document_type,
+                row.source_document_name,
+                "work_order"
+            )
+            if not wo_name:
+                continue
+            
+            # Fetch the Work Order doc to get sales_order and sales_order_item
+            wor = frappe.get_doc("Work Order", wo_name)
+            
+            if not wor.sales_order or not wor.sales_order_item:
+                continue
+            
+            # Get the qty from the specific Sales Order Item linked to this WO
+            so_qty = frappe.db.get_value(
+                "Sales Order Item",
+                wor.sales_order_item,   # this is the SO Item row name stored on WO
+                "qty"
+            )
+            
+            if not so_qty:
+                continue
+            
+            self.create_fg_stock_reservation(
+                item_code=row.item_code,
+                warehouse=self.target_warehouse,
+                qty=row.qty,
+                so_qty=so_qty,
+                name=self.name,
+                stock_uom=frappe.db.get_value("Item", row.item_code, "stock_uom"),
+                work_order=wo_name,
+                sales_order=wor.sales_order,
+                batch_no=row.batch,
+                quality_required=0,
+                from_voucher_type = self.doctype,
+                from_voucher_no = self.name,
+                from_voucher_detail_no = row.name
+            )
+    
     def validate_transfer_item_limits(self):
         for item in self.transfer_item:
             if not item.batch:
@@ -84,6 +141,163 @@ class StockTransfer(Document):
         )
 
         frappe.db.set_value("Stock Transfer", self.name, "stock_entry", se.name)
+    def create_fg_stock_reservation(
+        self,
+        item_code,
+        warehouse,
+        qty,
+        so_qty,
+        name,
+        stock_uom,
+        work_order,
+        sales_order=None,
+        batch_no=None,
+        quality_required=False,
+        from_voucher_type = None,
+        from_voucher_no = None,
+        from_voucher_detail_no = None
+    ):
+        # ==============================
+        # DEBUG INFORMATION
+        # ==============================
+
+
+        if not sales_order:
+            return
+        if quality_required:
+            frappe.log_error(
+                title="Quality Inspection Required - Skipping Stock Reservation",
+                message=f"Skipping stock reservation for {item_code} in WO {work_order} linked to SO {sales_order} because quality inspection is required."
+            )
+            return
+
+        # ==============================
+        # GET SO ITEM
+        # ==============================
+        so_items = frappe.get_all(
+            "Sales Order Item",
+            filters={
+                "parent": sales_order,
+                "item_code": item_code,
+                "docstatus": 1
+            },
+            fields=["name", "qty", "stock_reserved_qty"]
+        )
+        
+        if not so_items:
+            frappe.throw(f"❌ SO Item not found for {item_code} in {sales_order}")
+        
+        # Find the SO item with available quantity
+        so_detail = None
+        available_qty = 0
+        
+        for item in so_items:
+            available = flt(item.qty) - flt(item.stock_reserved_qty or 0)
+            if available > 0:
+                so_detail = item.name
+                available_qty = available
+                break
+
+        if not so_detail:
+            frappe.throw(f"❌ No available quantity in {sales_order} for {item_code}")
+
+        # ==============================
+        # RESERVED QTY CHECK
+        # ==============================
+        already_reserved_qty = frappe.db.sql("""
+            SELECT COALESCE(SUM(reserved_qty), 0)
+            FROM `tabStock Reservation Entry`
+            WHERE
+                voucher_type = 'Sales Order'
+                AND voucher_no = %s
+                AND voucher_detail_no = %s
+                AND docstatus = 1
+                AND item_code = %s
+        """, (sales_order, so_detail, item_code))[0][0] or 0
+
+        available_qty_to_reserve = flt(so_qty) - flt(already_reserved_qty)
+        frappe.log_error(
+            title="Stock Reservation Debug",
+            message=(f"SO: {sales_order}, Item: {item_code}, SO Qty: {so_qty}, Already Reserved: {already_reserved_qty}, Available to Reserve: {available_qty_to_reserve}") 
+        )
+
+        if available_qty_to_reserve <= 0:
+            return
+
+        reserve_qty = min(qty, available_qty_to_reserve)
+
+        # ==============================
+        # CREATE STOCK RESERVATION ENTRY
+        # ==============================
+        sre = frappe.new_doc("Stock Reservation Entry")
+
+        sre.item_code = item_code
+        sre.warehouse = warehouse
+        sre.company = self.company
+        sre.stock_uom = stock_uom
+
+        sre.voucher_type = "Sales Order"
+        sre.voucher_no = sales_order
+        sre.voucher_detail_no = so_detail
+        sre.from_voucher_type = from_voucher_type
+        sre.from_voucher_no = from_voucher_no
+        sre.from_voucher_detail_no = from_voucher_detail_no
+        sre.reserved_qty = reserve_qty
+        sre.voucher_qty = so_qty
+        sre.available_qty = available_qty
+        sre.available_qty_to_reserve = reserve_qty
+        
+        # Check if item actually has batch tracking
+        has_batch_no = frappe.get_cached_value("Item", item_code, "has_batch_no")
+
+        # ==============================
+        # HANDLE BATCH NO
+        # ==============================
+        if batch_no and has_batch_no and reserve_qty > 0:
+            sre.has_batch_no = 1
+            sre.has_serial_no = 0
+            sre.reservation_based_on = "Serial and Batch"
+            sre.use_serial_batch_fields = 1
+            
+            so_item_data = frappe.db.get_value(
+                "Sales Order Item", 
+                so_detail, 
+                ["pieces", "length_size"], 
+                as_dict=True
+            )
+            weight_per_meter = frappe.db.get_value("Item", item_code, "weight_per_meter") or 0.0
+
+            sb_entry = sre.append("sb_entries", {
+                "batch_no": batch_no,
+                "qty": reserve_qty,
+                "warehouse": warehouse
+            })
+            
+            if so_item_data:
+                # Assuming custom fields peices (typo intended, matching original), length, section_weight
+                sb_entry.pieces = flt(so_item_data.get("pieces"))
+                sb_entry.length = flt(so_item_data.get("length_size"))
+                sb_entry.section_weight = (
+                    flt(so_item_data.get("pieces")) 
+                    * flt(so_item_data.get("length_size")) 
+                    * flt(weight_per_meter)
+                ) / 1000.0
+
+            
+            # Monkey-patch instance to bypass auto reservation clearing our explicit batch
+            sre.auto_reserve_serial_and_batch = lambda *args, **kwargs: None
+        else:
+            sre.reservation_based_on = "Qty"
+
+        # Save and submit the SRE
+        sre.flags.ignore_permissions = True
+        sre.insert()
+        sre.submit()
+        if sre:
+            frappe.log_error(
+                title="Stock Reserved",
+                message=f"Reserved {reserve_qty} of {item_code} in {warehouse} for SO {sales_order} (Batch: {batch_no})"
+            )
 
 
 @frappe.whitelist()
@@ -110,7 +324,9 @@ def get_batch_stock(
 			b.pieces,
 			b.average_length,
 			b.section_weight,
-            b.batch_qty
+            b.batch_qty,
+            b.reference_doctype,
+            b.reference_name
 		FROM `tabSerial and Batch Entry` sbe
 
 		INNER JOIN `tabSerial and Batch Bundle` sabb
@@ -144,5 +360,5 @@ def get_batch_stock(
         },
         as_dict=1,
     )
-
+    # frappe.throw(str(data))
     return data

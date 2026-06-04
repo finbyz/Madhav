@@ -300,7 +300,7 @@ def get_data(filters):
 
             ready_pc = 0
             ready_weight = 0
-
+            clearence = 0
             for wo in work_orders:
 
                 total_pcs += flt(wo.pieces)
@@ -326,15 +326,75 @@ def get_data(filters):
                         "ready_pieces",
                         "ready_qty",
                         "sales_order",
-                        "target_warehouse"
+                        "target_warehouse",
+                        "stock_entry_reference"
                     ]
                 )
 
                 for pwo in pwo_rows:
-                    so_doc = frappe.get_doc("Sales Order", pwo.sales_order)   # ← renamed
-                    if so_doc.set_warehouse and pwo.target_warehouse == so_doc.set_warehouse:
-                        ready_pc += flt(pwo.ready_pieces)
-                        ready_weight += flt(pwo.ready_qty)
+
+                    ready_pc += flt(pwo.ready_pieces)
+                    ready_weight += flt(pwo.ready_qty)
+
+                    if not pwo.stock_entry_reference:
+                        continue
+
+                    so_warehouse = frappe.db.get_value(
+                        "Sales Order",
+                        pwo.sales_order,
+                        "set_warehouse"
+                    )
+
+                    if not so_warehouse:
+                        continue
+
+                    fg_rows = frappe.get_all(
+                        "Stock Entry Detail",
+                        filters={
+                            "parent": pwo.stock_entry_reference,
+                            "is_finished_item": 1
+                        },
+                        fields=[
+                            "serial_and_batch_bundle",
+                            "qty"
+                        ]
+                    )
+
+                    for fg in fg_rows:
+
+                        if not fg.serial_and_batch_bundle:
+                            continue
+
+                        batch_entries = frappe.get_all(
+                            "Serial and Batch Entry",
+                            filters={
+                                "parent": fg.serial_and_batch_bundle
+                            },
+                            fields=[
+                                "batch_no"
+                            ]
+                        )
+
+                        for batch_row in batch_entries:
+
+                            batch_qty = frappe.db.sql("""
+                                SELECT COALESCE(SUM(actual_qty),0)
+                                FROM `tabStock Ledger Entry`
+                                WHERE
+                                    serial_and_batch_bundle IS NOT NULL
+                                    AND warehouse = %s
+                                    AND is_cancelled = 0
+                                    AND serial_and_batch_bundle IN (
+                                        SELECT parent
+                                        FROM `tabSerial and Batch Entry`
+                                        WHERE batch_no = %s
+                                    )
+                            """, (
+                                so_warehouse,
+                                batch_row.batch_no
+                            ))[0][0] or 0
+
+                            clearence += flt(batch_qty)
 
             # -----------------------------------
             # FALLBACK IF NO WO
@@ -383,7 +443,7 @@ def get_data(filters):
             # CLEARANCE
             # -----------------------------------
 
-            clearence = ready_weight
+            clearence = clearence
 
             # -----------------------------------
             # BALANCE

@@ -12,7 +12,10 @@ class FinishWorkOrder(Document):
             data = frappe.get_doc("Stock Entry",row.stock_entry_reference)
             data.cancel()
             row.db_set("stock_entry_reference","")
-        
+            sre = frappe.get_doc("Stock Reservation Entry", {"from_voucher_type": self.doctype, "from_voucher_no": self.name, "from_voucher_detail_no": row.name})
+            sre.cancel()
+            sre.db_set("from_voucher_no", "")
+
     def on_update(self):
         self.create_unplanned_work_orders()
         
@@ -131,7 +134,10 @@ class FinishWorkOrder(Document):
         work_order,
         sales_order=None,
         batch_no=None,
-        quality_required=False
+        quality_required=False,
+        from_voucher_type = None,
+        from_voucher_no = None,
+        from_voucher_detail_no = None
     ):
         # ==============================
         # DEBUG INFORMATION
@@ -215,7 +221,9 @@ class FinishWorkOrder(Document):
         sre.voucher_type = "Sales Order"
         sre.voucher_no = sales_order
         sre.voucher_detail_no = so_detail
-
+        sre.from_voucher_type = from_voucher_type
+        sre.from_voucher_no = from_voucher_no
+        sre.from_voucher_detail_no = from_voucher_detail_no
         sre.reserved_qty = reserve_qty
         sre.voucher_qty = so_qty
         sre.available_qty = available_qty
@@ -493,7 +501,10 @@ class FinishWorkOrder(Document):
                     work_order=pwo.work_order,
                     sales_order=pwo.sales_order,
                     batch_no=fg_batch_no,   # ✅ PASS BATCH (might be None)
-                    quality_required=pwo.quality_required
+                    quality_required=pwo.quality_required,
+                    from_voucher_type = self.doctype,
+                    from_voucher_no = self.name,
+                    from_voucher_detail_no = pwo.name
                 )
 
             except Exception as e:

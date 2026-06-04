@@ -55,7 +55,8 @@ frappe.ui.form.on("Stock Transfer", {
 
                     row.length = d.average_length;
                     row.section_weight = d.section_weight;
-
+                    row.source_document_type = d.reference_doctype;
+                    row.source_document_name = d.reference_name;
                     row.source_warehouse = frm.doc.source_warehouse;
                     row.target_warehouse = frm.doc.target_warehouse;
 
