@@ -320,7 +320,8 @@ def get_data(filters):
                 pwo_rows = frappe.get_all(
                     "Pending Work Orders",
                     filters={
-                        "work_order": wo.name
+                        "work_order": wo.name,
+                        "docstatus": 1
                     },
                     fields=[
                         "ready_pieces",
