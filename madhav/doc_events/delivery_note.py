@@ -537,7 +537,7 @@ def get_sales_order_items_for_selector(filters=None):
     # Static Filters (from frontend)
     # -----------------------------
     for key, val in filters.items():
-        if key in ("dynamic_filters", "project"):
+        if key in ("dynamic_filters", "project" , "po_no"):
             continue
 
         if val:
@@ -549,6 +549,9 @@ def get_sales_order_items_for_selector(filters=None):
     # Project filter
     if filters.get("project"):
         so_filters.append(["project", "=", filters.get("project")])
+    
+    if filters.get("po_no"):
+        so_filters.append(["po_no", "like", f"%{filters['po_no']}%"])
 
     # -----------------------------
     # Dynamic Filters (FilterGroup)
@@ -603,6 +606,7 @@ def get_sales_order_items_for_selector(filters=None):
             soi.uom,
             soi.pieces,
             soi.length_size,
+            soi.assorted_length, 
             soi.description,
             item.weight_per_meter AS section_weight
         FROM `tabSales Order Item` soi
@@ -671,6 +675,7 @@ def get_sales_order_items_for_selector(filters=None):
                 "pieces": row.pieces,
                 "length": row.length_size,
                 "section_weight": flt(row.section_weight),
+                "assorted_length": row.assorted_length, 
                 "description": row.description,
             }
         )

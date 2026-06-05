@@ -188,6 +188,23 @@ function open_sales_order_items_selector_for_delivery_note(frm) {
 				fieldtype: "Section Break",
 			},
 			{
+				fieldtype: "Data",
+				fieldname: "po_no",
+				label: __("Customer Po No."),
+			},
+			{
+				fieldtype: "Column Break",
+			},
+			{
+				fieldtype: "Select",
+				fieldname: "assorted_length",
+				label: __("Assorted Length"),
+				options: ["", "T/L", "F/L"],
+			},
+			{
+				fieldtype: "Section Break",
+			},
+			{
 				fieldtype: "Float",
 				fieldname: "min_length",
 				label: __("Min Length"),
@@ -319,6 +336,8 @@ function open_sales_order_items_selector_for_delivery_note(frm) {
 			"change input awesomplete-selectcomplete",
 			frappe.utils.debounce(() => render_rows(), 300)
 		);
+		d.get_field("po_no").$input.on("change input", frappe.utils.debounce(() => load_rows(), 400));
+		d.get_field("assorted_length").$input.on("change", () => render_rows());
 		d.get_field("min_length").$input.on("input", () => render_rows());
 		d.get_field("max_length").$input.on("input", () => render_rows());
 		d.get_field("show_items").$input.on("change", () => render_rows());
@@ -334,9 +353,11 @@ function open_sales_order_items_selector_for_delivery_note(frm) {
 			wrapper.html(`<div class="text-muted" style="padding: 8px 0;">${__("Loading Sales Order items...")}</div>`);
 
 			const dynamic_filters = filter_group.get_filters();
+			const po_no = d.get_value("po_no");
 			const current_filters = {
 				...filters,
-				dynamic_filters: filter_group.get_filters() || []
+				dynamic_filters: filter_group.get_filters() || [],
+				 ...(po_no ? { po_no } : {}),  
 			};
 
 			frappe.call({
@@ -360,10 +381,13 @@ function open_sales_order_items_selector_for_delivery_note(frm) {
 		const min_length = flt(d.get_value("min_length"));
 		const max_length = flt(d.get_value("max_length"));
 		const so_filter = d.get_value("sales_order_filter");
+		const po_no = d.get_value("po_no");
+		const assorted_length = d.get_value("assorted_length");
 
 		let filtered_rows = state.rows.filter((row) => {
 			if (!show_all_items && flt(row.reserved_qty) <= 0 ) return false;
 			if (customer_filter && row.customer !== customer_filter) return false;
+			if (assorted_length && row.assorted_length !== assorted_length) return false;  // ← add
 			if (item_filter && !(
 				(row.item_code || "").toLowerCase().includes(item_filter.toLowerCase()) ||
 				(row.item_name || "").toLowerCase().includes(item_filter.toLowerCase())
