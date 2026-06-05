@@ -578,7 +578,7 @@ def get_sales_order_items_for_selector(filters=None):
     # -----------------------------
     sales_orders = frappe.get_all(
         "Sales Order",
-        fields=["name", "customer", "transaction_date", "currency", "company"],
+        fields=["name", "customer", "transaction_date", "currency", "company","po_no"],
         filters=so_filters,
         order_by="transaction_date desc",
     )
@@ -675,6 +675,7 @@ def get_sales_order_items_for_selector(filters=None):
                 "pieces": row.pieces,
                 "length": row.length_size,
                 "section_weight": flt(row.section_weight),
+                "po_no": so.get("po_no"),
                 "assorted_length": row.assorted_length, 
                 "description": row.description,
             }

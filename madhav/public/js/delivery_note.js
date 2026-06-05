@@ -445,6 +445,8 @@ function open_sales_order_items_selector_for_delivery_note(frm) {
 					<td class="text-right">${format_number(flt(row.pieces || 0))}</td>
 					<td class="text-right">${format_number(flt(row.reserved_qty || 0))}</td>
 					<td class="text-right">${format_number(flt(row.section_weight || 0))}</td>
+					<td>${frappe.utils.escape_html(row.po_no || "")}</td>
+        			<td>${frappe.utils.escape_html(row.assorted_length || "")}</td>
 				</tr>`;
 		}).join("");
 
@@ -470,6 +472,8 @@ function open_sales_order_items_selector_for_delivery_note(frm) {
 							<th class="text-right">${__("Pieces")}</th>
 							<th class="text-right">${__("Reserved Qty")}</th>
 							<th class="text-right">${__("Section Weight")}</th>
+							<th>${__("PO No")}</th>
+    						<th>${__("Assorted Length")}</th>
 						</tr>
 						<tr style="background-color:#f5f5f5;position:sticky;top:37px;z-index:1;">
 							<td style="padding:4px;"></td>
@@ -482,6 +486,8 @@ function open_sales_order_items_selector_for_delivery_note(frm) {
 							${filter_number_input("pieces")}
 							${filter_number_input("reserved_qty")}
 							${filter_number_input("section_weight")}
+							${filter_input("po_no")}
+    						${filter_input("assorted_length")}
 						</tr>
 					</thead>
 					<tbody>${rows_html}</tbody>
