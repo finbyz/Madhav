@@ -378,17 +378,19 @@ def get_data(filters):
                         for batch_row in batch_entries:
 
                             batch_qty = frappe.db.sql("""
-                                SELECT COALESCE(SUM(actual_qty),0)
-                                FROM `tabStock Ledger Entry`
+                                SELECT COALESCE(SUM(sle.actual_qty), 0)
+                                FROM `tabStock Ledger Entry` sle
+                                INNER JOIN `tabSerial and Batch Entry` sbe
+                                    ON sbe.parent = sle.serial_and_batch_bundle
+                                INNER JOIN `tabSerial and Batch Bundle` sabb
+                                    ON sabb.name = sbe.parent
                                 WHERE
-                                    serial_and_batch_bundle IS NOT NULL
-                                    AND warehouse = %s
-                                    AND is_cancelled = 0
-                                    AND serial_and_batch_bundle IN (
-                                        SELECT parent
-                                        FROM `tabSerial and Batch Entry`
-                                        WHERE batch_no = %s
-                                    )
+                                    sle.serial_and_batch_bundle IS NOT NULL
+                                    AND sle.warehouse = %s
+                                    AND sle.is_cancelled = 0
+                                    AND sbe.batch_no = %s
+                                    AND sabb.type_of_transaction = 'Inward'
+                                    AND sabb.voucher_type IN ('Stock Entry', 'Purchase Receipt')
                             """, (
                                 so_warehouse,
                                 batch_row.batch_no
