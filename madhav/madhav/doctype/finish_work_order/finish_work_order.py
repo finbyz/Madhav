@@ -152,7 +152,8 @@ class FinishWorkOrder(Document):
                 message=f"Skipping stock reservation for {item_code} in WO {work_order} linked to SO {sales_order} because quality inspection is required."
             )
             return
-
+        if frappe.db.get_value("Work Order",work_order,"fg_warehouse") != warehouse:
+            return
         # ==============================
         # GET SO ITEM
         # ==============================
