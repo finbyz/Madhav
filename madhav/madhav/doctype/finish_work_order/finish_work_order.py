@@ -133,6 +133,7 @@ class FinishWorkOrder(Document):
         stock_uom,
         work_order,
         sales_order=None,
+        sales_order_item=None,
         batch_no=None,
         quality_required=False,
         from_voucher_type = None,
@@ -162,6 +163,7 @@ class FinishWorkOrder(Document):
             filters={
                 "parent": sales_order,
                 "item_code": item_code,
+                "name": sales_order_item,
                 "docstatus": 1
             },
             fields=["name", "qty", "stock_reserved_qty"]
@@ -501,6 +503,7 @@ class FinishWorkOrder(Document):
                     stock_uom=pwo.stock_uom,
                     work_order=pwo.work_order,
                     sales_order=pwo.sales_order,
+                    sales_order_item = frappe.db.get_value("Work Order", pwo.work_order, "sales_order_item"),
                     batch_no=fg_batch_no,   # ✅ PASS BATCH (might be None)
                     quality_required=pwo.quality_required,
                     from_voucher_type = self.doctype,

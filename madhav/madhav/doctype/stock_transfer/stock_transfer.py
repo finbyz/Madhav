@@ -10,15 +10,28 @@ class StockTransfer(Document):
     
     def on_cancel(self):
         for row in self.transfer_item:
+
+            sre_name = frappe.db.get_value(
+                "Stock Reservation Entry",
+                {
+                    "from_voucher_type": self.doctype,
+                    "from_voucher_no": self.name,
+                    "from_voucher_detail_no": row.name,
+                    "docstatus": 1
+                }
+            )
+
+            if sre_name:
+                sre = frappe.get_doc("Stock Reservation Entry", sre_name)
+                sre.cancel()
+
+        if self.stock_entry:
             se = frappe.get_doc("Stock Entry", self.stock_entry)
-            se.cancel()
-            row.db_set("stock_entry", "")
-            if row.stock_entry_reference:
-                # Cancel associated Stock Reservation Entry
-                sre = frappe.get_doc("Stock Reservation Entry", {"from_voucher_type": self.doctype, "from_voucher_no": self.name, "from_voucher_detail_no": row.name})
-                if sre:
-                    sre.cancel()
-                    
+
+            if se.docstatus == 1:
+                se.cancel()
+
+        self.db_set("stock_entry", "")     
 
     def validate(self):
         self.validate_transfer_item_limits()
@@ -64,6 +77,7 @@ class StockTransfer(Document):
                 stock_uom=frappe.db.get_value("Item", row.item_code, "stock_uom"),
                 work_order=wo_name,
                 sales_order=wor.sales_order,
+                sales_order_item = wor.sales_order_item,
                 batch_no=row.batch,
                 quality_required=0,
                 from_voucher_type = self.doctype,
@@ -106,7 +120,7 @@ class StockTransfer(Document):
 
         se = frappe.new_doc("Stock Entry")
         se.stock_entry_type = "Material Transfer"
-        se.stock_transfer = self.name,
+        # se.stock_transfer = self.name,
         se.company = self.company
         se.from_warehouse = self.source_warehouse
         se.to_warehouse = self.target_warehouse
@@ -151,6 +165,7 @@ class StockTransfer(Document):
         stock_uom,
         work_order,
         sales_order=None,
+        sales_order_item=None,
         batch_no=None,
         quality_required=False,
         from_voucher_type = None,
@@ -179,6 +194,7 @@ class StockTransfer(Document):
             filters={
                 "parent": sales_order,
                 "item_code": item_code,
+                "name": sales_order_item,
                 "docstatus": 1
             },
             fields=["name", "qty", "stock_reserved_qty"]
