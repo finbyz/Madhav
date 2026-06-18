@@ -434,6 +434,7 @@ def make_delivery_note_custom(source_name, target_doc=None, kwargs=None):
         target.qty = flt(source.qty) - flt(source.delivered_qty)
         target.amount = target.qty * flt(source.rate)
         target.base_amount = target.qty * flt(source.base_rate)
+        target.deliver_as_qty = source_parent.deliver_as_qty
 
     # =====================================================
     # STEP 1: MAP BASIC DOC
@@ -498,7 +499,7 @@ def make_delivery_note_custom(source_name, target_doc=None, kwargs=None):
 
             # qty from reserved
             dn_item.qty = flt(sre.reserved_qty) / flt(dn_item.conversion_factor or 1)
-
+            dn_item.deliver_as_qty = so.deliver_as_qty
             # batch / serial handling
             if sre.reservation_based_on == "Serial and Batch":
                 dn_item.serial_and_batch_bundle = get_ssb_bundle_for_voucher(sre)
