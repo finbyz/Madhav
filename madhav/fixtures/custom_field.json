@@ -299,7 +299,7 @@
   "dt": "Delivery Note Item",
   "fetch_from": null,
   "fetch_if_empty": 0,
-  "fieldname": "deliver_as_qty",
+  "fieldname": "custom_deliver_as_qty",
   "fieldtype": "Check",
   "hidden": 0,
   "hide_border": 0,

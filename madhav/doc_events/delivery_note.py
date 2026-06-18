@@ -499,7 +499,7 @@ def make_delivery_note_custom(source_name, target_doc=None, kwargs=None):
 
             # qty from reserved
             dn_item.qty = flt(sre.reserved_qty) / flt(dn_item.conversion_factor or 1)
-            dn_item.deliver_as_qty = so.deliver_as_qty
+            dn_item.custom_deliver_as_qty = so.deliver_as_qty
             # batch / serial handling
             if sre.reservation_based_on == "Serial and Batch":
                 dn_item.serial_and_batch_bundle = get_ssb_bundle_for_voucher(sre)
