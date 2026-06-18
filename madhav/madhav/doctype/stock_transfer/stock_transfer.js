@@ -51,7 +51,7 @@ frappe.ui.form.on("Stock Transfer", {
                     row.item_name = d.item_name;
 
                     row.pieces = d.pieces;
-                    row.qty = d.batch_qty;
+                    row.qty = d.qty;
 
                     row.length = d.average_length;
                     row.section_weight = d.section_weight;

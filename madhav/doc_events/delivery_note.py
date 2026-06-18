@@ -158,7 +158,7 @@ def create_stock_reconciliation(self):
     import frappe
     from frappe.utils import flt, nowtime, get_datetime, add_to_date
 
-    items_with_invoice_qty = [row for row in self.items if flt(row.invoice_qty) > 0]
+    items_with_invoice_qty = [row for row in self.items if flt(row.difference_qty) > 0]
 
     if not items_with_invoice_qty:
         return

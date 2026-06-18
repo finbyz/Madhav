@@ -3,6 +3,12 @@
 
 frappe.query_reports["PO Sheet"] = {
     "filters": [
+        {   fieldname: "type",
+            "label": __("Type"),
+            "fieldtype": "Select",
+            "options": ["", "Trading", "Manufacturing"],
+            "default": "Manufacturing",
+        },
         {
             fieldname: "sales_order",
             label: __("Sales Order"),

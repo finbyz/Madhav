@@ -103,6 +103,24 @@ def get_columns():
             "width": 120
         },
         {
+            "label": "After MFG",
+            "fieldname": "after_mfg",
+            "fieldtype": "Float",
+            "width": 120
+        },
+        {
+            "label": "Pending CLR",
+            "fieldname": "pending_clr",
+            "fieldtype": "Float",
+            "width": 120
+        },
+        {
+            "label": "After CLR (Rejected)",
+            "fieldname": "after_clr_rejected",
+            "fieldtype": "Float",
+            "width": 160
+        },
+        {
             "label": "Dispatch PCS",
             "fieldname": "dispatch_pcs",
             "fieldtype": "Float",
@@ -214,6 +232,7 @@ def get_data(filters):
 
     if filters.get("po_no"):
         so_filters["po_no"] = ["like", f"%{filters.get('po_no')}%"]
+
     # -----------------------------------
     # SALES ORDERS
     # -----------------------------------
@@ -246,6 +265,11 @@ def get_data(filters):
         if isinstance(item_filter, str):
             item_filter = frappe.parse_json(item_filter)
 
+    # -----------------------------------
+    # TYPE FILTER (Manufacturing / Trading)
+    # -----------------------------------
+    type_filter = filters.get("type")
+
     for so in sales_orders:
 
         so_item_filters = {
@@ -267,161 +291,239 @@ def get_data(filters):
                 "pieces",
                 "rate",
                 "assorted_length",
+                "is_manufacture",
+                "warehouse"
             ]
         )
 
         for soi in so_items:
 
             # -----------------------------------
-            # WORK ORDERS
+            # TYPE FILTER LOGIC
             # -----------------------------------
+            if type_filter == "Manufacturing" and not soi.is_manufacture:
+                continue
+            if type_filter == "Trading" and soi.is_manufacture:
+                continue
 
-            work_orders = frappe.get_all(
-                "Work Order",
-                filters={
-                    "sales_order": so.name,
-                    "production_item": soi.item_code,
-                    "docstatus": 1
-                },
-                fields=[
-                    "name",
-                    "qty",
-                    "pieces",
-                    "pending_pcs",
-                    "produced_qty"
-                ]
-            )
+            # ===================================
+            # MANUFACTURING ITEMS (is_manufacture = 1)
+            # ===================================
+            if soi.is_manufacture:
 
-            total_pcs = 0
-            total_weight = 0
-
-            pending_ready_pc = 0
-            pending_ready_weight = 0
-
-            ready_pc = 0
-            ready_weight = 0
-            clearence = 0
-            for wo in work_orders:
-
-                total_pcs += flt(wo.pieces)
-
-                total_weight += flt(wo.qty)
-
-                pending_ready_pc += flt(wo.pending_pcs)
-
-                pending_ready_weight += (
-                    flt(wo.qty) - flt(wo.produced_qty)
-                )
-
-                # -----------------------------------
-                # PENDING WORK ORDERS
-                # -----------------------------------
-
-                pwo_rows = frappe.get_all(
-                    "Pending Work Orders",
+                work_orders = frappe.get_all(
+                    "Work Order",
                     filters={
-                        "work_order": wo.name,
+                        "sales_order": so.name,
+                        "production_item": soi.item_code,
                         "docstatus": 1
                     },
                     fields=[
-                        "ready_pieces",
-                        "ready_qty",
-                        "sales_order",
-                        "target_warehouse",
-                        "stock_entry_reference"
+                        "name",
+                        "qty",
+                        "pieces",
+                        "pending_pcs",
+                        "produced_qty"
                     ]
                 )
 
-                for pwo in pwo_rows:
+                total_pcs = 0
+                total_weight = 0
+                ready_pc = 0
+                ready_weight = 0
 
-                    ready_pc += flt(pwo.ready_pieces)
-                    ready_weight += flt(pwo.ready_qty)
+                wo_names = [wo.name for wo in work_orders]
 
-                    if not pwo.stock_entry_reference:
-                        continue
+                for wo in work_orders:
+                    total_pcs += flt(wo.pieces)
+                    total_weight += flt(wo.qty)
 
-                    so_warehouse = frappe.db.get_value(
-                        "Sales Order",
-                        pwo.sales_order,
-                        "set_warehouse"
-                    )
-
-                    if not so_warehouse:
-                        continue
-
-                    fg_rows = frappe.get_all(
-                        "Stock Entry Detail",
+                    # Pending Work Orders (from Finish Work Order)
+                    # Ready PC/Weight ALWAYS come from PWO - shows production status
+                    pwo_rows = frappe.get_all(
+                        "Pending Work Orders",
                         filters={
-                            "parent": pwo.stock_entry_reference,
-                            "is_finished_item": 1
+                            "work_order": wo.name,
+                            "docstatus": 1
                         },
                         fields=[
-                            "serial_and_batch_bundle",
-                            "qty"
+                            "ready_pieces",
+                            "ready_qty",
+                            "sales_order",
+                            "target_warehouse",
+                            "stock_entry_reference"
                         ]
                     )
 
-                    for fg in fg_rows:
+                    for pwo in pwo_rows:
+                        ready_pc += flt(pwo.ready_pieces)
+                        ready_weight += flt(pwo.ready_qty)
 
-                        if not fg.serial_and_batch_bundle:
-                            continue
+                # Clearance from Stock Reservation Entry
+                # ROBUST QUERY: Try multiple matching strategies
+                # Strategy 1: Match by voucher_no + item_code + warehouse
+                # Strategy 2: Match by voucher_detail_no (SO Item name)
+                clearence = 0
 
-                        batch_entries = frappe.get_all(
-                            "Serial and Batch Entry",
+                if soi.warehouse:
+                    # Strategy 1: voucher + item + warehouse
+                    sre_rows = frappe.get_all(
+                        "Stock Reservation Entry",
+                        filters={
+                            "voucher_type": "Sales Order",
+                            "voucher_no": so.name,
+                            "item_code": soi.item_code,
+                            "warehouse": soi.warehouse,
+                            "docstatus": ["in", [1, 2]]
+                        },
+                        fields=["reserved_qty", "delivered_qty"]
+                    )
+                    clearence = sum(flt(sre.reserved_qty) for sre in sre_rows)
+
+                if not clearence:
+                    # Strategy 2: Match by voucher_detail_no (SO Item row name)
+                    sre_rows = frappe.get_all(
+                        "Stock Reservation Entry",
+                        filters={
+                            "voucher_type": "Sales Order",
+                            "voucher_no": so.name,
+                            "voucher_detail_no": soi.name,
+                            "docstatus": ["in", [1, 2]]
+                        },
+                        fields=["reserved_qty", "delivered_qty"]
+                    )
+                    clearence = sum(flt(sre.reserved_qty) for sre in sre_rows)
+
+                if not clearence:
+                    # Strategy 3: Match by voucher_no + item_code only (no warehouse)
+                    sre_rows = frappe.get_all(
+                        "Stock Reservation Entry",
+                        filters={
+                            "voucher_type": "Sales Order",
+                            "voucher_no": so.name,
+                            "item_code": soi.item_code,
+                            "docstatus": ["in", [1, 2]]
+                        },
+                        fields=["reserved_qty", "delivered_qty"]
+                    )
+                    clearence = sum(flt(sre.reserved_qty) for sre in sre_rows)
+
+                # ===================================
+                # AFTER CLR (REJECTED) - Stock Transfer to Rejected Warehouse
+                # ===================================
+                # Flow: Stock Transfer -> transfer_item -> source_document_name (Stock Entry) -> work_order -> sales_order
+                after_clr_rejected = 0
+
+                if wo_names:
+                    # Get all Stock Entries linked to these Work Orders
+                    stock_entries = frappe.get_all(
+                        "Stock Entry",
+                        filters={
+                            "work_order": ["in", wo_names],
+                            "docstatus": 1
+                        },
+                        fields=["name"]
+                    )
+                    se_names = [se.name for se in stock_entries]
+
+                    if se_names:
+                        # Get Stock Transfers that reference these Stock Entries
+                        # and transfer to a rejected warehouse
+                        stock_transfers = frappe.get_all(
+                            "Stock Transfer",
                             filters={
-                                "parent": fg.serial_and_batch_bundle
+                                "docstatus": 1,
+                                "target_warehouse": ["!=", ""]
                             },
-                            fields=[
-                                "batch_no"
-                            ]
+                            fields=["name", "target_warehouse"]
                         )
 
-                        for batch_row in batch_entries:
+                        for st in stock_transfers:
+                            # Check if target warehouse is rejected warehouse
+                            is_rejected = frappe.db.get_value(
+                                "Warehouse",
+                                st.target_warehouse,
+                                "is_rejected_warehouse"
+                            )
 
-                            batch_qty = frappe.db.sql("""
-                                SELECT COALESCE(SUM(sle.actual_qty), 0)
-                                FROM `tabStock Ledger Entry` sle
-                                INNER JOIN `tabSerial and Batch Entry` sbe
-                                    ON sbe.parent = sle.serial_and_batch_bundle
-                                INNER JOIN `tabSerial and Batch Bundle` sabb
-                                    ON sabb.name = sbe.parent
-                                WHERE
-                                    sle.serial_and_batch_bundle IS NOT NULL
-                                    AND sle.warehouse = %s
-                                    AND sle.is_cancelled = 0
-                                    AND sbe.batch_no = %s
-                                    AND sabb.type_of_transaction = 'Inward'
-                                    AND sabb.voucher_type IN ('Stock Entry', 'Purchase Receipt')
-                            """, (
-                                so_warehouse,
-                                batch_row.batch_no
-                            ))[0][0] or 0
+                            if is_rejected:
+                                # Get transfer items that match our item and source Stock Entry
+                                st_items = frappe.get_all(
+                                    "Stock Transfer Item",
+                                    filters={
+                                        "parent": st.name,
+                                        "item_code": soi.item_code,
+                                        "source_document_type": "Stock Entry",
+                                        "source_document_name": ["in", se_names]
+                                    },
+                                    fields=["qty"]
+                                )
 
-                            clearence += flt(batch_qty)
+                                for sti in st_items:
+                                    after_clr_rejected += flt(sti.qty)
 
-            # -----------------------------------
-            # FALLBACK IF NO WO
-            # -----------------------------------
+                if not total_pcs:
+                    total_pcs = flt(soi.pieces)
+                if not total_weight:
+                    total_weight = flt(soi.qty)
 
-            if not total_pcs:
+            # ===================================
+            # TRADING ITEMS (is_manufacture = 0)
+            # ===================================
+            else:
+                # For trading items, no Work Orders exist
                 total_pcs = flt(soi.pieces)
-
-            if not total_weight:
                 total_weight = flt(soi.qty)
+
+                # Ready PC / Ready Weight from Purchase Receipt
+                # ONLY if PR warehouse == SO Item warehouse
+                pr_items = frappe.get_all(
+                    "Purchase Receipt Item",
+                    filters={
+                        "sales_order": so.name,
+                        "sales_order_item": soi.name,
+                        "warehouse": soi.warehouse,
+                        "docstatus": 1
+                    },
+                    fields=["qty", "pieces", "received_qty"]
+                )
+
+                ready_pc = sum(flt(pr.pieces) for pr in pr_items)
+                ready_weight = sum(flt(pr.qty) for pr in pr_items)
+
+                # Clearance from Purchase Receipt qty (only if warehouse matches)
+                clearence = ready_weight
+
+                # For trading items, no rejected warehouse logic
+                after_clr_rejected = 0
+
+            # -----------------------------------
+            # FORMULAS FOR CALCULATED FIELDS
+            # -----------------------------------
+
+            # Pending to Ready PC = Total PCS - Ready PC
+            pending_ready_pc = total_pcs - ready_pc
+
+            # Pending to Ready Weight = Total Weight - Ready Weight
+            pending_ready_weight = total_weight - ready_weight
+
+            # After MFG = Ready Weight - Clearence - After CLR (Rejected)
+            after_mfg = ready_weight - clearence - after_clr_rejected
+
+            # Pending CLR = max(0, After MFG) -- treat negative as 0
+            pending_clr = max(0, after_mfg)
 
             # -----------------------------------
             # GRADE & SECTION
             # -----------------------------------
-
             grade, section = get_grade_and_section(
                 soi.item_code,
                 soi.item_name
             )
 
             # -----------------------------------
-            # SALES INVOICE
+            # SALES INVOICE (DISPATCH)
             # -----------------------------------
-
             si_items = frappe.get_all(
                 "Sales Invoice Item",
                 filters={
@@ -443,29 +545,19 @@ def get_data(filters):
             )
 
             # -----------------------------------
-            # CLEARANCE
-            # -----------------------------------
-
-            clearence = clearence
-
-            # -----------------------------------
             # BALANCE
             # -----------------------------------
-
             balance_pcs = total_pcs - dispatch_pcs
-
             balance_weight = total_weight - dispatch_weight
 
+            # RFD = Clearence - Dispatch Weight
             rfd = clearence - dispatch_weight
 
             # -----------------------------------
             # LOCATION
             # -----------------------------------
-
             location = ""
-
             if so.customer_address:
-
                 location = frappe.db.get_value(
                     "Address",
                     so.customer_address,
@@ -475,7 +567,6 @@ def get_data(filters):
             # -----------------------------------
             # APPEND DATA
             # -----------------------------------
-
             data.append({
                 "customer": so.customer,
                 "party_name": so.customer_name,
@@ -492,6 +583,9 @@ def get_data(filters):
                 "pending_ready_pc": pending_ready_pc,
                 "pending_ready_weight": pending_ready_weight,
                 "clearence": clearence,
+                "after_mfg": after_mfg,
+                "pending_clr": pending_clr,
+                "after_clr_rejected": after_clr_rejected,
                 "dispatch_pcs": dispatch_pcs,
                 "dispatch_weight": dispatch_weight,
                 "balance_pcs": balance_pcs,

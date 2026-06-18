@@ -318,56 +318,85 @@ class StockTransfer(Document):
 
 @frappe.whitelist()
 def get_batch_stock(
-    source_warehouse=None, from_date=None, to_date=None, item_name=None
+    source_warehouse=None,
+    from_date=None,
+    to_date=None,
+    item_name=None
 ):
-
     conditions = ["sbe.warehouse = %(source_warehouse)s"]
 
     if from_date and to_date:
-        conditions.append("sabb.posting_date between %(from_date)s and %(to_date)s")
+        conditions.append(
+            "sabb.posting_date BETWEEN %(from_date)s AND %(to_date)s"
+        )
 
     if item_name:
-        conditions.append("i.item_name LIKE %(item_name)s")
+        conditions.append(
+            "i.item_name LIKE %(item_name)s"
+        )
 
     where_clause = " AND ".join(conditions)
 
     data = frappe.db.sql(
         f"""
-		SELECT
-			sbe.batch_no,
-			sabb.item_code,
-			i.item_name,
-			b.pieces,
-			b.average_length,
-			b.section_weight,
-            b.batch_qty,
-            b.reference_doctype,
-            b.reference_name
-		FROM `tabSerial and Batch Entry` sbe
+        SELECT
+            sbe.batch_no,
+            MAX(sabb.item_code) AS item_code,
+            MAX(i.item_name) AS item_name,
 
-		INNER JOIN `tabSerial and Batch Bundle` sabb
-			ON sabb.name = sbe.parent
+            SUM(
+                sbe.qty - IFNULL(sbe.delivered_qty, 0)
+            ) AS qty,
 
-		LEFT JOIN `tabBatch` b
-			ON b.name = sbe.batch_no
+            IFNULL(MAX(p.pieces), 0) AS pieces,
 
-		LEFT JOIN `tabItem` i
-			ON i.name = sabb.item_code
+            MAX(b.average_length) AS average_length,
+            MAX(b.section_weight) AS section_weight,
+            MAX(b.reference_doctype) AS reference_doctype,
+            MAX(b.reference_name) AS reference_name
 
-		WHERE
-			{where_clause}
-			AND sabb.is_cancelled = 0
+        FROM `tabSerial and Batch Entry` sbe
 
-		GROUP BY
-			sbe.batch_no
+        INNER JOIN `tabSerial and Batch Bundle` sabb
+            ON sabb.name = sbe.parent
 
-		HAVING
-			SUM(sbe.qty - IFNULL(sbe.delivered_qty, 0)) > 0
+        LEFT JOIN `tabBatch` b
+            ON b.name = sbe.batch_no
 
-		ORDER BY
-			sabb.posting_date ASC
+        LEFT JOIN `tabItem` i
+            ON i.name = sabb.item_code
 
-	""",
+        LEFT JOIN (
+            SELECT
+                sbe2.batch_no,
+                psle.warehouse,
+                SUM(psle.actual_qty) AS pieces
+            FROM `tabPiece Stock Ledger Entry` psle
+            INNER JOIN `tabSerial and Batch Entry` sbe2
+                ON sbe2.parent = psle.serial_and_batch_bundle
+            WHERE IFNULL(psle.is_cancelled, 0) = 0
+            GROUP BY
+                sbe2.batch_no,
+                psle.warehouse
+        ) p
+            ON p.batch_no = sbe.batch_no
+            AND p.warehouse = sbe.warehouse
+
+        WHERE
+            {where_clause}
+            AND sabb.is_cancelled = 0
+
+        GROUP BY
+            sbe.batch_no
+
+        HAVING
+            SUM(
+                sbe.qty - IFNULL(sbe.delivered_qty, 0)
+            ) > 0
+
+        ORDER BY
+            MAX(sabb.posting_date) ASC
+        """,
         {
             "source_warehouse": source_warehouse,
             "from_date": from_date,
