@@ -997,28 +997,28 @@ def populate_pending_work_orders(filters=None):
         values["company"] = filters.get("company")
 
     # Exclude already used Work Orders in other Finish Work Orders
-    if filters.get("current_doc"):
-        conditions.append("""
-            wo.name NOT IN (
-                SELECT pwo.work_order
-                FROM `tabPending Work Orders` pwo
-                INNER JOIN `tabFinish Work Order` fwo
-                    ON fwo.name = pwo.parent
-                WHERE fwo.docstatus != 2
-                AND fwo.name != %(current_doc)s
-            )
-        """)
-        values["current_doc"] = filters.get("current_doc")
-    else:
-        conditions.append("""
-            wo.name NOT IN (
-                SELECT pwo.work_order
-                FROM `tabPending Work Orders` pwo
-                INNER JOIN `tabFinish Work Order` fwo
-                    ON fwo.name = pwo.parent
-                WHERE fwo.docstatus != 2
-            )
-        """)
+    # if filters.get("current_doc"):
+    #     conditions.append("""
+    #         wo.name NOT IN (
+    #             SELECT pwo.work_order
+    #             FROM `tabPending Work Orders` pwo
+    #             INNER JOIN `tabFinish Work Order` fwo
+    #                 ON fwo.name = pwo.parent
+    #             WHERE fwo.docstatus != 2
+    #             AND fwo.name != %(current_doc)s
+    #         )
+    #     """)
+    #     values["current_doc"] = filters.get("current_doc")
+    # else:
+    #     conditions.append("""
+    #         wo.name NOT IN (
+    #             SELECT pwo.work_order
+    #             FROM `tabPending Work Orders` pwo
+    #             INNER JOIN `tabFinish Work Order` fwo
+    #                 ON fwo.name = pwo.parent
+    #             WHERE fwo.docstatus != 2
+    #         )
+    #     """)
 
     # Item Name Filter
     if filters.get("item_name"):
