@@ -292,7 +292,8 @@ def get_data(filters):
                 "rate",
                 "assorted_length",
                 "is_manufacture",
-                "warehouse"
+                "warehouse",
+                "stock_reserved_qty"
             ]
         )
 
@@ -311,6 +312,20 @@ def get_data(filters):
             # ===================================
             if soi.is_manufacture:
 
+                # -----------------------------------
+                # TOTAL PCS / TOTAL WEIGHT
+                # -----------------------------------
+                # These must always come from the Sales Order Item row itself.
+                # A single Sales Order can have multiple item rows with the
+                # SAME item_code but different length_size (e.g. 5.65m and
+                # 5.95m of the same section). Summing Work Order qty/pieces
+                # by sales_order + production_item alone lumps every such
+                # row together and gives identical (wrong) totals on every
+                # line, so we no longer derive total_pcs/total_weight from
+                # Work Order at all.
+                total_pcs = flt(soi.pieces)
+                total_weight = flt(soi.qty)
+
                 work_orders = frappe.get_all(
                     "Work Order",
                     filters={
@@ -327,81 +342,84 @@ def get_data(filters):
                     ]
                 )
 
-                total_pcs = 0
-                total_weight = 0
                 ready_pc = 0
                 ready_weight = 0
 
                 wo_names = [wo.name for wo in work_orders]
 
                 for wo in work_orders:
-                    total_pcs += flt(wo.pieces)
-                    total_weight += flt(wo.qty)
 
-                    # Pending Work Orders (from Finish Work Order)
-                    # Ready PC/Weight ALWAYS come from PWO - shows production status
+                    # -----------------------------------
+                    # READY PC / READY WEIGHT
+                    # -----------------------------------
+                    # Pending Work Orders rows carry their own "sales_order"
+                    # reference (the actual link back to the Sales Order)
+                    # plus "item" and "length_size"/"pieces". When an SO has
+                    # two lines for the same item_code, this is the only way
+                    # to tell which line a given Pending Work Orders row
+                    # belongs to, so match on sales_order + item + length_size
+                    # (the SO Item's own length/section identity), not just
+                    # work_order name.
                     pwo_rows = frappe.get_all(
                         "Pending Work Orders",
                         filters={
                             "work_order": wo.name,
+                            "sales_order": so.name,
+                            "item": soi.item_code,
+                            "length_size": soi.length_size,
                             "docstatus": 1
                         },
                         fields=[
                             "ready_pieces",
                             "ready_qty",
                             "sales_order",
+                            "item",
+                            "item_name",
+                            "length_size",
+                            "pieces",
+                            "qty",
                             "target_warehouse",
                             "stock_entry_reference"
                         ]
                     )
 
                     for pwo in pwo_rows:
+                        # Extra safety net: if item naming differs (e.g. a
+                        # variant got renamed) don't count it as a match
+                        # even though the item code lined up.
+                        if pwo.item_name and soi.item_name and pwo.item_name != soi.item_name:
+                            continue
+
                         ready_pc += flt(pwo.ready_pieces)
                         ready_weight += flt(pwo.ready_qty)
 
-                # Clearance from Stock Reservation Entry
-                # ROBUST QUERY: Try multiple matching strategies
-                # Strategy 1: Match by voucher_no + item_code + warehouse
-                # Strategy 2: Match by voucher_detail_no (SO Item name)
-                clearence = 0
-
-                if soi.warehouse:
-                    # Strategy 1: voucher + item + warehouse
-                    sre_rows = frappe.get_all(
-                        "Stock Reservation Entry",
-                        filters={
-                            "voucher_type": "Sales Order",
-                            "voucher_no": so.name,
-                            "item_code": soi.item_code,
-                            "warehouse": soi.warehouse,
-                            "docstatus": ["in", [1, 2]]
-                        },
-                        fields=["reserved_qty", "delivered_qty"]
-                    )
-                    clearence = sum(flt(sre.reserved_qty) for sre in sre_rows)
+                # Clearance
+                # PRIMARY SOURCE: the Sales Order Item's own
+                # "stock_reserved_qty" field. This is maintained
+                # automatically by Frappe per SO Item row whenever a Stock
+                # Reservation Entry is created/cancelled against it, so it
+                # is already correct on a per-line basis even when two SO
+                # Item rows share the same item_code + warehouse (e.g. two
+                # different lengths of the same section). Re-deriving this
+                # from Stock Reservation Entry by item_code/warehouse (the
+                # old approach) lumps such rows together and was giving
+                # identical, wrong clearance on every line.
+                clearence = flt(soi.stock_reserved_qty)
 
                 if not clearence:
-                    # Strategy 2: Match by voucher_detail_no (SO Item row name)
+                    # Fallback only if stock_reserved_qty isn't populated
+                    # (e.g. very old records): use the exact SO Item row
+                    # match via voucher_detail_no. Do NOT fall back further
+                    # to item_code/warehouse-only matching -- that strategy
+                    # cannot distinguish between SO Item rows that share an
+                    # item_code and is what caused the bleed-across-rows
+                    # bug in the first place.
                     sre_rows = frappe.get_all(
                         "Stock Reservation Entry",
                         filters={
                             "voucher_type": "Sales Order",
                             "voucher_no": so.name,
                             "voucher_detail_no": soi.name,
-                            "docstatus": ["in", [1, 2]]
-                        },
-                        fields=["reserved_qty", "delivered_qty"]
-                    )
-                    clearence = sum(flt(sre.reserved_qty) for sre in sre_rows)
-
-                if not clearence:
-                    # Strategy 3: Match by voucher_no + item_code only (no warehouse)
-                    sre_rows = frappe.get_all(
-                        "Stock Reservation Entry",
-                        filters={
-                            "voucher_type": "Sales Order",
-                            "voucher_no": so.name,
-                            "item_code": soi.item_code,
                             "docstatus": ["in", [1, 2]]
                         },
                         fields=["reserved_qty", "delivered_qty"]
@@ -461,11 +479,6 @@ def get_data(filters):
 
                                 for sti in st_items:
                                     after_clr_rejected += flt(sti.qty)
-
-                if not total_pcs:
-                    total_pcs = flt(soi.pieces)
-                if not total_weight:
-                    total_weight = flt(soi.qty)
 
             # ===================================
             # TRADING ITEMS (is_manufacture = 0)
