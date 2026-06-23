@@ -315,14 +315,6 @@ def get_data(filters):
                 # -----------------------------------
                 # TOTAL PCS / TOTAL WEIGHT
                 # -----------------------------------
-                # These must always come from the Sales Order Item row itself.
-                # A single Sales Order can have multiple item rows with the
-                # SAME item_code but different length_size (e.g. 5.65m and
-                # 5.95m of the same section). Summing Work Order qty/pieces
-                # by sales_order + production_item alone lumps every such
-                # row together and gives identical (wrong) totals on every
-                # line, so we no longer derive total_pcs/total_weight from
-                # Work Order at all.
                 total_pcs = flt(soi.pieces)
                 total_weight = flt(soi.qty)
 
@@ -349,17 +341,6 @@ def get_data(filters):
 
                 for wo in work_orders:
 
-                    # -----------------------------------
-                    # READY PC / READY WEIGHT
-                    # -----------------------------------
-                    # Pending Work Orders rows carry their own "sales_order"
-                    # reference (the actual link back to the Sales Order)
-                    # plus "item" and "length_size"/"pieces". When an SO has
-                    # two lines for the same item_code, this is the only way
-                    # to tell which line a given Pending Work Orders row
-                    # belongs to, so match on sales_order + item + length_size
-                    # (the SO Item's own length/section identity), not just
-                    # work_order name.
                     pwo_rows = frappe.get_all(
                         "Pending Work Orders",
                         filters={
@@ -384,9 +365,6 @@ def get_data(filters):
                     )
 
                     for pwo in pwo_rows:
-                        # Extra safety net: if item naming differs (e.g. a
-                        # variant got renamed) don't count it as a match
-                        # even though the item code lined up.
                         if pwo.item_name and soi.item_name and pwo.item_name != soi.item_name:
                             continue
 
@@ -394,26 +372,9 @@ def get_data(filters):
                         ready_weight += flt(pwo.ready_qty)
 
                 # Clearance
-                # PRIMARY SOURCE: the Sales Order Item's own
-                # "stock_reserved_qty" field. This is maintained
-                # automatically by Frappe per SO Item row whenever a Stock
-                # Reservation Entry is created/cancelled against it, so it
-                # is already correct on a per-line basis even when two SO
-                # Item rows share the same item_code + warehouse (e.g. two
-                # different lengths of the same section). Re-deriving this
-                # from Stock Reservation Entry by item_code/warehouse (the
-                # old approach) lumps such rows together and was giving
-                # identical, wrong clearance on every line.
                 clearence = flt(soi.stock_reserved_qty)
 
                 if not clearence:
-                    # Fallback only if stock_reserved_qty isn't populated
-                    # (e.g. very old records): use the exact SO Item row
-                    # match via voucher_detail_no. Do NOT fall back further
-                    # to item_code/warehouse-only matching -- that strategy
-                    # cannot distinguish between SO Item rows that share an
-                    # item_code and is what caused the bleed-across-rows
-                    # bug in the first place.
                     sre_rows = frappe.get_all(
                         "Stock Reservation Entry",
                         filters={
@@ -429,11 +390,9 @@ def get_data(filters):
                 # ===================================
                 # AFTER CLR (REJECTED) - Stock Transfer to Rejected Warehouse
                 # ===================================
-                # Flow: Stock Transfer -> transfer_item -> source_document_name (Stock Entry) -> work_order -> sales_order
                 after_clr_rejected = 0
 
                 if wo_names:
-                    # Get all Stock Entries linked to these Work Orders
                     stock_entries = frappe.get_all(
                         "Stock Entry",
                         filters={
@@ -445,8 +404,6 @@ def get_data(filters):
                     se_names = [se.name for se in stock_entries]
 
                     if se_names:
-                        # Get Stock Transfers that reference these Stock Entries
-                        # and transfer to a rejected warehouse
                         stock_transfers = frappe.get_all(
                             "Stock Transfer",
                             filters={
@@ -457,7 +414,6 @@ def get_data(filters):
                         )
 
                         for st in stock_transfers:
-                            # Check if target warehouse is rejected warehouse
                             is_rejected = frappe.db.get_value(
                                 "Warehouse",
                                 st.target_warehouse,
@@ -465,7 +421,6 @@ def get_data(filters):
                             )
 
                             if is_rejected:
-                                # Get transfer items that match our item and source Stock Entry
                                 st_items = frappe.get_all(
                                     "Stock Transfer Item",
                                     filters={
@@ -484,12 +439,9 @@ def get_data(filters):
             # TRADING ITEMS (is_manufacture = 0)
             # ===================================
             else:
-                # For trading items, no Work Orders exist
                 total_pcs = flt(soi.pieces)
                 total_weight = flt(soi.qty)
 
-                # Ready PC / Ready Weight from Purchase Receipt
-                # ONLY if PR warehouse == SO Item warehouse
                 pr_items = frappe.get_all(
                     "Purchase Receipt Item",
                     filters={
@@ -504,10 +456,8 @@ def get_data(filters):
                 ready_pc = sum(flt(pr.pieces) for pr in pr_items)
                 ready_weight = sum(flt(pr.qty) for pr in pr_items)
 
-                # Clearance from Purchase Receipt qty (only if warehouse matches)
                 clearence = ready_weight
 
-                # For trading items, no rejected warehouse logic
                 after_clr_rejected = 0
 
             # -----------------------------------
@@ -517,11 +467,11 @@ def get_data(filters):
             # Pending to Ready PC = Total PCS - Ready PC
             pending_ready_pc = total_pcs - ready_pc
 
-            # Pending to Ready Weight = Total Weight - Ready Weight
-            pending_ready_weight = total_weight - ready_weight
+            # After MFG = Total Weight - Ready Weight (if negative, show 0)
+            after_mfg = max(0, total_weight - ready_weight)
 
-            # After MFG = Ready Weight - Clearence - After CLR (Rejected)
-            after_mfg = ready_weight - clearence - after_clr_rejected
+            # Pending to Ready Weight = After MFG + After CLR (Rejected)
+            pending_ready_weight = after_mfg + after_clr_rejected
 
             # Pending CLR = max(0, After MFG) -- treat negative as 0
             pending_clr = max(0, after_mfg)

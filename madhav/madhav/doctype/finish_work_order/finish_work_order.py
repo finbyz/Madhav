@@ -284,9 +284,14 @@ class FinishWorkOrder(Document):
                 message=f"Reserved {reserve_qty} of {item_code} in {warehouse} for SO {sales_order} (Batch: {batch_no})"
             )
 
-
+    def update_remarks_from_so(self):
+        for row in self.pending_work_orders:
+            if row.sales_order and row.work_order:
+                soi = frappe.db.get_value("Work Order", row.work_order, "sales_order_item")
+                frappe.db.set_value("Sales Order Item", soi, "remarks", row.remarks or "")
 
     def on_submit(self):
+        self.update_remarks_from_so()
         # ==============================
         # BUILD FIFO RAW MATERIAL POOL
         # ==============================

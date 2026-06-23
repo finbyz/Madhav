@@ -137,7 +137,7 @@ frappe.ui.form.on("Finish Work Order", {
                         row.ready_pieces = wo.pending_pcs;
 
                         row.variation = wo.variation_allowed;
-
+                        row.remarks = wo.remarks;
                         row.po_no = wo.po_no;
 
                         row.actual_weight = wo.weight_per_meter;

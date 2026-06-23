@@ -7,7 +7,12 @@ frappe.ui.form.on('Sales Order', {
     },
 
     refresh(frm) {
+        frm.remove_custom_button(__("Update Items"));
 
+		// Add custom button
+		frm.add_custom_button(__("Update Items"), () => {
+			madhav_update_sales_items({ frm: frm });
+		});
         frm.remove_custom_button(__('Material Request'), __('Create'));
 
         frm.add_custom_button(
@@ -687,4 +692,154 @@ function update_taxes_fields(frm) {
     });
 
     frm.refresh_field('taxes');
+}
+
+function madhav_update_sales_items(opts) {
+	const frm = opts.frm;
+
+	const child_meta = frappe.get_meta("Sales Order Item");
+
+	const get_precision = (fieldname) => {
+		let field = child_meta.fields.find(
+			(df) => df.fieldname === fieldname
+		);
+
+		return field ? field.precision : 2;
+	};
+
+	let data = frm.doc.items.map((d) => {
+		return {
+			docname: d.name,
+			name: d.name,
+			item_code: d.item_code,
+			item_name: d.item_name,
+			delivery_date: d.delivery_date,
+			conversion_factor: d.conversion_factor,
+			qty: d.qty,
+			pieces: d.pieces,
+			length_size: d.length_size,
+			rate: d.rate,
+			uom: d.uom,
+		};
+	});
+
+	let dialog = new frappe.ui.Dialog({
+		title: __("Update Sales Items"),
+		size: "extra-large",
+
+		fields: [
+			{
+				fieldname: "trans_items",
+				fieldtype: "Table",
+				label: __("Items"),
+				cannot_add_rows: false,
+				in_place_edit: false,
+				reqd: 1,
+				data: data,
+				get_data: () => data,
+
+				fields: [
+					{
+						fieldtype: "Data",
+						fieldname: "docname",
+						hidden: 1,
+					},
+					{
+						fieldtype: "Link",
+						fieldname: "item_code",
+						options: "Item",
+						in_list_view: 1,
+						read_only: 0,
+						label: __("Item Code"),
+					},
+					{
+						fieldtype: "Date",
+						fieldname: "delivery_date",
+						in_list_view: 1,
+						reqd: 1,
+						label: __("Delivery Date"),
+					},
+					{
+						fieldtype: "Data",
+						fieldname: "item_name",
+						in_list_view: 1,
+						read_only: 1,
+						label: __("Item Name"),
+					},
+					{
+						fieldtype: "Float",
+						fieldname: "qty",
+						in_list_view: 1,
+						label: __("Qty"),
+						precision: get_precision("qty"),
+                        columns: 1
+
+					},
+					{
+						fieldtype: "Float",
+						fieldname: "pieces",
+						in_list_view: 1,
+						label: __("Pieces"),
+						precision: get_precision("pieces"),
+                        columns: 1
+
+					},
+					{
+						fieldtype: "Float",
+						fieldname: "length_size",
+						in_list_view: 1,
+						label: __("Length / Size"),
+						precision: get_precision("length_size"),
+                        columns: 1
+
+					},
+					{
+						fieldtype: "Currency",
+						fieldname: "rate",
+						in_list_view: 1,
+						label: __("Rate"),
+						precision: get_precision("rate"),
+					},
+					{
+						fieldtype: "Link",
+						fieldname: "uom",
+						options: "UOM",
+						label: __("UOM"),
+					},
+					{
+						fieldtype: "Float",
+						fieldname: "conversion_factor",
+						label: __("Conversion Factor"),
+						precision: get_precision(
+							"conversion_factor"
+						),
+					},
+				],
+			},
+		],
+
+		primary_action_label: __("Update"),
+
+		primary_action(values) {
+			frappe.call({
+				method:
+					"madhav.api.update_child_qty_rate",
+				freeze: true,
+				args: {
+					parent_doctype: "Sales Order",
+					trans_items: JSON.stringify(
+						values.trans_items
+					),
+					parent_doctype_name: frm.doc.name,
+					child_docname: "items",
+				},
+				callback() {
+					dialog.hide();
+					frm.reload_doc();
+				},
+			});
+		},
+	});
+
+	dialog.show();
 }

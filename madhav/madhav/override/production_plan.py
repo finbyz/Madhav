@@ -47,7 +47,7 @@ class CustomProductionPlan(ERPNextProductionPlan):
 				so_item = frappe.db.get_value(
 					"Sales Order Item",
 					row.sales_order_item,
-					["pieces", "length_size","assorted_length","production_plan_pieces"],
+					["pieces", "length_size","assorted_length","production_plan_pieces","remarks"],
 					as_dict=True,
 				)
 				frappe.throw(str(so_item))
@@ -62,6 +62,7 @@ class CustomProductionPlan(ERPNextProductionPlan):
 						row.length = meters_to_inches(so_item.length_size)
 						row.length_size_m = so_item.length_size or 0.0
 					row.assorted_length = so_item.assorted_length
+					row.remark = so_item.remarks
 
 				# Get customer information from Sales Order
 				so_details = frappe.db.get_value(
@@ -120,6 +121,7 @@ class CustomProductionPlan(ERPNextProductionPlan):
 				so_item.parent,
 				so_item.item_code,
 				so_item.warehouse,
+				so_item.remarks,
 				so_item.assorted_length,
 				so_item.qty,
 				so_item.production_plan_pieces,
@@ -243,6 +245,7 @@ class CustomProductionPlan(ERPNextProductionPlan):
 					row.sales_order_item,
 					[
 						"pieces",
+						"remarks",
 						"production_plan_pieces",
 						"length_size",
 						"assorted_length",
@@ -254,6 +257,7 @@ class CustomProductionPlan(ERPNextProductionPlan):
 					row.pending_pieces = so_item.production_plan_pieces or 0
 					row.pieces = flt(so_item.pieces or 0) - flt(so_item.production_plan_pieces or 0)
 					row.assorted_length = so_item.assorted_length
+					row.remark = so_item.remarks
 		self.calculate_total_planned_qty()
 
 def custom_get_sales_orders(self):
