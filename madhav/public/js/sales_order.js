@@ -695,151 +695,261 @@ function update_taxes_fields(frm) {
 }
 
 function madhav_update_sales_items(opts) {
-	const frm = opts.frm;
+const frm = opts.frm;
+const child_meta = frappe.get_meta("Sales Order Item");
 
-	const child_meta = frappe.get_meta("Sales Order Item");
 
-	const get_precision = (fieldname) => {
-		let field = child_meta.fields.find(
-			(df) => df.fieldname === fieldname
-		);
+const get_precision = (fieldname) => {
+    let field = child_meta.fields.find((df) => df.fieldname === fieldname);
+    return field ? field.precision : 2;
+};
 
-		return field ? field.precision : 2;
-	};
+const apply_length_logic = (grid_row, force = false) => {
+    if (!grid_row || !grid_row.doc) return;
+    if (!force && grid_row.doc.length_size) return;
 
-	let data = frm.doc.items.map((d) => {
-		return {
-			docname: d.name,
-			name: d.name,
-			item_code: d.item_code,
-			item_name: d.item_name,
-			delivery_date: d.delivery_date,
-			conversion_factor: d.conversion_factor,
-			qty: d.qty,
-			pieces: d.pieces,
-			length_size: d.length_size,
-			rate: d.rate,
-			uom: d.uom,
-		};
-	});
+    let val = (grid_row.doc.assorted_length || "").toString().toLowerCase();
+    let new_length;
 
-	let dialog = new frappe.ui.Dialog({
-		title: __("Update Sales Items"),
-		size: "extra-large",
+    if (val.includes("t")) new_length = 6;
+    else if (val.includes("f")) new_length = 11;
+    else return;
 
-		fields: [
-			{
-				fieldname: "trans_items",
-				fieldtype: "Table",
-				label: __("Items"),
-				cannot_add_rows: false,
-				in_place_edit: false,
-				reqd: 1,
-				data: data,
-				get_data: () => data,
+    grid_row.doc.length_size = new_length;
+    grid_row.refresh_field("length_size");
+};
 
-				fields: [
-					{
-						fieldtype: "Data",
-						fieldname: "docname",
-						hidden: 1,
-					},
-					{
-						fieldtype: "Link",
-						fieldname: "item_code",
-						options: "Item",
-						in_list_view: 1,
-						read_only: 0,
-						label: __("Item Code"),
-					},
-					{
-						fieldtype: "Date",
-						fieldname: "delivery_date",
-						in_list_view: 1,
-						reqd: 1,
-						label: __("Delivery Date"),
-					},
-					{
-						fieldtype: "Data",
-						fieldname: "item_name",
-						in_list_view: 1,
-						read_only: 1,
-						label: __("Item Name"),
-					},
-					{
-						fieldtype: "Float",
-						fieldname: "qty",
-						in_list_view: 1,
-						label: __("Qty"),
-						precision: get_precision("qty"),
-                        columns: 1
+const calculate_pieces = (grid_row, force = false) => {
+    if (!grid_row || !grid_row.doc) return;
 
-					},
-					{
-						fieldtype: "Float",
-						fieldname: "pieces",
-						in_list_view: 1,
-						label: __("Pieces"),
-						precision: get_precision("pieces"),
-                        columns: 1
+    if (!force && grid_row.doc.pieces && grid_row.doc.pieces != 0) return;
 
-					},
-					{
-						fieldtype: "Float",
-						fieldname: "length_size",
-						in_list_view: 1,
-						label: __("Length / Size"),
-						precision: get_precision("length_size"),
-                        columns: 1
+    if (!grid_row.doc.qty || !grid_row.doc.length_size || !grid_row.doc.item_code) return;
 
-					},
-					{
-						fieldtype: "Currency",
-						fieldname: "rate",
-						in_list_view: 1,
-						label: __("Rate"),
-						precision: get_precision("rate"),
-					},
-					{
-						fieldtype: "Link",
-						fieldname: "uom",
-						options: "UOM",
-						label: __("UOM"),
-					},
-					{
-						fieldtype: "Float",
-						fieldname: "conversion_factor",
-						label: __("Conversion Factor"),
-						precision: get_precision(
-							"conversion_factor"
-						),
-					},
-				],
-			},
-		],
+    frappe.db.get_value(
+        "Item",
+        grid_row.doc.item_code,
+        "weight_per_meter"
+    ).then((r) => {
+        let section_weight = r.message?.weight_per_meter;
 
-		primary_action_label: __("Update"),
+        if (!section_weight) return;
 
-		primary_action(values) {
-			frappe.call({
-				method:
-					"madhav.api.update_child_qty_rate",
-				freeze: true,
-				args: {
-					parent_doctype: "Sales Order",
-					trans_items: JSON.stringify(
-						values.trans_items
-					),
-					parent_doctype_name: frm.doc.name,
-					child_docname: "items",
-				},
-				callback() {
-					dialog.hide();
-					frm.reload_doc();
-				},
-			});
-		},
-	});
+        let qty_kg = flt(grid_row.doc.qty) * 1000;
+        let pieces = qty_kg / (
+            section_weight * flt(grid_row.doc.length_size)
+        );
 
-	dialog.show();
+        grid_row.doc.section_weight = section_weight;
+        grid_row.doc.pieces = Math.round(pieces);
+
+        grid_row.refresh_field("section_weight");
+        grid_row.refresh_field("pieces");
+    });
+};
+
+let data = frm.doc.items.map((d) => ({
+    docname: d.name,
+    name: d.name,
+    item_code: d.item_code,
+    item_name: d.item_name,
+    delivery_date: d.delivery_date,
+    conversion_factor: d.conversion_factor,
+    qty: d.qty,
+    pieces: d.pieces,
+    length_size: d.length_size,
+    section_weight: d.section_weight,
+    rate: d.rate,
+    uom: d.uom,
+    assorted_length: d.assorted_length,
+}));
+
+let dialog = new frappe.ui.Dialog({
+    title: __("Update Sales Items"),
+    size: "extra-large",
+
+    fields: [
+        {
+            fieldname: "trans_items",
+            fieldtype: "Table",
+            label: __("Items"),
+            cannot_add_rows: false,
+            in_place_edit: false,
+            reqd: 1,
+            data: data,
+            get_data: () => data,
+
+            fields: [
+                {
+                    fieldtype: "Data",
+                    fieldname: "docname",
+                    hidden: 1,
+                },
+                {
+                    fieldtype: "Link",
+                    fieldname: "item_code",
+                    options: "Item",
+                    in_list_view: 1,
+                    label: __("Item Code"),
+                    columns:1
+                },
+                {
+                    fieldtype: "Date",
+                    fieldname: "delivery_date",
+                    in_list_view: 1,
+                    reqd: 1,
+                    label: __("Delivery Date"),
+                },
+                {
+                    fieldtype: "Data",
+                    fieldname: "item_name",
+                    in_list_view: 1,
+                    read_only: 1,
+                    label: __("Item Name"),
+                },
+                {
+                    fieldtype: "Float",
+                    fieldname: "qty",
+                    in_list_view: 1,
+                    label: __("Qty"),
+                    precision: get_precision("qty"),
+                    columns:1
+                },
+                {
+                    fieldtype: "Float",
+                    fieldname: "pieces",
+                    in_list_view: 1,
+                    label: __("Pieces"),
+                    precision: get_precision("pieces"),
+                    columns:1
+                },
+                {
+                    fieldtype: "Float",
+                    fieldname: "length_size",
+                    in_list_view: 1,
+                    label: __("Length / Size"),
+                    precision: get_precision("length_size"),
+                    columns:1
+                },
+                {
+                    fieldtype: "Select",
+                    fieldname: "assorted_length",
+                    options: ["", "T/L", "F/L"],
+                    in_list_view: 1,
+                    label: __("Assorted Length"),
+                    columns:1
+                },
+                {
+                    fieldtype: "Float",
+                    fieldname: "section_weight",
+                    hidden: 1,
+                    precision: get_precision("section_weight"),
+                },
+                {
+                    fieldtype: "Currency",
+                    fieldname: "rate",
+                    in_list_view: 1,
+                    label: __("Rate"),
+                    precision: get_precision("rate"),
+                },
+                {
+                    fieldtype: "Link",
+                    fieldname: "uom",
+                    options: "UOM",
+                    label: __("UOM"),
+                },
+                {
+                    fieldtype: "Float",
+                    fieldname: "conversion_factor",
+                    label: __("Conversion Factor"),
+                    precision: get_precision("conversion_factor"),
+                },
+            ],
+        },
+    ],
+
+    primary_action_label: __("Update"),
+
+    primary_action(values) {
+        frappe.call({
+            method: "madhav.api.update_child_qty_rate",
+            freeze: true,
+            args: {
+                parent_doctype: "Sales Order",
+                trans_items: JSON.stringify(values.trans_items),
+                parent_doctype_name: frm.doc.name,
+                child_docname: "items",
+            },
+            callback() {
+                dialog.hide();
+                frm.reload_doc();
+            },
+        });
+    },
+});
+
+dialog.show();
+
+let grid = dialog.fields_dict.trans_items.grid;
+if (!grid) return;
+
+// Initial calculation
+grid.grid_rows.forEach((grid_row) => {
+    apply_length_logic(grid_row);
+    calculate_pieces(grid_row);
+});
+
+const get_grid_row = ($el) =>
+    $el.closest(".grid-row").data("grid_row");
+
+grid.wrapper.on("change", "input, select", function () {
+    let fieldname = $(this).attr("data-fieldname");
+    if (!fieldname) return;
+
+    setTimeout(() => {
+        let grid_row = get_grid_row($(this));
+
+        if (!grid_row || !grid_row.doc) return;
+
+        if (fieldname === "item_code") {
+            if (!grid_row.doc.item_code) return;
+
+            frappe.db.get_value(
+                "Item",
+                grid_row.doc.item_code,
+                [
+                    "item_name",
+                    "stock_uom",
+                    "weight_per_meter",
+                ]
+            ).then((r) => {
+                if (!r.message) return;
+
+                grid_row.doc.item_name = r.message.item_name || "";
+                grid_row.doc.uom = r.message.stock_uom || "";
+                grid_row.doc.section_weight =
+                    r.message.weight_per_meter || 0;
+
+                grid_row.refresh_field("item_name");
+                grid_row.refresh_field("uom");
+                grid_row.refresh_field("section_weight");
+
+                calculate_pieces(grid_row, true);
+            });
+
+            return;
+        }
+
+        if (fieldname === "assorted_length") {
+            apply_length_logic(grid_row, true);
+            calculate_pieces(grid_row, true);
+            return;
+        }
+
+        if (["qty", "length_size"].includes(fieldname)) {
+            calculate_pieces(grid_row, true);
+        }
+    }, 0);
+});
+
 }
