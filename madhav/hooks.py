@@ -176,7 +176,9 @@ doc_events = {
         "validate": "madhav.doc_events.stock_reconciliation.validate",
     },
 
-    
+    "Serial and Batch Bundle":{
+        "before_cancel":"madhav.doc_events.serial_and_batch_bundle.before_cancel"
+        },
     "BOM": {
         "on_submit": "madhav.doc_events.bom.mark_item_as_manufacture",
     },
@@ -187,7 +189,6 @@ doc_events = {
         "before_validate": "madhav.doc_events.stock_entry.auto_calculation",
         "on_submit": "madhav.doc_events.stock_entry.after_submit",
         "before_submit": "madhav.doc_events.stock_entry.validation_section_weight",
-        "before_cancel": "madhav.doc_events.stock_entry.cancel_linked_psles",
         "validate": "madhav.doc_events.stock_entry.validate",
         "on_cancel":"madhav.doc_events.stock_entry.on_cancel"
     },
@@ -197,7 +198,6 @@ doc_events = {
         # "madhav.madhav.override.purchase_invoice.before_save",
         "madhav.doc_events.purchase_invoice.validate_pr_rejected_qty_has_return",
     ],
-    "before_cancel": "madhav.doc_events.stock_entry.cancel_linked_psles",
     "on_submit": "madhav.doc_events.purchase_invoice.on_submit",
 },
     "Purchase Receipt": {
@@ -219,7 +219,6 @@ doc_events = {
                     #   "madhav.doc_events.purchase_receipt.create_stock_reservation"
                     #    "madhav.doc_events.purchase_receipt.round_off_stock_qty"
                     ],
-        "before_cancel": "madhav.doc_events.stock_entry.cancel_linked_psles"
     },
     "Purchase Order": {
         "before_save": [
@@ -237,18 +236,13 @@ doc_events = {
     "Sales Order":{
         "before_validate":"madhav.doc_events.sales_order.calculate_qty_in_tonne"
     },
-    "Sales Invoice": {
-        "before_cancel": "madhav.doc_events.stock_entry.cancel_linked_psles"
-    },
+
     "Delivery Note": {
-        "before_cancel": "madhav.doc_events.stock_entry.cancel_linked_psles",
         "on_submit": "madhav.doc_events.delivery_note.on_submit",
         "validate": "madhav.doc_events.delivery_note.validate",
         "before_submit":"madhav.doc_events.delivery_note.before_submit"
     },
-    # "Purchase Invoice": {
-    #     "before_cancel": "madhav.doc_events.stock_entry.cancel_linked_psles"
-    # },
+
     "Attendance":{
       "validate":"madhav.doc_events.attendance.set_status",
       "after_insert":"madhav.doc_events.attendance.set_short_leave_count",
