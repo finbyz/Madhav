@@ -66,6 +66,8 @@ def make_material_request(source_name, target_doc=None, selected_items=None):
         return 0
 
     def update_item(source, target, source_parent):
+        target.deliver_as_qty = source_parent.deliver_as_qty
+        target.quality_required = source_parent.quality_required
         target.project = source_parent.project
 
         remaining_qty = get_remaining_qty(source)
