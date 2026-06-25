@@ -8,7 +8,7 @@ from frappe.utils import (
 	get_link_to_form,
 	getdate,
 )
-from frappe import _
+from frappe import _, cint
 from erpnext.controllers.accounts_controller import set_order_defaults,validate_and_delete_children
 from frappe.model.workflow import get_workflow_name, is_transition_condition_satisfied
 from erpnext.stock.get_item_details import get_conversion_factor
@@ -1392,7 +1392,6 @@ def make_purchase_order(source_name, selected_items=None, target_doc=None):
 
     return doc
 
-
 @frappe.whitelist()
 def update_child_qty_rate(parent_doctype, trans_items, parent_doctype_name, child_docname="items"):
     from erpnext.buying.doctype.supplier_quotation.supplier_quotation import get_purchased_items
@@ -1692,6 +1691,23 @@ def update_child_qty_rate(parent_doctype, trans_items, parent_doctype_name, chil
 
         if d.get("bom_no") and parent_doctype == "Sales Order":
             child_item.bom_no = d.get("bom_no")
+
+        # ===================================================================
+        # NEW CODE: Fetch is_manufacture from Item master and set cost_center/branch from parent
+        # ===================================================================
+        if parent_doctype == "Sales Order":
+            # Fetch is_manufacture from Item master if item_code exists
+            if child_item.item_code:
+                is_manufacture = frappe.db.get_value("Item", child_item.item_code, "is_manufacture")
+                if is_manufacture is not None:
+                    child_item.is_manufacture = cint(is_manufacture)
+
+            # Set cost_center and branch from parent Sales Order if available
+            if parent.get("cost_center"):
+                child_item.cost_center = parent.cost_center
+            if parent.get("branch"):
+                child_item.branch = parent.branch
+        # ===================================================================
 
         if parent_doctype in ["Sales Order", "Purchase Order"]:
             if flt(child_item.price_list_rate):

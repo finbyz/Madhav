@@ -9,12 +9,35 @@ from frappe.utils import flt
 class FinishWorkOrder(Document):
     def on_cancel(self):
         for row in self.pending_work_orders:
-            data = frappe.get_doc("Stock Entry",row.stock_entry_reference)
-            data.cancel()
-            row.db_set("stock_entry_reference","")
-            sre = frappe.get_doc("Stock Reservation Entry", {"from_voucher_type": self.doctype, "from_voucher_no": self.name, "from_voucher_detail_no": row.name})
-            sre.cancel()
-            sre.db_set("from_voucher_no", "")
+
+            if row.stock_entry_reference:
+                se = frappe.get_doc("Stock Entry", row.stock_entry_reference)
+                if se.docstatus == 1:
+                    se.cancel()
+
+                row.db_set("stock_entry_reference", "")
+                
+            if row.make_it_unplanned:
+                wo = frappe.get_doc("Work Order",row.work_order)
+                wo.cancel()
+                row.db_set("work_order","")
+
+            sre_name = frappe.db.exists(
+                "Stock Reservation Entry",
+                {
+                    "from_voucher_type": self.doctype,
+                    "from_voucher_no": self.name,
+                    "from_voucher_detail_no": row.name,
+                },
+            )
+
+            if sre_name:
+                sre = frappe.get_doc("Stock Reservation Entry", sre_name)
+
+                if sre.docstatus == 1:
+                    sre.cancel()
+
+                sre.db_set("from_voucher_no", "")
 
     def on_update(self):
         self.create_unplanned_work_orders()

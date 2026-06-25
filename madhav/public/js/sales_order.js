@@ -851,6 +851,7 @@ let dialog = new frappe.ui.Dialog({
                     in_list_view: 1,
                     label: __("Rate"),
                     precision: get_precision("rate"),
+                    columns:1
                 },
                 {
                     fieldtype: "Link",

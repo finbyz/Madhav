@@ -69,6 +69,9 @@ doctype_list_js = {
 # doctype_calendar_js = {"doctype" : "public/js/doctype_calendar.js"}
 doctype_calendar_js = {"Shift Assignment":"public/js/shift_assignment_calendar.js"}
 
+auto_cancel_exempted_doctypes = [
+	"Work Order",
+]
 # Svg Icons
 # ------------------
 # include app icons in desk

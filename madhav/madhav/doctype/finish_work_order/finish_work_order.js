@@ -4,6 +4,7 @@
 frappe.ui.form.on("Finish Work Order", {
     setup(frm) {
         // Apply custom formatters directly to the child docfields
+        frm.ignore_doctypes_on_cancel_all = ["Work Order"];
         const set_df_grid_formatter = (doctype, fieldname, title_field, link_doctype) => {
             let df = frappe.meta.get_docfield(doctype, fieldname);
             if (df) {
