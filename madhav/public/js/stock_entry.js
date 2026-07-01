@@ -5,16 +5,6 @@ frappe.ui.form.on('Stock Entry', {
     branch: function (frm) {
         update_items_fields(frm);
     },
-    validate(frm){
-        update_items_fields(frm);
-        if (frm.is_new()) { 
-            if (frm.doc.company === "MADHAV UDYOG PRIVATE LIMITED") {
-                frm.set_value("naming_series", "MUST.YY.-");
-            } else if (frm.doc.company === "MADHAV STELCO PRIVATE LIMITED") {
-                frm.set_value("naming_series", "MSST.YY.-");
-            }
-        }
-    },
     
     // Handler you can call from your existing custom button:
     get_items_from_cut_plan: function(frm) {

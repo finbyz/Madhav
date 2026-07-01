@@ -1,5 +1,5 @@
 {
- "add_total_row": 1,
+ "add_total_row": 0,
  "add_translate_data": 0,
  "columns": [],
  "creation": "2026-01-02 15:28:03.628406",
@@ -10,7 +10,7 @@
  "idx": 0,
  "is_standard": "Yes",
  "letter_head": null,
- "modified": "2026-05-26 11:51:27.825437",
+ "modified": "2026-06-30 11:07:17.121941",
  "modified_by": "Administrator",
  "module": "Madhav",
  "name": "PO Sheet",

@@ -4,6 +4,14 @@ from frappe.utils import get_url_to_form
 from frappe.utils import flt
 from erpnext.controllers.status_updater import OverAllowanceError
 
+
+def before_insert(self,method):
+    for row in self.items:
+        if row.quality_required :
+            default_quality_inspection_warehouse=frappe.db.get_value("Company",self.company,"quality_warehouse")
+            if default_quality_inspection_warehouse:
+                row.warehouse = default_quality_inspection_warehouse
+
 def validate_limit_on_save(self, method):
     for row in self.items:
         row.received_qty = row.qty + row.rejected_qty

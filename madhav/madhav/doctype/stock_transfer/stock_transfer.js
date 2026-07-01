@@ -5,6 +5,35 @@ frappe.ui.form.on("Stock Transfer", {
 
     setup(frm) {
 
+         const set_df_grid_formatter = (doctype, fieldname, title_field, link_doctype) => {
+        let df = frappe.meta.get_docfield(doctype, fieldname);
+        if (df) {
+            df.formatter = function(value, df, options, doc) {
+                if (!value) return value;
+
+                let title = "";
+
+                if (doc && title_field && doc[title_field]) {
+                    title = doc[title_field];
+                }
+
+                if (!title) {
+                    title = frappe.utils.get_link_title(link_doctype, value) || "";
+                }
+
+                return title && title !== value
+                    ? `${value}: ${title}`
+                    : value;
+            };
+        }
+    };
+
+    [
+        ["Stock Transfer Item", "customer", "customer_name", "Customer"],
+    ].forEach(([dt, field, title, link]) => {
+        set_df_grid_formatter(dt, field, title, link);
+    });
+
         frm.set_query("source_warehouse", function () {
             return {
                 filters: { company: frm.doc.company }

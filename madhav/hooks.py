@@ -204,6 +204,7 @@ doc_events = {
     "on_submit": "madhav.doc_events.purchase_invoice.on_submit",
 },
     "Purchase Receipt": {
+        "before_insert":"madhav.doc_events.purchase_receipt.before_insert",
         "before_save": [
             "madhav.doc_events.purchase_receipt.set_actual_rate_per_kg",
             # "madhav.doc_events.purchase_receipt.round_off_stock_qty",

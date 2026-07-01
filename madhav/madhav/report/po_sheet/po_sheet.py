@@ -3,13 +3,16 @@ from frappe.utils import flt
 
 
 def execute(filters=None):
-    columns = get_columns()
+    columns = get_columns(filters)
     data = get_data(filters)
     return columns, data
 
 
-def get_columns():
-    return [
+def get_columns(filters=None):
+    filters = filters or {}
+    show_batch_wise_flag = filters.get("show_batch_wise")
+
+    columns = [
         {
             "label": "Customer",
             "fieldname": "customer",
@@ -54,6 +57,24 @@ def get_columns():
             "fieldtype": "Data",
             "width": 90
         },
+    ]
+
+    # New Length / Batch No columns are only shown when "Show Batch Wise" is ticked
+    if show_batch_wise_flag:
+        columns.append({
+            "label": "New Length",
+            "fieldname": "new_length",
+            "fieldtype": "Data",
+            "width": 100
+        })
+        columns.append({
+            "label": "Batch No",
+            "fieldname": "batch_no",
+            "fieldtype": "Data",
+            "width": 120
+        })
+
+    columns += [
         {
             "label": "PCS",
             "fieldname": "pcs",
@@ -183,6 +204,8 @@ def get_columns():
         },
     ]
 
+    return columns
+
 
 def get_data(filters):
     filters = filters or {}
@@ -269,6 +292,7 @@ def get_data(filters):
     # TYPE FILTER (Manufacturing / Trading)
     # -----------------------------------
     type_filter = filters.get("type")
+    show_batch_wise_flag = filters.get("show_batch_wise")
 
     for so in sales_orders:
 
@@ -307,16 +331,19 @@ def get_data(filters):
             if type_filter == "Trading" and soi.is_manufacture:
                 continue
 
+            total_pcs = flt(soi.pieces)
+            total_weight = flt(soi.qty)
+            ready_pc = 0
+            ready_weight = 0
+            clearence = 0
+            after_clr_rejected = 0
+            new_length_val = ""
+            batch_no_val = ""
+
             # ===================================
             # MANUFACTURING ITEMS (is_manufacture = 1)
             # ===================================
             if soi.is_manufacture:
-
-                # -----------------------------------
-                # TOTAL PCS / TOTAL WEIGHT
-                # -----------------------------------
-                total_pcs = flt(soi.pieces)
-                total_weight = flt(soi.qty)
 
                 work_orders = frappe.get_all(
                     "Work Order",
@@ -334,69 +361,161 @@ def get_data(filters):
                     ]
                 )
 
-                ready_pc = 0
-                ready_weight = 0
-
                 wo_names = [wo.name for wo in work_orders]
 
-                for wo in work_orders:
+                # -----------------------------------
+                # FETCH ALL PWOS FOR THIS SO ITEM (INCLUDING VARIATIONS)
+                # Use or_filters for OR condition between sales_order and old_sales_order
+                # -----------------------------------
+                pwo_base_filters = [
+                    ["item", "=", soi.item_code],
+                    ["docstatus", "=", 1]
+                ]
 
-                    pwo_rows = frappe.get_all(
-                        "Pending Work Orders",
-                        filters={
-                            "work_order": wo.name,
-                            "sales_order": so.name,
-                            "item": soi.item_code,
-                            "length_size": soi.length_size,
-                            "docstatus": 1
-                        },
-                        fields=[
-                            "ready_pieces",
-                            "ready_qty",
-                            "sales_order",
-                            "item",
-                            "item_name",
-                            "length_size",
-                            "pieces",
-                            "qty",
-                            "target_warehouse",
-                            "stock_entry_reference"
-                        ]
+                pwo_or_filters = [
+                    ["sales_order", "=", so.name],
+                    ["old_sales_order", "=", so.name]
+                ]
+
+                all_pwo_rows = frappe.get_all(
+                    "Pending Work Orders",
+                    filters=pwo_base_filters,
+                    or_filters=pwo_or_filters,
+                    fields=[
+                        "name",
+                        "ready_pieces",
+                        "ready_qty",
+                        "sales_order",
+                        "item",
+                        "item_name",
+                        "length_size",
+                        "pieces",
+                        "qty",
+                        "target_warehouse",
+                        "stock_entry_reference",
+                        "work_order",
+                        "variation",
+                        "old_sales_order"
+                    ]
+                )
+
+                # Filter PWOs to only those matching this SO item
+                matching_pwo_rows = []
+                for pwo in all_pwo_rows:
+                    # Filter by item_name if both exist and differ
+                    if pwo.item_name and soi.item_name and pwo.item_name != soi.item_name:
+                        continue
+
+                    # A PWO matches this SO item if:
+                    # 1. It's a direct match (same SO, same length, not a variation)
+                    # 2. It's a variation (old_sales_order matches, variation=1)
+                    is_direct_match = (
+                        pwo.sales_order == so.name
+                        and flt(pwo.variation) == 0
+                        and flt(pwo.length_size) == flt(soi.length_size)
+                    )
+                    is_variation = (
+                        pwo.old_sales_order == so.name
+                        and flt(pwo.variation) == 1
                     )
 
-                    for pwo in pwo_rows:
-                        if pwo.item_name and soi.item_name and pwo.item_name != soi.item_name:
-                            continue
+                    if is_direct_match or is_variation:
+                        matching_pwo_rows.append(pwo)
 
-                        ready_pc += flt(pwo.ready_pieces)
-                        ready_weight += flt(pwo.ready_qty)
+                # -----------------------------------
+                # ACTIVE (STILL PENDING) PWO ROWS
+                # A PWO whose linked Work Order has already been fully
+                # completed (pending_pcs <= 0) is no longer "pending" — it
+                # has already been produced/reserved/dispatched and should
+                # not show up as its own extra row in the batch-wise
+                # breakdown. It is still counted in the aggregate totals
+                # below (Ready PC / Ready Weight), just not split out as a
+                # separate completed row.
+                # -----------------------------------
+                wo_pending_map = {wo.name: flt(wo.pending_pcs) for wo in work_orders}
 
-                # Clearance
+                active_pwo_rows = [
+                    pwo for pwo in matching_pwo_rows
+                    if not pwo.work_order or wo_pending_map.get(pwo.work_order, 0) > 0
+                ]
+
+                # All WO names (from original fetch + from matching PWOs)
+                all_wo_names = list(set(
+                    wo_names + [pwo.work_order for pwo in matching_pwo_rows if pwo.work_order]
+                ))
+
+                # -----------------------------------
+                # TOTALS FROM MATCHING PWOS
+                # -----------------------------------
+                total_ready_pc = sum(flt(pwo.ready_pieces) for pwo in matching_pwo_rows)
+                total_ready_weight = sum(flt(pwo.ready_qty) for pwo in matching_pwo_rows)
+
+
+                # -----------------------------------
+                # CLEARANCE / STOCK RESERVATION
+                # -----------------------------------
                 clearence = flt(soi.stock_reserved_qty)
 
+                sre_rows = frappe.get_all(
+                    "Stock Reservation Entry",
+                    filters={
+                        "voucher_type": "Sales Order",
+                        "voucher_no": so.name,
+                        "voucher_detail_no": soi.name,
+                        "docstatus": ["in", [1, 2]]
+                    },
+                    fields=["name", "reserved_qty", "delivered_qty", "warehouse"]
+                )
+
                 if not clearence:
-                    sre_rows = frappe.get_all(
-                        "Stock Reservation Entry",
-                        filters={
-                            "voucher_type": "Sales Order",
-                            "voucher_no": so.name,
-                            "voucher_detail_no": soi.name,
-                            "docstatus": ["in", [1, 2]]
-                        },
-                        fields=["reserved_qty", "delivered_qty"]
-                    )
                     clearence = sum(flt(sre.reserved_qty) for sre in sre_rows)
 
-                # ===================================
-                # AFTER CLR (REJECTED) - Stock Transfer to Rejected Warehouse
-                # ===================================
-                after_clr_rejected = 0
+                # -----------------------------------
+                # FETCH BATCH NOS + LENGTHS FROM SRE CHILD TABLE (sb_entries)
+                # New Length comes directly from the batch's own length
+                # (sb_entries.length), not from the PWO variation flag.
+                # -----------------------------------
+                sre_batches_by_warehouse = {}
+                sre_qty_by_warehouse = {}
+                sre_lengths_by_warehouse = {}
 
-                if wo_names:
+                if sre_rows:
+                    # Initialize warehouse mappings from parent SRE
+                    for sre in sre_rows:
+                        wh = sre.warehouse or ""
+                        if wh not in sre_batches_by_warehouse:
+                            sre_batches_by_warehouse[wh] = []
+                            sre_qty_by_warehouse[wh] = 0
+                            sre_lengths_by_warehouse[wh] = []
+                        sre_qty_by_warehouse[wh] += flt(sre.reserved_qty)
+
+                    # Fetch child table entries via get_doc for reliability
+                    for sre in sre_rows:
+                        try:
+                            sre_doc = frappe.get_doc("Stock Reservation Entry", sre.name)
+                            if hasattr(sre_doc, "sb_entries"):
+                                for sb in sre_doc.sb_entries:
+                                    wh = sb.warehouse or sre.warehouse or ""
+                                    if wh not in sre_batches_by_warehouse:
+                                        sre_batches_by_warehouse[wh] = []
+                                        sre_qty_by_warehouse[wh] = 0
+                                        sre_lengths_by_warehouse[wh] = []
+                                    if sb.batch_no:
+                                        sre_batches_by_warehouse[wh].append(sb.batch_no)
+                                    if sb.length:
+                                        sre_lengths_by_warehouse[wh].append(sb.length)
+                                    sre_qty_by_warehouse[wh] += flt(sb.qty)
+                        except Exception:
+                            continue
+
+                # ===================================
+                # AFTER CLR (REJECTED)
+                # ===================================
+                if all_wo_names:
                     stock_entries = frappe.get_all(
                         "Stock Entry",
                         filters={
-                            "work_order": ["in", wo_names],
+                            "work_order": ["in", all_wo_names],
                             "docstatus": 1
                         },
                         fields=["name"]
@@ -435,13 +554,29 @@ def get_data(filters):
                                 for sti in st_items:
                                     after_clr_rejected += flt(sti.qty)
 
+                ready_pc = total_ready_pc
+                ready_weight = total_ready_weight
+
+                # -----------------------------------
+                # NEW LENGTH: pulled directly from the batch
+                # (distinct lengths recorded on sb_entries), not from PWO variation
+                # -----------------------------------
+                all_lengths = []
+                for lengths in sre_lengths_by_warehouse.values():
+                    all_lengths.extend(lengths)
+                new_length_val = ", ".join(
+                    sorted(set(str(l) for l in all_lengths))
+                ) if all_lengths else ""
+
+                all_batches = []
+                for batches in sre_batches_by_warehouse.values():
+                    all_batches.extend(batches)
+                batch_no_val = ", ".join(list(set(all_batches))) if all_batches else ""
+
             # ===================================
             # TRADING ITEMS (is_manufacture = 0)
             # ===================================
             else:
-                total_pcs = flt(soi.pieces)
-                total_weight = flt(soi.qty)
-
                 pr_items = frappe.get_all(
                     "Purchase Receipt Item",
                     filters={
@@ -464,16 +599,9 @@ def get_data(filters):
             # FORMULAS FOR CALCULATED FIELDS
             # -----------------------------------
 
-            # Pending to Ready PC = Total PCS - Ready PC
             pending_ready_pc = total_pcs - ready_pc
-
-            # After MFG = Total Weight - Ready Weight (if negative, show 0)
             after_mfg = max(0, total_weight - ready_weight)
-
-            # Pending to Ready Weight = After MFG + After CLR (Rejected)
             pending_ready_weight = after_mfg + after_clr_rejected
-
-            # Pending CLR = max(0, After MFG) -- treat negative as 0
             pending_clr = max(0, after_mfg)
 
             # -----------------------------------
@@ -513,9 +641,6 @@ def get_data(filters):
             balance_pcs = total_pcs - dispatch_pcs
             balance_weight = total_weight - dispatch_weight
 
-            # RFD = Clearence - Dispatch Weight
-            rfd = clearence - dispatch_weight
-
             # -----------------------------------
             # LOCATION
             # -----------------------------------
@@ -530,36 +655,93 @@ def get_data(filters):
             # -----------------------------------
             # APPEND DATA
             # -----------------------------------
-            data.append({
-                "customer": so.customer,
-                "party_name": so.customer_name,
-                "sales_order": so.name,
-                "grade": grade,
-                "po_no": so.po_no,
-                "section": section,
-                "length": soi.length_size,
-                "pcs": total_pcs,
-                "assorted_length": soi.assorted_length,
-                "total_weight": total_weight,
-                "ready_pc": ready_pc,
-                "ready_weight": ready_weight,
-                "pending_ready_pc": pending_ready_pc,
-                "pending_ready_weight": pending_ready_weight,
-                "clearence": clearence,
-                "after_mfg": after_mfg,
-                "pending_clr": pending_clr,
-                "after_clr_rejected": after_clr_rejected,
-                "dispatch_pcs": dispatch_pcs,
-                "dispatch_weight": dispatch_weight,
-                "balance_pcs": balance_pcs,
-                "balance_weight": balance_weight,
-                "rfd": rfd,
-                "po_date": so.po_date,
-                "item_code": soi.item_code,
-                "delivery_date": so.delivery_date,
-                "rate": soi.rate,
-                "location": location,
-            })
+            if soi.is_manufacture and show_batch_wise_flag and active_pwo_rows:
+                # Batch-wise view: one row per still-pending (not yet fully
+                # completed) PWO
+                for pwo in active_pwo_rows:
+                    wh = pwo.target_warehouse or ""
+                    batches = sre_batches_by_warehouse.get(wh, [])
+                    pwo_batch_no = ", ".join(batches) if batches else ""
+                    pwo_clearence = sre_qty_by_warehouse.get(wh, clearence)
+
+                    # New Length per row: directly from the batch's own
+                    # length recorded for this warehouse, not PWO variation
+                    pwo_lengths = sre_lengths_by_warehouse.get(wh, [])
+                    pwo_new_length = ", ".join(
+                        sorted(set(str(l) for l in pwo_lengths))
+                    ) if pwo_lengths else ""
+
+                    data.append({
+                        "customer": so.customer,
+                        "party_name": so.customer_name,
+                        "sales_order": so.name,
+                        "grade": grade,
+                        "po_no": so.po_no,
+                        "section": section,
+                        "length": soi.length_size,
+                        "new_length": pwo_new_length,
+                        "batch_no": pwo_batch_no,
+                        "pcs": total_pcs,
+                        "assorted_length": soi.assorted_length,
+                        "total_weight": total_weight,
+                        "ready_pc": flt(pwo.ready_pieces),
+                        "ready_weight": flt(pwo.ready_qty),
+                        "pending_ready_pc": total_pcs - flt(pwo.ready_pieces),
+                        "pending_ready_weight": max(0, total_weight - flt(pwo.ready_qty)) + after_clr_rejected,
+                        "clearence": pwo_clearence,
+                        "after_mfg": max(0, total_weight - flt(pwo.ready_qty)),
+                        "pending_clr": max(0, total_weight - flt(pwo.ready_qty)),
+                        "after_clr_rejected": after_clr_rejected,
+                        "dispatch_pcs": dispatch_pcs,
+                        "dispatch_weight": dispatch_weight,
+                        "balance_pcs": total_pcs - dispatch_pcs,
+                        "balance_weight": total_weight - dispatch_weight,
+                        "rfd": pwo_clearence - dispatch_weight,
+                        "po_date": so.po_date,
+                        "item_code": soi.item_code,
+                        "delivery_date": so.delivery_date,
+                        "rate": soi.rate,
+                        "location": location,
+                    })
+            else:
+                # Normal aggregated view
+                # New Length / Batch No are only shown when "show_batch_wise"
+                # is ticked; otherwise leave them blank.
+                display_new_length = new_length_val if show_batch_wise_flag else ""
+                display_batch_no = batch_no_val if show_batch_wise_flag else ""
+
+                data.append({
+                    "customer": so.customer,
+                    "party_name": so.customer_name,
+                    "sales_order": so.name,
+                    "grade": grade,
+                    "po_no": so.po_no,
+                    "section": section,
+                    "length": soi.length_size,
+                    "new_length": display_new_length,
+                    "batch_no": display_batch_no,
+                    "pcs": total_pcs,
+                    "assorted_length": soi.assorted_length,
+                    "total_weight": total_weight,
+                    "ready_pc": ready_pc,
+                    "ready_weight": ready_weight,
+                    "pending_ready_pc": pending_ready_pc,
+                    "pending_ready_weight": pending_ready_weight,
+                    "clearence": clearence,
+                    "after_mfg": after_mfg,
+                    "pending_clr": pending_clr,
+                    "after_clr_rejected": after_clr_rejected,
+                    "dispatch_pcs": dispatch_pcs,
+                    "dispatch_weight": dispatch_weight,
+                    "balance_pcs": balance_pcs,
+                    "balance_weight": balance_weight,
+                    "rfd": clearence - dispatch_weight,
+                    "po_date": so.po_date,
+                    "item_code": soi.item_code,
+                    "delivery_date": so.delivery_date,
+                    "rate": soi.rate,
+                    "location": location,
+                })
 
     return data
 

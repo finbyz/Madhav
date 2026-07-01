@@ -8,15 +8,19 @@
  "field_order": [
   "batch",
   "item_code",
-  "item_name",
   "qty",
-  "pieces",
   "length",
-  "section_weight",
+  "source_document_type",
+  "source_document_name",
+  "customer",
+  "customer_name",
+  "column_break_gfco",
+  "item_name",
   "source_warehouse",
   "target_warehouse",
-  "source_document_type",
-  "source_document_name"
+  "pieces",
+  "section_weight",
+  "customer_po_no"
  ],
  "fields": [
   {
@@ -98,13 +102,35 @@
    "fieldtype": "Dynamic Link",
    "label": "Source Document Name",
    "options": "source_document_type"
+  },
+  {
+   "fieldname": "column_break_gfco",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "customer",
+   "fieldtype": "Link",
+   "label": "Customer",
+   "options": "Customer"
+  },
+  {
+   "fieldname": "customer_name",
+   "fieldtype": "Data",
+   "label": "Customer Name",
+   "read_only": 1
+  },
+  {
+   "fieldname": "customer_po_no",
+   "fieldtype": "Data",
+   "label": "Customer PO No.",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-06-03 17:04:48.997788",
+ "modified": "2026-06-29 16:54:12.886859",
  "modified_by": "Administrator",
  "module": "Madhav",
  "name": "Stock Transfer Item",

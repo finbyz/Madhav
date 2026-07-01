@@ -49,6 +49,12 @@ frappe.query_reports["PO Sheet"] = {
             fieldname: "po_no",
             label: __("PO No"),
             fieldtype: "Data"
+        },
+        {
+            "fieldname": "show_batch_wise",
+            "label": "Show Batch Wise",
+            "fieldtype": "Check",
+            "default": 0
         }
     ]
 };

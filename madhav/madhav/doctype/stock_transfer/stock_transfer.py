@@ -35,6 +35,16 @@ class StockTransfer(Document):
 
     def validate(self):
         self.validate_transfer_item_limits()
+        self.add_customer_and_po_no()
+        
+    def add_customer_and_po_no(self):
+        for row in self.transfer_item:
+            data = frappe.db.get_value("Stock Entry",row.source_document_name,"work_order")
+            if data:
+                wo = frappe.get_doc("Work Order",data)
+                row.customer = wo.customer
+                row.customer_name = frappe.db.get_value("Customer",wo.customer,"customer_name")
+                row.customer_po_no =  wo.po_no
 
     def on_submit(self):
         self.create_stock_entry()
@@ -67,23 +77,23 @@ class StockTransfer(Document):
             
             if not so_qty:
                 continue
-            
-            self.create_fg_stock_reservation(
-                item_code=row.item_code,
-                warehouse=self.target_warehouse,
-                qty=row.qty,
-                so_qty=so_qty,
-                name=self.name,
-                stock_uom=frappe.db.get_value("Item", row.item_code, "stock_uom"),
-                work_order=wo_name,
-                sales_order=wor.sales_order,
-                sales_order_item = wor.sales_order_item,
-                batch_no=row.batch,
-                quality_required=0,
-                from_voucher_type = self.doctype,
-                from_voucher_no = self.name,
-                from_voucher_detail_no = row.name
-            )
+            if wor.fg_warehouse == self.target_warehouse:
+                self.create_fg_stock_reservation(
+                    item_code=row.item_code,
+                    warehouse=self.target_warehouse,
+                    qty=row.qty,
+                    so_qty=so_qty,
+                    name=self.name,
+                    stock_uom=frappe.db.get_value("Item", row.item_code, "stock_uom"),
+                    work_order=wo_name,
+                    sales_order=wor.sales_order,
+                    sales_order_item = wor.sales_order_item,
+                    batch_no=row.batch,
+                    quality_required=0,
+                    from_voucher_type = self.doctype,
+                    from_voucher_no = self.name,
+                    from_voucher_detail_no = row.name
+                )
     
     def validate_transfer_item_limits(self):
         for item in self.transfer_item:
@@ -323,7 +333,10 @@ def get_batch_stock(
     to_date=None,
     item_name=None
 ):
-    conditions = ["sbe.warehouse = %(source_warehouse)s"]
+    conditions = [
+    "sabb.warehouse = %(source_warehouse)s",
+    "sbe.warehouse = %(source_warehouse)s"
+    ]
 
     if from_date and to_date:
         conditions.append(
@@ -405,5 +418,4 @@ def get_batch_stock(
         },
         as_dict=1,
     )
-    # frappe.throw(str(data))
     return data
