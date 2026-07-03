@@ -476,6 +476,7 @@ def get_batch_stock(
         WHERE
             {where_clause}
             AND sabb.is_cancelled = 0
+            And sabb.docstatus = 1
 
         GROUP BY
             sbe.batch_no
