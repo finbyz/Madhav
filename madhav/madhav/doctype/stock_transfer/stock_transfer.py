@@ -39,12 +39,50 @@ class StockTransfer(Document):
         
     def add_customer_and_po_no(self):
         for row in self.transfer_item:
-            data = frappe.db.get_value("Stock Entry",row.source_document_name,"work_order")
-            if data:
-                wo = frappe.get_doc("Work Order",data)
-                row.customer = wo.customer
-                row.customer_name = frappe.db.get_value("Customer",wo.customer,"customer_name")
-                row.customer_po_no =  wo.po_no
+            if row.source_document_type == "Stock Entry":
+                work_order = frappe.db.get_value(
+                    "Stock Entry",
+                    row.source_document_name,
+                    "work_order"
+                )
+
+                if work_order:
+                    wo = frappe.get_doc("Work Order", work_order)
+                    row.customer = wo.customer
+                    row.customer_name = frappe.db.get_value(
+                        "Customer", wo.customer, "customer_name"
+                    )
+                    row.customer_po_no = wo.po_no
+
+            elif row.source_document_type == "Purchase Receipt":
+                # Fetch Sales Order from Purchase Receipt Item
+                pr_item = frappe.db.get_value(
+                    "Purchase Receipt Item",
+                    {
+                        "parent": row.source_document_name,
+                        "item_code": row.item_code, 
+                        "batch_no": row.batch
+                    },
+                    ["sales_order", "sales_order_item"],
+                    as_dict=True,
+                )
+
+                if pr_item and pr_item.sales_order:
+                    so = frappe.db.get_value(
+                        "Sales Order",
+                        pr_item.sales_order,
+                        ["customer", "po_no"],
+                        as_dict=True,
+                    )
+
+                    if so:
+                        row.customer = so.customer
+                        row.customer_name = frappe.db.get_value(
+                            "Customer",
+                            so.customer,
+                            "customer_name",
+                        )
+                        row.customer_po_no = so.po_no
 
     def on_submit(self):
         self.create_stock_entry()
@@ -54,30 +92,70 @@ class StockTransfer(Document):
                 continue
             
             # Get work order name from the source document
-            wo_name = frappe.db.get_value(
-                row.source_document_type,
-                row.source_document_name,
-                "work_order"
-            )
-            if not wo_name:
-                continue
-            
-            # Fetch the Work Order doc to get sales_order and sales_order_item
-            wor = frappe.get_doc("Work Order", wo_name)
-            
-            if not wor.sales_order or not wor.sales_order_item:
-                continue
-            
-            # Get the qty from the specific Sales Order Item linked to this WO
-            so_qty = frappe.db.get_value(
-                "Sales Order Item",
-                wor.sales_order_item,   # this is the SO Item row name stored on WO
-                "qty"
-            )
-            
-            if not so_qty:
-                continue
-            if wor.fg_warehouse == self.target_warehouse:
+            if row.source_document_type == "Stock Entry":
+                wo_name = frappe.db.get_value(
+                    row.source_document_type,
+                    row.source_document_name,
+                    "work_order"
+                )
+                if not wo_name:
+                    continue
+                
+                # Fetch the Work Order doc to get sales_order and sales_order_item
+                wor = frappe.get_doc("Work Order", wo_name)
+                
+                if not wor.sales_order or not wor.sales_order_item:
+                    continue
+                
+                # Get the qty from the specific Sales Order Item linked to this WO
+                so_qty = frappe.db.get_value(
+                    "Sales Order Item",
+                    wor.sales_order_item,   # this is the SO Item row name stored on WO
+                    "qty"
+                )
+                
+                if not so_qty:
+                    continue
+                if wor.fg_warehouse == self.target_warehouse:
+                    self.create_fg_stock_reservation(
+                        item_code=row.item_code,
+                        warehouse=self.target_warehouse,
+                        qty=row.qty,
+                        so_qty=so_qty,
+                        name=self.name,
+                        stock_uom=frappe.db.get_value("Item", row.item_code, "stock_uom"),
+                        work_order=wo_name,
+                        sales_order=wor.sales_order,
+                        sales_order_item = wor.sales_order_item,
+                        batch_no=row.batch,
+                        quality_required=0,
+                        from_voucher_type = self.doctype,
+                        from_voucher_no = self.name,
+                        from_voucher_detail_no = row.name
+                    )
+            elif row.source_document_type == "Purchase Receipt":
+                pr_item = frappe.db.get_value(
+                    "Purchase Receipt Item",
+                    {
+                        "parent": row.source_document_name,
+                        "item_code": row.item_code,
+                    },
+                    ["sales_order", "sales_order_item"],
+                    as_dict=True,
+                )
+
+                if not pr_item or not pr_item.sales_order or not pr_item.sales_order_item:
+                    continue
+
+                so_qty = frappe.db.get_value(
+                    "Sales Order Item",
+                    pr_item.sales_order_item,
+                    "qty"
+                )
+
+                if not so_qty:
+                    continue
+
                 self.create_fg_stock_reservation(
                     item_code=row.item_code,
                     warehouse=self.target_warehouse,
@@ -85,16 +163,16 @@ class StockTransfer(Document):
                     so_qty=so_qty,
                     name=self.name,
                     stock_uom=frappe.db.get_value("Item", row.item_code, "stock_uom"),
-                    work_order=wo_name,
-                    sales_order=wor.sales_order,
-                    sales_order_item = wor.sales_order_item,
+                    work_order=None,
+                    sales_order=pr_item.sales_order,
+                    sales_order_item=pr_item.sales_order_item,
                     batch_no=row.batch,
                     quality_required=0,
-                    from_voucher_type = self.doctype,
-                    from_voucher_no = self.name,
-                    from_voucher_detail_no = row.name
+                    from_voucher_type=self.doctype,
+                    from_voucher_no=self.name,
+                    from_voucher_detail_no=row.name,
                 )
-    
+
     def validate_transfer_item_limits(self):
         for item in self.transfer_item:
             if not item.batch:

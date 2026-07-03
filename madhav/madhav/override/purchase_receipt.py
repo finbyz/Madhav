@@ -1,6 +1,6 @@
 from erpnext.stock.doctype.purchase_receipt.purchase_receipt import PurchaseReceipt as _PurchaseReceipt
 import frappe
-from frappe.utils import cint, flt
+from frappe.utils import cint, flt,get_datetime
 from erpnext.stock.get_item_details import get_conversion_factor
 
 
@@ -28,25 +28,7 @@ class PurchaseReceipt(_PurchaseReceipt):
                         self.supplier_delivery_note, existing[0].name
                     )
                 )
-        # for row in self.items or []:
-           
-        #     try:
-        #         # Get conversion factor for selected UOM against the item's stock UOM
-        #         if row.uom and row.item_code:
-                    
-        #             cf_resp = get_conversion_factor(item_code=row.item_code, uom=row.uom)
-                    
-        #             cf = flt(cf_resp.get("conversion_factor")) if isinstance(cf_resp, dict) else flt(cf_resp)
-                    
-        #             if cf:
-                        
-        #                 row.conversion_factor = cf
-        #                 # Ensure stock_qty stays in sync
-        #                 row.stock_qty = flt(row.qty) * cf
-        #                 frappe.throw("please check for in if..........."+str(row.stock_qty))
-        #     except Exception:
-        #         # Do not block save/submit just because conversion lookup failed
-        #         pass
+
 
     def validate_with_previous_doc(self):
         """Run core previous doc validation but neutralize UOM equality by temporarily aligning UOMs."""
@@ -83,4 +65,59 @@ class PurchaseReceipt(_PurchaseReceipt):
             self.validate_rate_with_reference_doc(
                 [["Purchase Order", "purchase_order", "purchase_order_item"]]
             )
+    def reserve_stock_for_sales_order(self):
+        if (
+            self.is_return
+            or not frappe.db.get_single_value("Stock Settings", "enable_stock_reservation")
+            or not frappe.db.get_single_value(
+                "Stock Settings", "auto_reserve_stock_for_sales_order_on_purchase"
+            )
+        ):
+            return
+
+        self.reload()  # reload to get the Serial and Batch Bundle Details
+
+        so_items_details_map = {}
+        for item in self.items:
+            if item.sales_order and item.sales_order_item:
+                soi = frappe.db.get_value(
+                    "Sales Order Item",
+                    item.sales_order_item,
+                    ["warehouse", "item_code"],
+                    as_dict=True,
+                )
+
+                if not soi:
+                    continue
+
+                if soi.item_code != item.item_code:
+                    continue
+
+                if soi.warehouse != item.warehouse:
+                    continue
+
+                item_details = {
+                    "sales_order_item": item.sales_order_item,
+                    "item_code": item.item_code,
+                    "warehouse": item.warehouse,
+                    "qty_to_reserve": item.stock_qty,
+                    "from_voucher_no": item.parent,
+                    "from_voucher_detail_no": item.name,
+                    "serial_and_batch_bundle": item.serial_and_batch_bundle,
+                }
+                so_items_details_map.setdefault(item.sales_order, []).append(item_details)
+
+        if so_items_details_map:
+            if get_datetime(f"{self.posting_date} {self.posting_time}") > get_datetime():
+                return frappe.msgprint(
+                    _("Cannot create Stock Reservation Entries for future dated Purchase Receipts.")
+                )
+
+            for so, items_details in so_items_details_map.items():
+                so_doc = frappe.get_doc("Sales Order", so)
+                so_doc.create_stock_reservation_entries(
+                    items_details=items_details,
+                    from_voucher_type="Purchase Receipt",
+                    notify=True,
+                )
 

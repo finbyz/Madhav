@@ -100,7 +100,8 @@ def make_material_request(source_name, target_doc=None, selected_items=None):
         # If specific child rows were selected via checkbox, only include those
         if selected_item_names and item.name not in selected_item_names:
             return False
-
+        if item.is_manufacture:
+            return False 
         # Apply filter criteria from dialog filters (if no rows were explicitly checked,
         # but filters were applied, this ensures only matching rows come through)
         if filter_criteria:
