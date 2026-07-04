@@ -78,7 +78,7 @@ frappe.ui.form.on('Production Plan', {
 			doc: frm.doc,
 			callback: function () {
 				frm.reload_doc();
-                update_latest_work_order(frm);
+                // update_latest_work_order(frm);
 			},
 		});
 	},
@@ -160,7 +160,7 @@ function fetch_so_item_pcs(frm, cdt, cdn) {
                 // frappe.model.set_value(cdt, row_id, "pieces", r.message.pieces || 0);
                 frappe.model.set_value(cdt, row_id, "po_no", r.message.po_no || "");
                 // frappe.model.set_value(cdt, row_id, "section_weight", r.message.total_weight || "");
-                frappe.model.set_value(cdt, row_id, "planned_qty", r.message.planned_qty || 0);
+                // frappe.model.set_value(cdt, row_id, "planned_qty", r.message.planned_qty || 0);
                 frappe.model.set_value(cdt, row_id, "assorted_length", r.message.assorted_length || "");
                 frappe.model.set_value(cdt, row_id, "pending_qty", r.message.planned_qty || 0);
                 frappe.model.set_value(cdt, row_id, "customers_purchase_order", r.message.po_no || "");
