@@ -50,7 +50,7 @@ class CustomProductionPlan(ERPNextProductionPlan):
 					["pieces", "length_size","assorted_length","production_plan_pieces","remarks"],
 					as_dict=True,
 				)
-				frappe.throw(str(so_item))
+				# frappe.throw(str(so_item))
 				if so_item:
 					row.section_weight = frappe.db.get_value(
 						"Item", row.item_code, "weight_per_meter"

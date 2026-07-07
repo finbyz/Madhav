@@ -78,7 +78,7 @@ frappe.ui.form.on('Production Plan', {
 			doc: frm.doc,
 			callback: function () {
 				frm.reload_doc();
-                // update_latest_work_order(frm);
+                update_latest_work_order(frm);
 			},
 		});
 	},
