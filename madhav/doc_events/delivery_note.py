@@ -209,7 +209,7 @@ def create_stock_reconciliation(self):
 
     sr.set_posting_time = 1
     sr.posting_date = before_dt.date()
-    sr.posting_time = before_dt.time()
+    sr.posting_time = before_dt.strftime('%H:%M:%S')
     sr.company = self.company
 
     if self.set_warehouse:
