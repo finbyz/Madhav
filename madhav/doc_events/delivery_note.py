@@ -138,6 +138,7 @@ def cancel_stock_reservations_from_so(doc):
                 sre = frappe.get_doc("Stock Reservation Entry", sre_name)
 
                 if sre.docstatus == 1:
+                    sre.flags.ignore_permissions = True
                     sre.cancel()
 
             except Exception:

@@ -1,5 +1,6 @@
 from erpnext.stock.doctype.stock_reconciliation.stock_reconciliation import StockReconciliation as _StockReconciliation
-
+from frappe import bold,_
+import frappe
 class StockReconciliation(_StockReconciliation):
     def validate_reserved_stock(self) -> None:
             from erpnext.stock.doctype.stock_reservation_entry.stock_reservation_entry import (

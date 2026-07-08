@@ -277,6 +277,13 @@ def get_current_warehouse_from_sle(sle_entries):
     return ""
 
 
+def is_rejected_warehouse(warehouse):
+    """Check if warehouse is a rejected warehouse"""
+    if not warehouse:
+        return False
+    return frappe.db.get_value("Warehouse", warehouse, "is_rejected_warehouse") or False
+
+
 def get_data(filters):
     filters = filters or {}
 
@@ -573,8 +580,40 @@ def get_data(filters):
 
                 ready_pc = sum(flt(pr.pieces) for pr in pr_items)
                 ready_weight = sum(flt(pr.qty) for pr in pr_items)
-                clearence = ready_weight
+                
+                # ============================================
+                # NEW LOGIC: Calculate after_clr_rejected for Trading
+                # Check each batch's current warehouse for rejected warehouse
+                # ============================================
                 after_clr_rejected = 0
+                pr_rejected_qty_map = {}  # Track rejected qty per PR item
+                
+                for pr in pr_items:
+                    batch_no = pr.batch_no or ""
+                    pr_qty = flt(pr.qty)
+                    
+                    if not batch_no or pr_qty <= 0:
+                        pr_rejected_qty_map[pr.name] = 0
+                        continue
+                    
+                    # Get current warehouse for this batch
+                    sle_entries = get_sle_by_batch(soi.item_code, batch_no)
+                    current_wh = get_current_warehouse_from_sle(sle_entries)
+                    
+                    # If no SLE found, fall back to PR warehouse
+                    if not current_wh:
+                        current_wh = pr.warehouse or ""
+                    
+                    # Check if current warehouse is a rejected warehouse
+                    if is_rejected_warehouse(current_wh):
+                        pr_rejected_qty_map[pr.name] = pr_qty
+                        after_clr_rejected += pr_qty
+                    else:
+                        pr_rejected_qty_map[pr.name] = 0
+                
+                # Clearence should only be for non-rejected stock
+                clearence = ready_weight - after_clr_rejected
+                
                 sre_rows = frappe.get_all(
                     "Stock Reservation Entry",
                     filters={
@@ -602,6 +641,7 @@ def get_data(filters):
                                 )
                     except Exception:
                         pass
+                        
                 all_batches = []
                 all_lengths = []
                 pr_batch_map = {}
@@ -691,11 +731,32 @@ def get_data(filters):
                     wh_current = pwo_warehouse_map.get(pwo.name, "")
                     wh_target = pwo.target_warehouse or ""
 
-                    if wh_current == soi.warehouse:
-                        reserved_qty = sre_qty_by_warehouse.get(soi.warehouse, clearence)
-                        pwo_clearence = min(reserved_qty, flt(pwo.ready_qty))
-                    else:
+                    # ============================================
+                    # NEW LOGIC: Check if batch is in rejected warehouse
+                    # ============================================
+                    pwo_after_clr_rejected = 0
+                    pwo_clearence = 0
+                    pwo_pending_clr = 0
+                    
+                    # Check if current warehouse is a rejected warehouse
+                    is_batch_in_rejected_wh = is_rejected_warehouse(wh_current)
+                    
+                    if is_batch_in_rejected_wh:
+                        # If batch is in rejected warehouse, 
+                        # entire ready qty goes to "After CLR (Rejected)"
+                        pwo_after_clr_rejected = flt(pwo.ready_qty)
                         pwo_clearence = 0
+                        pwo_pending_clr = 0
+                    else:
+                        # Normal calculation - batch is NOT in rejected warehouse
+                        if wh_current == soi.warehouse:
+                            reserved_qty = sre_qty_by_warehouse.get(soi.warehouse, clearence)
+                            pwo_clearence = min(reserved_qty, flt(pwo.ready_qty))
+                        else:
+                            pwo_clearence = 0
+                        
+                        # Pending CLR = Ready Weight - Clearence
+                        pwo_pending_clr = max(0, flt(pwo.ready_qty) - pwo_clearence)
 
                     data.append({
                         "customer": so.customer,
@@ -714,14 +775,11 @@ def get_data(filters):
                         "ready_pc": flt(pwo.ready_pieces),
                         "ready_weight": flt(pwo.ready_qty),
                         "pending_ready_pc": total_pcs - flt(pwo.ready_pieces),
-                        "pending_ready_weight": max(0, total_weight - flt(pwo.ready_qty)) + after_clr_rejected,
+                        "pending_ready_weight": max(0, total_weight - flt(pwo.ready_qty)) + pwo_after_clr_rejected,
                         "clearence": pwo_clearence,
                         "after_mfg": max(0, total_weight - flt(pwo.ready_qty)),
-                        "pending_clr": max(
-                                0,
-                                flt(pwo.ready_qty) - pwo_clearence - after_clr_rejected
-                            ),
-                        "after_clr_rejected": after_clr_rejected,
+                        "pending_clr": pwo_pending_clr,
+                        "after_clr_rejected": pwo_after_clr_rejected,
                         "dispatch_pcs": dispatch_pcs,
                         "dispatch_weight": dispatch_weight,
                         "balance_pcs": total_pcs - dispatch_pcs,
@@ -747,15 +805,27 @@ def get_data(filters):
                         filtered_clearence = sum(flt(sre.reserved_qty) for sre in matching_sre)
                     clearence = filtered_clearence
                 else:
+                    # ============================================
+                    # TRADING: Calculate clearence for non-rejected stock only
+                    # ============================================
                     filtered_clearence = 0
-
+                    
+                    # Get non-rejected ready weight
+                    non_rejected_ready_weight = ready_weight - after_clr_rejected
+                    
                     if soi.warehouse in current_warehouses:
-                        filtered_clearence = min(
-                            sre_qty_by_warehouse.get(soi.warehouse, 0),
-                            ready_weight
-                        )
-
+                        # Check if SO warehouse is a rejected warehouse
+                        if not is_rejected_warehouse(soi.warehouse):
+                            filtered_clearence = min(
+                                sre_qty_by_warehouse.get(soi.warehouse, 0),
+                                non_rejected_ready_weight
+                            )
+                    
                     clearence = filtered_clearence
+                    
+                    # Recalculate pending_clr with updated clearence
+                    pending_clr = max(0, non_rejected_ready_weight - clearence)
+                    
                 data.append({
                     "customer": so.customer,
                     "party_name": so.customer_name,
