@@ -128,48 +128,60 @@ async function recalculate_row(cdt, cdn, changed_field) {
 
         const is_valid = await validate_batch_limit(cdt, cdn, changed_field);
 
-        if (!is_valid) return;
+        if (!is_valid) {
+            return; // Exit without recalculation, finally will reset flag
+        }
 
-        /* PIECES CHANGED */
+        // Re-fetch row after validation (values might have changed)
+        row = locals[cdt][cdn];
+
+        /* PIECES CHANGED → Calculate QTY */
         if (changed_field === "pieces") {
 
             if (row.length && row.section_weight) {
 
-                let qty =
-                    (flt(row.pieces) * flt(row.length) * flt(row.section_weight)) / 1000;
+                let qty = (flt(row.pieces) * flt(row.length) * flt(row.section_weight)) / 1000;
 
-                await frappe.model.set_value(
+                // fire_changes: false prevents triggering qty event again
+                frappe.model.set_value(
                     cdt,
                     cdn,
                     "qty",
-                    flt(qty, 3)
+                    flt(qty, 3),
+                    null,   // callback
+                    false   // fire_changes = false
                 );
             }
         }
 
-
-        /* QTY CHANGED */
+        /* QTY CHANGED → Calculate PIECES */
         if (changed_field === "qty") {
 
             if (row.length && row.section_weight) {
 
-                let pieces = (flt(row.qty) *  1000) / (flt(row.pieces)*flt(row.length));
+                // ✅ FIXED: Use section_weight instead of row.pieces
+                let pieces = (flt(row.qty) * 1000) / (flt(row.length) * flt(row.section_weight));
 
-                await frappe.model.set_value(
+                // fire_changes: false prevents triggering pieces event again
+                frappe.model.set_value(
                     cdt,
                     cdn,
                     "pieces",
-                    Math.round(pieces)
+                    Math.round(pieces),
+                    null,   // callback
+                    false   // fire_changes = false
                 );
             }
         }
 
     } finally {
 
-        calculating = false;
+        // Small delay to ensure all pending events are processed
+        setTimeout(() => {
+            calculating = false;
+        }, 100);
     }
 }
-
 
 
 /* ===============================
@@ -182,7 +194,14 @@ async function validate_batch_limit(cdt, cdn, fieldname) {
 
     if (!row.batch) return true;
 
-    const batch = await frappe.db.get_doc("Batch", row.batch);
+    let batch;
+
+    try {
+        batch = await frappe.db.get_doc("Batch", row.batch);
+    } catch (e) {
+        console.error("Error fetching batch:", e);
+        return true; // Allow if batch fetch fails
+    }
 
 
     /* PIECES VALIDATION */
@@ -194,16 +213,19 @@ async function validate_batch_limit(cdt, cdn, fieldname) {
 
         if (entered > limit) {
 
-            await frappe.model.set_value(
+            // fire_changes: false to prevent re-triggering
+            frappe.model.set_value(
                 cdt,
                 cdn,
                 "pieces",
-                limit
+                limit,
+                null,   // callback
+                false   // fire_changes = false
             );
 
             frappe.msgprint({
                 title: "Batch Limit Reached",
-                message: `Pieces cannot exceed Batch Pieces. Value reset to ${limit}`,
+                message: `Pieces cannot exceed Batch Pieces. Value reset to <b>${limit}</b>`,
                 indicator: "orange"
             });
 
@@ -221,16 +243,19 @@ async function validate_batch_limit(cdt, cdn, fieldname) {
 
         if (entered > limit) {
 
-            await frappe.model.set_value(
+            // fire_changes: false to prevent re-triggering
+            frappe.model.set_value(
                 cdt,
                 cdn,
                 "qty",
-                limit
+                limit,
+                null,   // callback
+                false   // fire_changes = false
             );
 
             frappe.msgprint({
                 title: "Batch Limit Reached",
-                message: `Qty cannot exceed Batch Qty. Value reset to ${limit}`,
+                message: `Qty cannot exceed Batch Qty. Value reset to <b>${limit}</b>`,
                 indicator: "orange"
             });
 
