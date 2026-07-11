@@ -79,7 +79,14 @@ def round_off_stock_qty(doc, method=None):
 		if (row.get("uom") or "").lower() == "kg" and (row.get("stock_uom") or "").lower() == "nos":
 			if row.get("stock_qty") is not None:
 				row.db_set("stock_qty",round(flt(row.stock_qty)))
-    
+
+def on_submit(self, method):
+    for row in self.items:
+        if row.blanket_order:
+            doc = frappe.get_doc("Blanket Order",row.blanket_order)
+            if doc.docstatus != 1:
+                frappe.throw(f"Blanket Order {row.blanket_order} is not submitted. Please submit the Blanket Order before submitting this Purchase Order.")
+   
 def validate(self,method):
     for row in self.items:
         if row.blanket_order:
