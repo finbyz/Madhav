@@ -270,11 +270,55 @@ def get_sle_by_batch(item_code, batch_no):
     return sle_entries
 
 
-def get_current_warehouse_from_sle(sle_entries):
+def get_warehouse_qty_map_from_sle(sle_entries):
+    """
+    Return {warehouse: current_positive_qty} for every warehouse that
+    currently holds stock for this batch, based on the most recent SLE
+    in EACH warehouse (not just the single most-recent SLE overall).
+    A batch can legitimately be split across multiple warehouses
+    (e.g. partly in Quality Inspection, partly in Finished Goods, partly
+    in Rejected) at the same time.
+    """
+    latest_qty_by_warehouse = {}
     for sle in sle_entries:
-        if flt(sle.qty_after_transaction) > 0:
-            return sle.warehouse
-    return ""
+        wh = sle.warehouse
+        # sle_entries is sorted DESC, so the first time we see a warehouse
+        # here is its most recent (i.e. current) entry.
+        if wh not in latest_qty_by_warehouse:
+            latest_qty_by_warehouse[wh] = flt(sle.qty_after_transaction)
+
+    return {wh: qty for wh, qty in latest_qty_by_warehouse.items() if qty > 0}
+
+
+def get_current_warehouses_from_sle(sle_entries):
+    """
+    Return ALL warehouses that currently hold a positive balance for this
+    batch (sorted, names only -- for display purposes).
+    """
+    return sorted(get_warehouse_qty_map_from_sle(sle_entries).keys())
+
+
+def get_current_warehouse_from_sle(sle_entries):
+    """
+    Backwards-compatible single-warehouse helper.
+    Returns the primary (most recent) warehouse only.
+    Kept for any other callers that still expect a single value.
+    """
+    current_whs = get_current_warehouses_from_sle(sle_entries)
+    return current_whs[0] if current_whs else ""
+
+
+def get_rejected_qty_from_warehouse_map(wh_qty_map):
+    """
+    Given {warehouse: qty}, sum the qty sitting specifically in
+    warehouses flagged is_rejected_warehouse. This lets a batch that is
+    split across warehouses count ONLY its rejected-warehouse portion
+    toward 'After CLR (Rejected)', instead of treating the whole batch
+    as rejected/not-rejected based on a single warehouse.
+    """
+    return sum(
+        qty for wh, qty in wh_qty_map.items() if is_rejected_warehouse(wh)
+    )
 
 
 def is_rejected_warehouse(warehouse):
@@ -451,17 +495,6 @@ def get_data(filters):
                             sre_qty_by_warehouse[wh] = 0
                         sre_qty_by_warehouse[wh] += flt(sre.reserved_qty)
 
-                    for sre in sre_rows:
-                        try:
-                            sre_doc = frappe.get_doc("Stock Reservation Entry", sre.name)
-                            if hasattr(sre_doc, "sb_entries"):
-                                for sb in sre_doc.sb_entries:
-                                    wh = sb.warehouse or sre.warehouse or ""
-                                    if wh not in sre_qty_by_warehouse:
-                                        sre_qty_by_warehouse[wh] = 0
-                                    sre_qty_by_warehouse[wh] += flt(sb.qty)
-                        except Exception:
-                            continue
 
                 if all_wo_names:
                     stock_entries = frappe.get_all(
@@ -535,9 +568,14 @@ def get_data(filters):
                 new_length_val = ", ".join(sorted(set(all_lengths))) if all_lengths else ""
 
                 # -----------------------------------
-                # CURRENT WAREHOUSE (clean: only positive balance, no qty)
+                # CURRENT WAREHOUSE(S)
+                # Each PWO row's batch may currently be split across
+                # multiple warehouses -- keep the FULL list for display,
+                # and a "primary" (first) warehouse for the existing
+                # rejected/reservation matching logic below.
                 # -----------------------------------
                 pwo_warehouse_map = {}
+                pwo_warehouse_qty_map = {}
                 current_warehouses = set()
 
                 for pwo in matching_pwo_rows:
@@ -545,18 +583,20 @@ def get_data(filters):
 
                     if not batch_no:
                         if pwo.target_warehouse:
-                            pwo_warehouse_map[pwo.name] = pwo.target_warehouse
+                            pwo_warehouse_map[pwo.name] = [pwo.target_warehouse]
                             current_warehouses.add(pwo.target_warehouse)
                         continue
 
                     sle_entries = get_sle_by_batch(soi.item_code, batch_no)
-                    current_wh = get_current_warehouse_from_sle(sle_entries)
+                    wh_qty_map = get_warehouse_qty_map_from_sle(sle_entries)
+                    current_whs = sorted(wh_qty_map.keys())
 
-                    if current_wh:
-                        pwo_warehouse_map[pwo.name] = current_wh
-                        current_warehouses.add(current_wh)
+                    if current_whs:
+                        pwo_warehouse_map[pwo.name] = current_whs
+                        pwo_warehouse_qty_map[pwo.name] = wh_qty_map
+                        current_warehouses.update(current_whs)
                     elif pwo.target_warehouse:
-                        pwo_warehouse_map[pwo.name] = pwo.target_warehouse
+                        pwo_warehouse_map[pwo.name] = [pwo.target_warehouse]
                         current_warehouses.add(pwo.target_warehouse)
 
                 warehouse_display = ", ".join(sorted(current_warehouses)) if current_warehouses else ""
@@ -580,40 +620,53 @@ def get_data(filters):
 
                 ready_pc = sum(flt(pr.pieces) for pr in pr_items)
                 ready_weight = sum(flt(pr.qty) for pr in pr_items)
-                
+
                 # ============================================
-                # NEW LOGIC: Calculate after_clr_rejected for Trading
-                # Check each batch's current warehouse for rejected warehouse
+                # Calculate after_clr_rejected for Trading
+                # Check each batch's current (primary) warehouse for
+                # rejected warehouse. Also collect ALL current
+                # warehouses per batch for the display column.
                 # ============================================
                 after_clr_rejected = 0
                 pr_rejected_qty_map = {}  # Track rejected qty per PR item
-                
+                pr_current_warehouses_map = {}  # Full warehouse list per PR item (for display)
+
                 for pr in pr_items:
                     batch_no = pr.batch_no or ""
                     pr_qty = flt(pr.qty)
-                    
+
                     if not batch_no or pr_qty <= 0:
                         pr_rejected_qty_map[pr.name] = 0
                         continue
-                    
-                    # Get current warehouse for this batch
+
+                    # Get qty currently sitting in EACH warehouse for this batch
                     sle_entries = get_sle_by_batch(soi.item_code, batch_no)
-                    current_wh = get_current_warehouse_from_sle(sle_entries)
-                    
-                    # If no SLE found, fall back to PR warehouse
-                    if not current_wh:
-                        current_wh = pr.warehouse or ""
-                    
-                    # Check if current warehouse is a rejected warehouse
-                    if is_rejected_warehouse(current_wh):
-                        pr_rejected_qty_map[pr.name] = pr_qty
-                        after_clr_rejected += pr_qty
+                    wh_qty_map = get_warehouse_qty_map_from_sle(sle_entries)
+                    current_whs = sorted(wh_qty_map.keys())
+
+                    if current_whs:
+                        pr_current_warehouses_map[pr.name] = current_whs
+                    elif pr.warehouse:
+                        pr_current_warehouses_map[pr.name] = [pr.warehouse]
+
+                    if wh_qty_map:
+                        # Sum only the qty sitting in warehouses that have
+                        # is_rejected_warehouse ticked -- a batch split
+                        # across warehouses only counts its rejected
+                        # portion here, not the whole batch.
+                        rejected_qty = get_rejected_qty_from_warehouse_map(wh_qty_map)
+                        # Can't exceed what this PR line represents
+                        rejected_qty = min(rejected_qty, pr_qty)
                     else:
-                        pr_rejected_qty_map[pr.name] = 0
-                
+                        # No SLE found -- fall back to the PR's own warehouse
+                        rejected_qty = pr_qty if is_rejected_warehouse(pr.warehouse or "") else 0
+
+                    pr_rejected_qty_map[pr.name] = rejected_qty
+                    after_clr_rejected += rejected_qty
+
                 # Clearence should only be for non-rejected stock
                 clearence = ready_weight - after_clr_rejected
-                
+
                 sre_rows = frappe.get_all(
                     "Stock Reservation Entry",
                     filters={
@@ -641,7 +694,7 @@ def get_data(filters):
                                 )
                     except Exception:
                         pass
-                        
+
                 all_batches = []
                 all_lengths = []
                 pr_batch_map = {}
@@ -671,7 +724,8 @@ def get_data(filters):
                 new_length_val = ", ".join(sorted(set(all_lengths))) if all_lengths else ""
 
                 # -----------------------------------
-                # CURRENT WAREHOUSE (clean: only positive balance, no qty)
+                # CURRENT WAREHOUSE(S) -- show every warehouse the
+                # batch(es) currently sit in, not just one.
                 # -----------------------------------
                 current_warehouses = set()
 
@@ -680,10 +734,10 @@ def get_data(filters):
                         continue
 
                     sle_entries = get_sle_by_batch(soi.item_code, batch)
-                    current_wh = get_current_warehouse_from_sle(sle_entries)
+                    current_whs = get_current_warehouses_from_sle(sle_entries)
 
-                    if current_wh:
-                        current_warehouses.add(current_wh)
+                    if current_whs:
+                        current_warehouses.update(current_whs)
 
                 if current_warehouses:
                     warehouse_display = ", ".join(sorted(current_warehouses))
@@ -725,38 +779,92 @@ def get_data(filters):
             # APPEND DATA
             # -----------------------------------
             if soi.is_manufacture and show_batch_wise_flag and matching_pwo_rows:
+
+                # ============================================
+                # DIAGNOSTIC: Show warehouse mismatch
+                # ============================================
+                frappe.msgprint({
+                    "SO Warehouse": soi.warehouse,
+                    "Reserved Map": str(sre_qty_by_warehouse),
+                    "PWO Warehouse Map": str(pwo_warehouse_map)
+                })
+
+                # ============================================
+                # FIX: Track remaining reserved qty per ACTUAL
+                # (primary) warehouse, not per soi.warehouse.
+                # Each PWO row may sit in a different warehouse
+                # than what the SO line says.
+                # ============================================
+                remaining_reserved_by_wh = dict(sre_qty_by_warehouse)
+
                 for pwo in matching_pwo_rows:
                     pwo_batch_no = pwo_batch_map.get(pwo.name, "")
                     pwo_new_length = pwo_length_map.get(pwo.name, "")
-                    wh_current = pwo_warehouse_map.get(pwo.name, "")
+
+                    wh_current_list = pwo_warehouse_map.get(pwo.name, [])
+                    wh_qty_map = pwo_warehouse_qty_map.get(pwo.name, {})
+                    # Primary warehouse (most recent) drives the reservation
+                    # lookup below when some of the batch remains clearable.
+                    wh_current = wh_current_list[0] if wh_current_list else ""
+                    # Display value shows EVERY warehouse the batch
+                    # currently sits in.
+                    wh_display = ", ".join(wh_current_list) if wh_current_list else ""
+
                     wh_target = pwo.target_warehouse or ""
+                    ready_qty = flt(pwo.ready_qty)
 
                     # ============================================
-                    # NEW LOGIC: Check if batch is in rejected warehouse
+                    # Sum only the qty sitting in warehouses that have
+                    # is_rejected_warehouse ticked, instead of treating
+                    # the whole ready_qty as rejected/not based on a
+                    # single warehouse.
                     # ============================================
-                    pwo_after_clr_rejected = 0
                     pwo_clearence = 0
                     pwo_pending_clr = 0
-                    
-                    # Check if current warehouse is a rejected warehouse
-                    is_batch_in_rejected_wh = is_rejected_warehouse(wh_current)
-                    
-                    if is_batch_in_rejected_wh:
-                        # If batch is in rejected warehouse, 
-                        # entire ready qty goes to "After CLR (Rejected)"
-                        pwo_after_clr_rejected = flt(pwo.ready_qty)
+
+                    if wh_qty_map:
+                        pwo_after_clr_rejected = min(
+                            get_rejected_qty_from_warehouse_map(wh_qty_map), ready_qty
+                        )
+                    else:
+                        pwo_after_clr_rejected = ready_qty if is_rejected_warehouse(wh_current) else 0
+
+                    remaining_ready_qty = max(0, ready_qty - pwo_after_clr_rejected)
+
+                    if remaining_ready_qty <= 0:
                         pwo_clearence = 0
                         pwo_pending_clr = 0
                     else:
-                        # Normal calculation - batch is NOT in rejected warehouse
-                        if wh_current == soi.warehouse:
-                            reserved_qty = sre_qty_by_warehouse.get(soi.warehouse, clearence)
-                            pwo_clearence = min(reserved_qty, flt(pwo.ready_qty))
-                        else:
-                            pwo_clearence = 0
-                        
-                        # Pending CLR = Ready Weight - Clearence
-                        pwo_pending_clr = max(0, flt(pwo.ready_qty) - pwo_clearence)
+                        # Use the first non-rejected warehouse for the
+                        # reservation lookup (falls back to the primary
+                        # warehouse if all are rejected, or none found).
+                        non_rejected_wh = next(
+                            (wh for wh in wh_current_list if not is_rejected_warehouse(wh)),
+                            wh_current
+                        )
+
+                        # ============================================
+                        # FIX: Look up reservation using the batch's
+                        # actual (non-rejected) warehouse, NOT soi.warehouse
+                        # (which may be a different warehouse like Stores).
+                        # Also fall back to soi.warehouse if no match found.
+                        # ============================================
+                        reserved_for_this_wh = remaining_reserved_by_wh.get(non_rejected_wh, 0)
+
+                        # Fallback: if no reservation found for actual warehouse,
+                        # try the SO warehouse
+                        if not reserved_for_this_wh and non_rejected_wh != soi.warehouse:
+                            reserved_for_this_wh = remaining_reserved_by_wh.get(soi.warehouse, 0)
+
+                        pwo_clearence = min(reserved_for_this_wh, remaining_ready_qty)
+
+                        # Deduct from the warehouse we actually used for lookup
+                        used_wh = non_rejected_wh if remaining_reserved_by_wh.get(non_rejected_wh, 0) > 0 else soi.warehouse
+                        remaining_reserved_by_wh[used_wh] = max(
+                            0, remaining_reserved_by_wh.get(used_wh, 0) - pwo_clearence
+                        )
+
+                        pwo_pending_clr = max(0, remaining_ready_qty - pwo_clearence)
 
                     data.append({
                         "customer": so.customer,
@@ -790,7 +898,7 @@ def get_data(filters):
                         "delivery_date": so.delivery_date,
                         "rate": soi.rate,
                         "location": location,
-                        "warehouse": wh_current,
+                        "warehouse": wh_display,
                     })
             else:
                 display_new_length = new_length_val if show_batch_wise_flag else ""
@@ -798,34 +906,53 @@ def get_data(filters):
 
                 if soi.is_manufacture:
                     filtered_clearence = 0
-                    if soi.warehouse and sre_qty_by_warehouse:
+                    # ============================================
+                    # FIX: Try SO warehouse first, then try actual
+                    # current warehouses (where batches actually sit)
+                    # ============================================
+                    if sre_qty_by_warehouse:
                         filtered_clearence = sre_qty_by_warehouse.get(soi.warehouse, 0)
-                    elif soi.warehouse and clearence:
-                        matching_sre = [sre for sre in sre_rows if sre.warehouse == soi.warehouse]
-                        filtered_clearence = sum(flt(sre.reserved_qty) for sre in matching_sre)
+
+                    # If no match on SO warehouse, sum reservations
+                    # from all actual current warehouses
+                    if not filtered_clearence and current_warehouses:
+                        for wh in current_warehouses:
+                            filtered_clearence += sre_qty_by_warehouse.get(wh, 0)
+
+                    # Last fallback: sum all reservations if still zero
+                    if not filtered_clearence and sre_qty_by_warehouse:
+                        filtered_clearence = sum(sre_qty_by_warehouse.values())
+
                     clearence = filtered_clearence
                 else:
                     # ============================================
                     # TRADING: Calculate clearence for non-rejected stock only
                     # ============================================
                     filtered_clearence = 0
-                    
+
                     # Get non-rejected ready weight
                     non_rejected_ready_weight = ready_weight - after_clr_rejected
-                    
-                    if soi.warehouse in current_warehouses:
-                        # Check if SO warehouse is a rejected warehouse
+
+                    # Try SO warehouse first
+                    if soi.warehouse and sre_qty_by_warehouse:
                         if not is_rejected_warehouse(soi.warehouse):
                             filtered_clearence = min(
                                 sre_qty_by_warehouse.get(soi.warehouse, 0),
                                 non_rejected_ready_weight
                             )
-                    
+
+                    # Fallback: try actual current warehouses
+                    if not filtered_clearence and current_warehouses and sre_qty_by_warehouse:
+                        for wh in current_warehouses:
+                            if not is_rejected_warehouse(wh):
+                                wh_reserved = sre_qty_by_warehouse.get(wh, 0)
+                                filtered_clearence += min(wh_reserved, non_rejected_ready_weight - filtered_clearence)
+
                     clearence = filtered_clearence
-                    
+
                     # Recalculate pending_clr with updated clearence
                     pending_clr = max(0, non_rejected_ready_weight - clearence)
-                    
+
                 data.append({
                     "customer": so.customer,
                     "party_name": so.customer_name,

@@ -209,6 +209,8 @@ class StockTransfer(Document):
         se = frappe.new_doc("Stock Entry")
         se.stock_entry_type = "Material Transfer"
         # se.stock_transfer = self.name,
+        se.set_posting_time = 1
+        se.posting_date = self.posting_date
         se.company = self.company
         se.from_warehouse = self.source_warehouse
         se.to_warehouse = self.target_warehouse

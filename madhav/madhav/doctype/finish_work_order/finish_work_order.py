@@ -377,6 +377,8 @@ class FinishWorkOrder(Document):
                 se.to_warehouse = pwo.target_warehouse
                 se.work_order = pwo.work_order
                 se.from_bom = 1
+                se.set_posting_time = 1
+                se.posting_date = self.posting_date
 
                 se.flags.ignore_permissions = True
                 se.flags.ignore_mandatory = True
