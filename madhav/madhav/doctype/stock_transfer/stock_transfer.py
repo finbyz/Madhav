@@ -85,8 +85,18 @@ class StockTransfer(Document):
                         row.customer_po_no = so.po_no
 
     def on_submit(self):
-        self.create_stock_entry()
-        
+        se = self.create_stock_entry()
+        repost_doc = frappe.new_doc("Repost Item Valuation")
+        repost_doc.based_on = "Transaction"
+        repost_doc.voucher_type = se.doctype
+        repost_doc.voucher_no = se.name
+        repost_doc.posting_date = se.posting_date
+        repost_doc.posting_time = se.posting_time
+        repost_doc.allow_negative_stock = 1
+        repost_doc.flags.ignore_permissions = True
+        repost_doc.insert(ignore_permissions=True)
+        repost_doc.submit()
+        repost_doc.repost_now()        
         for row in self.transfer_item:
             if not row.source_document_type:
                 continue
@@ -245,6 +255,7 @@ class StockTransfer(Document):
         )
 
         frappe.db.set_value("Stock Transfer", self.name, "stock_entry", se.name)
+        return se
     def create_fg_stock_reservation(
         self,
         item_code,

@@ -16,12 +16,9 @@ def create_batch(self):
 			"pieces": data.get("pieces"),
 			"weight_received": data.get("qty"),
 			"average_length": data.get("average_length"),
-			# "length_weight_in_kg": data.get("length_weight_in_kg"),
 			"section_weight": data.get("section_weight"),
 			"lot_no": data.get("lot_no") if data.get("lot_no") else None,
-			# "no_of_packages": data.get("no_of_packages"),
-			# "batch_yield": data.get("batch_yield"),
-			# "concentration": data.get("concentration")
+			"manufacturing_date":self.get("posting_date"),
 			"reference_detail_no": self.voucher_detail_no
 		})
 		if self.voucher_type == "Purchase Receipt":

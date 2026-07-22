@@ -245,6 +245,7 @@ doc_events = {
     },
 
     "Delivery Note": {
+        "before_insert":"madhav.doc_events.delivery_note.before_insert",
         "on_submit": "madhav.doc_events.delivery_note.on_submit",
         "validate": "madhav.doc_events.delivery_note.validate",
         "before_submit":"madhav.doc_events.delivery_note.before_submit"

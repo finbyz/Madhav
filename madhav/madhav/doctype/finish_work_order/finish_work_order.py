@@ -485,6 +485,17 @@ class FinishWorkOrder(Document):
                 se.insert()
                 se.submit()
                 pwo.db_set("stock_entry_reference",se.name)
+                repost_doc = frappe.new_doc("Repost Item Valuation")
+                repost_doc.based_on = "Transaction"
+                repost_doc.voucher_type = se.doctype
+                repost_doc.voucher_no = se.name
+                repost_doc.posting_date = se.posting_date
+                repost_doc.posting_time = se.posting_time
+                repost_doc.allow_negative_stock = 1
+                repost_doc.flags.ignore_permissions = True
+                repost_doc.insert(ignore_permissions=True)
+                repost_doc.submit()
+                repost_doc.repost_now()
                 # ==============================
                 # 🔥 IMPROVED: GET FG BATCH FROM STOCK ENTRY
                 # ==============================
