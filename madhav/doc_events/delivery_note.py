@@ -84,6 +84,28 @@ def validate(self, method):
             if deliver_as_qty and not row.invoice_qty:
                 frappe.throw(f"Invoice Qty is mandatory for row {row.idx}")
 
+def get_batch_available_pieces(item_code, warehouse, batch_no):
+    """
+    Current available pieces for a batch, derived from Piece Stock Ledger
+    Entry. batch_no on the PSLE itself isn't reliably populated, so we join
+    through the Serial and Batch Bundle's entries (which do carry batch_no).
+    """
+    result = frappe.db.sql(
+        """
+        SELECT SUM(psle.actual_qty) as total_pieces
+        FROM `tabPiece Stock Ledger Entry` psle
+        INNER JOIN `tabSerial and Batch Entry` sbe
+            ON sbe.parent = psle.serial_and_batch_bundle
+        WHERE psle.item_code = %s
+          AND psle.warehouse = %s
+          AND sbe.batch_no = %s
+          AND psle.is_cancelled = 0
+        """,
+        (item_code, warehouse, batch_no),
+        as_dict=True,
+    )
+    return flt(result[0].total_pieces) if result and result[0].total_pieces else 0
+
 
 def change_qty_serial_and_batch(self):
     for item in self.items:
@@ -96,9 +118,6 @@ def change_qty_serial_and_batch(self):
             "deliver_as_qty",
         )
 
-        # if not deliver_as_qty:
-        #     continue
-
         if not item.serial_and_batch_bundle:
             continue
 
@@ -109,33 +128,50 @@ def change_qty_serial_and_batch(self):
         bundle.reload()
 
         # IMPORTANT: Use item.qty here, NOT invoice_qty.
-        # item.qty contains the SO pending qty which prevents the core validation error.
         target_qty = flt(item.qty)
         remaining_qty = target_qty
+        total_allocated_pieces = 0
 
         for entry in bundle.entries:
             batch_qty = flt(
                 frappe.db.get_value("Batch", entry.batch_no, "batch_qty") or 0
             )
+            batch_pieces = max(
+                0,
+                get_batch_available_pieces(
+                    item.item_code, entry.warehouse or item.warehouse, entry.batch_no
+                ),
+            )
 
             if remaining_qty <= 0:
                 entry.qty = 0
+                entry.pieces = 0
                 continue
 
             allocated_qty = min(batch_qty, remaining_qty)
 
+            original_qty = abs(flt(entry.qty))
+            original_pieces = max(0, flt(entry.pieces))
+            pieces_ratio = (original_pieces / original_qty) if original_qty else 0
+            proportional_pieces = allocated_qty * pieces_ratio
+
+            allocated_pieces = max(0, min(batch_pieces, round(proportional_pieces)))
+
             # Outward transaction stores negative qty
             entry.qty = -allocated_qty
+            entry.pieces = allocated_pieces
+
+            total_allocated_pieces += allocated_pieces
             remaining_qty -= allocated_qty
 
-        # Calculate what was actually allocated to the bundle
         allocated_total = target_qty - remaining_qty
 
-        # Sync item qty to what the batch actually has available so core validation passes
         item.qty = allocated_total
         item.stock_qty = allocated_total
         item.amount = flt(item.rate) * allocated_total
         item.base_amount = item.amount * flt(self.conversion_rate or 1)
+
+        item.pieces = max(0, total_allocated_pieces)
 
         bundle.total_qty = -allocated_total
         bundle.flags.ignore_validate = True
@@ -145,10 +181,9 @@ def change_qty_serial_and_batch(self):
 
         frappe.logger().info(
             f"Updated Bundle {bundle.name}: Total Qty={bundle.total_qty}, "
-            f"Entries={[{'batch': d.batch_no, 'qty': d.qty} for d in bundle.entries]}"
+            f"Total Pieces={total_allocated_pieces}, "
+            f"Entries={[{'batch': d.batch_no, 'qty': d.qty, 'pieces': d.pieces} for d in bundle.entries]}"
         )
-
-
 # ---------------------------------------------------------------------------
 # Helper: qty available before we need to touch reservation / do a Stock
 # Reconciliation. This is the ceiling that invoice_qty is compared against.
