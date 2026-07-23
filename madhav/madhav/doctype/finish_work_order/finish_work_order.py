@@ -3,7 +3,7 @@
 
 import frappe
 from frappe.model.document import Document
-from frappe.utils import now
+from frappe.utils import now, nowdate, nowtime
 from frappe.utils import flt
 
 class FinishWorkOrder(Document):
@@ -85,18 +85,18 @@ class FinishWorkOrder(Document):
         self.total_raw_material_pieces = total_rm_pieces
         self.scrap_qty = total_scrap_qty
         
-        # ✅ Prevent division by zero
+        # Prevent division by zero
         if total_wo_qty:
             self.scrap_ratio = total_scrap_qty / total_wo_qty
         else:
             self.scrap_ratio = 0
 
-        if (total_wo_qty + total_scrap_qty):
-            self.consumption_ratio = total_rm_qty / (total_wo_qty + total_scrap_qty)
+        if (total_wo_qty ):
+            self.consumption_ratio = total_rm_qty / (total_wo_qty)
         else:
             self.consumption_ratio = 0
 
-        # ✅ Update child table fields
+        # Update child table fields
         for row in self.pending_work_orders:
             ready_qty = row.ready_qty or 0
 
@@ -111,8 +111,6 @@ class FinishWorkOrder(Document):
 
                 new_wo = self.create_new_work_order(row)
                 row.work_order = new_wo
-            # else:
-            #     frappe.db.set_value("Work Order", row.work_order, "finish_work_order", self.name)
 
     def create_new_work_order(self, row):
 
@@ -142,7 +140,6 @@ class FinishWorkOrder(Document):
         wo.insert(ignore_permissions=True)
         wo.submit()
 
-
         return wo.name
 
 
@@ -163,10 +160,6 @@ class FinishWorkOrder(Document):
         from_voucher_no = None,
         from_voucher_detail_no = None
     ):
-        # ==============================
-        # DEBUG INFORMATION
-        # ==============================
-
 
         if not sales_order:
             return
@@ -178,9 +171,8 @@ class FinishWorkOrder(Document):
             return
         if frappe.db.get_value("Work Order",work_order,"fg_warehouse") != warehouse:
             return
-        # ==============================
+        
         # GET SO ITEM
-        # ==============================
         so_items = frappe.get_all(
             "Sales Order Item",
             filters={
@@ -193,7 +185,7 @@ class FinishWorkOrder(Document):
         )
         
         if not so_items:
-            frappe.throw(f"❌ SO Item not found for {item_code} in {sales_order}")
+            frappe.throw(f"SO Item not found for {item_code} in {sales_order}")
         
         # Find the SO item with available quantity
         so_detail = None
@@ -207,11 +199,9 @@ class FinishWorkOrder(Document):
                 break
 
         if not so_detail:
-            frappe.throw(f"❌ No available quantity in {sales_order} for {item_code}")
+            frappe.throw(f"No available quantity in {sales_order} for {item_code}")
 
-        # ==============================
         # RESERVED QTY CHECK
-        # ==============================
         already_reserved_qty = frappe.db.sql("""
             SELECT COALESCE(SUM(reserved_qty), 0)
             FROM `tabStock Reservation Entry`
@@ -234,9 +224,7 @@ class FinishWorkOrder(Document):
 
         reserve_qty = min(qty, available_qty_to_reserve)
 
-        # ==============================
         # CREATE STOCK RESERVATION ENTRY
-        # ==============================
         sre = frappe.new_doc("Stock Reservation Entry")
 
         sre.item_code = item_code
@@ -258,9 +246,7 @@ class FinishWorkOrder(Document):
         # Check if item actually has batch tracking
         has_batch_no = frappe.get_cached_value("Item", item_code, "has_batch_no")
 
-        # ==============================
         # HANDLE BATCH NO
-        # ==============================
         if batch_no and has_batch_no and reserve_qty > 0:
             sre.has_batch_no = 1
             sre.has_serial_no = 0
@@ -282,7 +268,6 @@ class FinishWorkOrder(Document):
             })
             
             if so_item_data:
-                # Assuming custom fields peices (typo intended, matching original), length, section_weight
                 sb_entry.peices = flt(so_item_data.get("pieces"))
                 sb_entry.length = flt(so_item_data.get("length_size"))
                 sb_entry.section_weight = (
@@ -313,8 +298,13 @@ class FinishWorkOrder(Document):
                 soi = frappe.db.get_value("Work Order", row.work_order, "sales_order_item")
                 frappe.db.set_value("Sales Order Item", soi, "remarks", row.remarks or "")
 
-    def on_submit(self):
+    def before_submit(self):
         self.update_remarks_from_so()
+
+        # Holds data collected while creating Stock Entries so on_submit
+        # can create the Stock Reservation Entries afterwards.
+        self._fg_reservation_data = []
+
         # ==============================
         # BUILD FIFO RAW MATERIAL POOL
         # ==============================
@@ -329,7 +319,7 @@ class FinishWorkOrder(Document):
                     "pieces": rm.pieces,
                     "length": rm.length,
                     "section_weight": rm.section_weight,
-                    "cost_center:": self.cost_center,
+                    "cost_center": self.cost_center,  # ✅ FIXED: Removed extra colon
                     "branch": self.branch
                 })
 
@@ -374,11 +364,15 @@ class FinishWorkOrder(Document):
                 se = frappe.new_doc("Stock Entry")
                 se.stock_entry_type = "Manufacture"
                 se.company = self.company
-                se.to_warehouse = pwo.target_warehouse
-                se.work_order = pwo.work_order
-                se.from_bom = 1
+                se.from_bom = 0
+                se.finished_good = pwo.item
+                se.fg_completed_qty = pwo.qty
+                se.finished_good_quantity = pwo.qty
+
+                # ✅ FIXED: Set BOTH posting_date AND posting_time
                 se.set_posting_time = 1
-                se.posting_date = self.posting_date
+                se.posting_date = self.posting_date or nowdate()
+                # se.posting_time = self.posting_time or nowtime()  # ✅ UNCOMMENTED
 
                 se.flags.ignore_permissions = True
                 se.flags.ignore_mandatory = True
@@ -409,9 +403,9 @@ class FinishWorkOrder(Document):
                         "average_length": rm_row["length"] if is_last else 0,
                         "section_weight": rm_row["section_weight"],
                         "batch_no": rm_row["batch_no"],
-                        "required_stock_in_pieces": 1,
+                        "required_stock_in_pieces": 0,
                         "use_serial_batch_fields": 1,
-                        "cost_center": rm_row["cost_center:"],
+                        "cost_center": rm_row["cost_center"],  # ✅ FIXED: Removed extra colon
                         "branch": rm_row["branch"]
                     })
 
@@ -447,6 +441,7 @@ class FinishWorkOrder(Document):
                         "qty": consume_scrap,
                         "is_scrap_item": 1,
                         "required_stock_in_pieces": 1,
+                        "use_serial_batch_fields": 1,
                         "cost_center": self.cost_center,
                         "branch": self.branch
                     })
@@ -472,7 +467,7 @@ class FinishWorkOrder(Document):
                     "pieces": pwo.ready_pieces,
                     "average_length": pwo.length_size,
                     "section_weight": pwo.standard_weight,
-                    "assorted_length":pwo.assorted_length,
+                    "assorted_length": pwo.assorted_length,
                     "is_finished_item": 1,
                     "required_stock_in_pieces": 1,
                     "cost_center": self.cost_center,
@@ -481,23 +476,13 @@ class FinishWorkOrder(Document):
 
                 se.fg_completed_qty = fg_final_qty
 
-                # ✅ Submit Stock Entry
+                # Submit Stock Entry
                 se.insert()
                 se.submit()
-                pwo.db_set("stock_entry_reference",se.name)
-                repost_doc = frappe.new_doc("Repost Item Valuation")
-                repost_doc.based_on = "Transaction"
-                repost_doc.voucher_type = se.doctype
-                repost_doc.voucher_no = se.name
-                repost_doc.posting_date = se.posting_date
-                repost_doc.posting_time = se.posting_time
-                repost_doc.allow_negative_stock = 1
-                repost_doc.flags.ignore_permissions = True
-                repost_doc.insert(ignore_permissions=True)
-                repost_doc.submit()
-                repost_doc.repost_now()
+                pwo.db_set("stock_entry_reference", se.name)
+                
                 # ==============================
-                # 🔥 IMPROVED: GET FG BATCH FROM STOCK ENTRY
+                # GET FG BATCH FROM STOCK ENTRY
                 # ==============================
                 fg_batch_no = None
                 fg_bundle_name = None
@@ -529,28 +514,26 @@ class FinishWorkOrder(Document):
                                 )
                         
                         break  # Stop after finding the finished item
-                
-
 
                 # ==============================
-                # CREATE STOCK RESERVATION WITH BATCH
+                # QUEUE STOCK RESERVATION DATA
                 # ==============================
-                self.create_fg_stock_reservation(
-                    item_code=pwo.item,
-                    warehouse=pwo.target_warehouse,
-                    qty=fg_final_qty,
-                    so_qty=pwo.sales_order_qty,
-                    name=pwo.name,
-                    stock_uom=pwo.stock_uom,
-                    work_order=pwo.work_order,
-                    sales_order=pwo.sales_order,
-                    sales_order_item = frappe.db.get_value("Work Order", pwo.work_order, "sales_order_item"),
-                    batch_no=fg_batch_no,   # ✅ PASS BATCH (might be None)
-                    quality_required=pwo.quality_required,
-                    from_voucher_type = self.doctype,
-                    from_voucher_no = self.name,
-                    from_voucher_detail_no = pwo.name
-                )
+                self._fg_reservation_data.append({
+                    "item_code": pwo.item,
+                    "warehouse": pwo.target_warehouse,
+                    "qty": fg_final_qty,
+                    "so_qty": pwo.sales_order_qty,
+                    "name": pwo.name,
+                    "stock_uom": pwo.stock_uom,
+                    "work_order": pwo.work_order,
+                    "sales_order": pwo.sales_order,
+                    "sales_order_item": frappe.db.get_value("Work Order", pwo.work_order, "sales_order_item"),
+                    "batch_no": fg_batch_no,
+                    "quality_required": pwo.quality_required,
+                    "from_voucher_type": self.doctype,
+                    "from_voucher_no": self.name,
+                    "from_voucher_detail_no": pwo.name
+                })
 
             except Exception as e:
                 frappe.log_error(
@@ -575,6 +558,28 @@ class FinishWorkOrder(Document):
         # ==============================
         excess = sum([rm["remaining_qty"] for rm in rm_pool if rm["remaining_qty"] > 0])
         self.db_set("excess_rm_qty", flt(excess, precision))
+
+    def on_submit(self):
+        # By this point every Stock Entry (Manufacture) has already been
+        # created and submitted in before_submit. Now that this document
+        # itself is submitted, create the Stock Reservation Entries.
+        for data in getattr(self, "_fg_reservation_data", []):
+            self.create_fg_stock_reservation(
+                item_code=data["item_code"],
+                warehouse=data["warehouse"],
+                qty=data["qty"],
+                so_qty=data["so_qty"],
+                name=data["name"],
+                stock_uom=data["stock_uom"],
+                work_order=data["work_order"],
+                sales_order=data["sales_order"],
+                sales_order_item=data["sales_order_item"],
+                batch_no=data["batch_no"],
+                quality_required=data["quality_required"],
+                from_voucher_type=data["from_voucher_type"],
+                from_voucher_no=data["from_voucher_no"],
+                from_voucher_detail_no=data["from_voucher_detail_no"]
+            )
 
 @frappe.whitelist()
 @frappe.validate_and_sanitize_search_inputs

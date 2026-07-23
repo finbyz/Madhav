@@ -84,23 +84,17 @@ class StockTransfer(Document):
                         )
                         row.customer_po_no = so.po_no
 
-    def on_submit(self):
+    def before_submit(self):
+        # Holds data collected while creating the Stock Entry so on_submit
+        # can create the Stock Reservation Entries afterwards.
+        self._fg_reservation_data = []
+
         se = self.create_stock_entry()
-        repost_doc = frappe.new_doc("Repost Item Valuation")
-        repost_doc.based_on = "Transaction"
-        repost_doc.voucher_type = se.doctype
-        repost_doc.voucher_no = se.name
-        repost_doc.posting_date = se.posting_date
-        repost_doc.posting_time = se.posting_time
-        repost_doc.allow_negative_stock = 1
-        repost_doc.flags.ignore_permissions = True
-        repost_doc.insert(ignore_permissions=True)
-        repost_doc.submit()
-        repost_doc.repost_now()        
+
         for row in self.transfer_item:
             if not row.source_document_type:
                 continue
-            
+
             # Get work order name from the source document
             if row.source_document_type == "Stock Entry":
                 wo_name = frappe.db.get_value(
@@ -110,39 +104,39 @@ class StockTransfer(Document):
                 )
                 if not wo_name:
                     continue
-                
+
                 # Fetch the Work Order doc to get sales_order and sales_order_item
                 wor = frappe.get_doc("Work Order", wo_name)
-                
+
                 if not wor.sales_order or not wor.sales_order_item:
                     continue
-                
+
                 # Get the qty from the specific Sales Order Item linked to this WO
                 so_qty = frappe.db.get_value(
                     "Sales Order Item",
                     wor.sales_order_item,   # this is the SO Item row name stored on WO
                     "qty"
                 )
-                
+
                 if not so_qty:
                     continue
                 if wor.fg_warehouse == self.target_warehouse:
-                    self.create_fg_stock_reservation(
-                        item_code=row.item_code,
-                        warehouse=self.target_warehouse,
-                        qty=row.qty,
-                        so_qty=so_qty,
-                        name=self.name,
-                        stock_uom=frappe.db.get_value("Item", row.item_code, "stock_uom"),
-                        work_order=wo_name,
-                        sales_order=wor.sales_order,
-                        sales_order_item = wor.sales_order_item,
-                        batch_no=row.batch,
-                        quality_required=0,
-                        from_voucher_type = self.doctype,
-                        from_voucher_no = self.name,
-                        from_voucher_detail_no = row.name
-                    )
+                    self._fg_reservation_data.append({
+                        "item_code": row.item_code,
+                        "warehouse": self.target_warehouse,
+                        "qty": row.qty,
+                        "so_qty": so_qty,
+                        "name": self.name,
+                        "stock_uom": frappe.db.get_value("Item", row.item_code, "stock_uom"),
+                        "work_order": wo_name,
+                        "sales_order": wor.sales_order,
+                        "sales_order_item": wor.sales_order_item,
+                        "batch_no": row.batch,
+                        "quality_required": 0,
+                        "from_voucher_type": self.doctype,
+                        "from_voucher_no": self.name,
+                        "from_voucher_detail_no": row.name
+                    })
             elif row.source_document_type == "Purchase Receipt":
                 pr_item = frappe.db.get_value(
                     "Purchase Receipt Item",
@@ -166,22 +160,42 @@ class StockTransfer(Document):
                 if not so_qty:
                     continue
 
-                self.create_fg_stock_reservation(
-                    item_code=row.item_code,
-                    warehouse=self.target_warehouse,
-                    qty=row.qty,
-                    so_qty=so_qty,
-                    name=self.name,
-                    stock_uom=frappe.db.get_value("Item", row.item_code, "stock_uom"),
-                    work_order=None,
-                    sales_order=pr_item.sales_order,
-                    sales_order_item=pr_item.sales_order_item,
-                    batch_no=row.batch,
-                    quality_required=0,
-                    from_voucher_type=self.doctype,
-                    from_voucher_no=self.name,
-                    from_voucher_detail_no=row.name,
-                )
+                self._fg_reservation_data.append({
+                    "item_code": row.item_code,
+                    "warehouse": self.target_warehouse,
+                    "qty": row.qty,
+                    "so_qty": so_qty,
+                    "name": self.name,
+                    "stock_uom": frappe.db.get_value("Item", row.item_code, "stock_uom"),
+                    "work_order": None,
+                    "sales_order": pr_item.sales_order,
+                    "sales_order_item": pr_item.sales_order_item,
+                    "batch_no": row.batch,
+                    "quality_required": 0,
+                    "from_voucher_type": self.doctype,
+                    "from_voucher_no": self.name,
+                    "from_voucher_detail_no": row.name,
+                })
+
+    def on_submit(self):
+
+        for data in getattr(self, "_fg_reservation_data", []):
+            self.create_fg_stock_reservation(
+                item_code=data["item_code"],
+                warehouse=data["warehouse"],
+                qty=data["qty"],
+                so_qty=data["so_qty"],
+                name=data["name"],
+                stock_uom=data["stock_uom"],
+                work_order=data["work_order"],
+                sales_order=data["sales_order"],
+                sales_order_item=data["sales_order_item"],
+                batch_no=data["batch_no"],
+                quality_required=data["quality_required"],
+                from_voucher_type=data["from_voucher_type"],
+                from_voucher_no=data["from_voucher_no"],
+                from_voucher_detail_no=data["from_voucher_detail_no"]
+            )
 
     def validate_transfer_item_limits(self):
         for item in self.transfer_item:

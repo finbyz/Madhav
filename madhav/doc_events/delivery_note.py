@@ -129,51 +129,133 @@ def change_qty_serial_and_batch(self):
 
         # IMPORTANT: Use item.qty here, NOT invoice_qty.
         target_qty = flt(item.qty)
-        remaining_qty = target_qty
-        total_allocated_pieces = 0
 
-        for entry in bundle.entries:
+        batch_entries = [e for e in bundle.entries if e.batch_no]
+        if not batch_entries:
+            continue
+
+        total_original_qty = sum(abs(flt(e.qty)) for e in batch_entries)
+        if not total_original_qty:
+            continue
+
+        # ── Step 1: Proportional distribution of QTY, capped by batch_qty ──
+        desired_qty = []
+        for entry in batch_entries:
+            original = abs(flt(entry.qty))
+            ratio = original / total_original_qty
+            dq = target_qty * ratio
+
             batch_qty = flt(
                 frappe.db.get_value("Batch", entry.batch_no, "batch_qty") or 0
             )
-            batch_pieces = max(
-                0,
-                get_batch_available_pieces(
-                    item.item_code, entry.warehouse or item.warehouse, entry.batch_no
-                ),
+            dq = min(dq, batch_qty)
+            desired_qty.append(dq)
+
+        actual_total_qty = sum(desired_qty)
+        leftover_qty = target_qty - actual_total_qty
+
+        for i, entry in enumerate(batch_entries):
+            if abs(leftover_qty) < 0.0001:
+                break
+            batch_qty = flt(
+                frappe.db.get_value("Batch", entry.batch_no, "batch_qty") or 0
+            )
+            room = batch_qty - desired_qty[i]
+            if room > 0:
+                take = min(room, leftover_qty)
+                desired_qty[i] += take
+                leftover_qty -= take
+
+        # ── Step 2: Convert each entry's qty → pieces using ITS OWN length/section_weight ──
+        # qty = (pieces * length * section_weight) / 1000
+        # => pieces = (qty * 1000) / (length * section_weight)
+        raw_pieces = []
+        for i, entry in enumerate(batch_entries):
+            entry_length = flt(entry.length)
+            entry_section_weight = flt(entry.section_weight)
+            if entry_length and entry_section_weight:
+                pieces = (desired_qty[i] * 1000) / (entry_length * entry_section_weight)
+            else:
+                pieces = 0
+            raw_pieces.append(pieces)
+
+        target_total_pieces = sum(raw_pieces)
+
+        # ── Step 3: Cap pieces against what's actually available in the batch, spill leftover ──
+        available_pieces_cache = {
+            entry.batch_no: get_batch_available_pieces(
+                item.item_code, entry.warehouse or item.warehouse, entry.batch_no
+            )
+            for entry in batch_entries
+        }
+
+        desired_pieces = []
+        for i, entry in enumerate(batch_entries):
+            available = available_pieces_cache.get(entry.batch_no, 0)
+            dp = raw_pieces[i]
+            if available:
+                dp = min(dp, available)
+            desired_pieces.append(dp)
+
+        actual_total_pieces = sum(desired_pieces)
+        leftover_pieces = target_total_pieces - actual_total_pieces
+
+        for i, entry in enumerate(batch_entries):
+            if abs(leftover_pieces) < 0.0001:
+                break
+            available = available_pieces_cache.get(entry.batch_no, 0)
+            if not available:
+                continue
+            room = available - desired_pieces[i]
+            if room > 0:
+                take = min(room, leftover_pieces)
+                desired_pieces[i] += take
+                leftover_pieces -= take
+
+        # If total available pieces across all batches is less than what's
+        # needed, leftover_pieces stays > 0 here — meaning we physically
+        # can't fulfil target_qty in full. Flag it rather than silently
+        # under-delivering.
+        if leftover_pieces > 0.0001:
+            frappe.msgprint(
+                f"Not enough available pieces for {item.item_code} in "
+                f"{item.warehouse}: short by {leftover_pieces:.2f} pieces.",
+                indicator="orange",
+                alert=True,
             )
 
-            if remaining_qty <= 0:
-                entry.qty = 0
-                entry.pieces = 0
-                continue
+        # ── Step 4: Recompute qty from FINAL pieces so qty & pieces stay in sync ──
+        final_qty = []
+        total_allocated_pieces = 0
+        for i, entry in enumerate(batch_entries):
+            entry_length = flt(entry.length)
+            entry_section_weight = flt(entry.section_weight)
+            pieces = desired_pieces[i]
 
-            allocated_qty = min(batch_qty, remaining_qty)
+            if entry_length and entry_section_weight:
+                qty = (pieces * entry_length * entry_section_weight) / 1000
+            else:
+                qty = 0
 
-            original_qty = abs(flt(entry.qty))
-            original_pieces = max(0, flt(entry.pieces))
-            pieces_ratio = (original_pieces / original_qty) if original_qty else 0
-            proportional_pieces = allocated_qty * pieces_ratio
+            final_qty.append(qty)
+            total_allocated_pieces += pieces
 
-            allocated_pieces = max(0, min(batch_pieces, round(proportional_pieces)))
+        allocated_total_qty = sum(final_qty)
 
+        # ── Write everything back ──
+        for i, entry in enumerate(batch_entries):
             # Outward transaction stores negative qty
-            entry.qty = -allocated_qty
-            entry.pieces = allocated_pieces
+            entry.qty = -final_qty[i]
+            entry.pieces = desired_pieces[i]
 
-            total_allocated_pieces += allocated_pieces
-            remaining_qty -= allocated_qty
-
-        allocated_total = target_qty - remaining_qty
-
-        item.qty = allocated_total
-        item.stock_qty = allocated_total
-        item.amount = flt(item.rate) * allocated_total
+        item.qty = allocated_total_qty
+        item.stock_qty = allocated_total_qty
+        item.amount = flt(item.rate) * allocated_total_qty
         item.base_amount = item.amount * flt(self.conversion_rate or 1)
 
         item.pieces = max(0, total_allocated_pieces)
 
-        bundle.total_qty = -allocated_total
+        bundle.total_qty = -allocated_total_qty
         bundle.flags.ignore_validate = True
         bundle.flags.ignore_links = True
         bundle.save(ignore_permissions=True)
@@ -184,27 +266,9 @@ def change_qty_serial_and_batch(self):
             f"Total Pieces={total_allocated_pieces}, "
             f"Entries={[{'batch': d.batch_no, 'qty': d.qty, 'pieces': d.pieces} for d in bundle.entries]}"
         )
-# ---------------------------------------------------------------------------
-# Helper: qty available before we need to touch reservation / do a Stock
-# Reconciliation. This is the ceiling that invoice_qty is compared against.
-#
-#   - Bundle items  -> sum of |qty| across batch entries in the bundle
-#   - Plain batch    -> Batch.batch_qty
-#   - SO-reserved,
-#     non-batch item -> remaining reserved qty on the linked SRE(s)
-#                        (reserved_qty - delivered_qty, summed)
-#   - Anything else  -> 0 (falls back to old behaviour: always over)
-# ---------------------------------------------------------------------------
+
 def get_available_qty_for_item(row):
-    # If this row is fulfilling a Sales Order reservation, the ceiling for
-    # "no reconciliation needed" is the SRE's own remaining reserved qty
-    # (reserved_qty - delivered_qty) — NOT whatever qty currently sits in
-    # this DN's bundle. The bundle on this DN has already been trimmed down
-    # to the physically-entered delivery qty by change_qty_serial_and_batch
-    # (before_insert), which is a *subset* of the reservation, not the
-    # reservation itself. Reading the bundle here would falsely treat a
-    # small physical delivery as "the whole reservation" and trigger
-    # reconciliation even when most of the reservation is still untouched.
+
     if row.against_sales_order and row.so_detail:
         sre_rows = frappe.get_all(
             "Stock Reservation Entry",
@@ -230,9 +294,10 @@ def get_available_qty_for_item(row):
 
 
 
-def update_bundle_to_invoice_qty(item, invoice_qty):
+def update_bundle_to_invoice_qty(item, invoice_qty, qty, deliver_as_qty):
     if not item.serial_and_batch_bundle:
         return
+
     bundle = frappe.get_doc("Serial and Batch Bundle", item.serial_and_batch_bundle)
     bundle.reload()
 
@@ -244,22 +309,63 @@ def update_bundle_to_invoice_qty(item, invoice_qty):
     if not total_original_qty:
         return
 
-    allocated_total = 0
+    target_qty = flt(invoice_qty) if deliver_as_qty else flt(qty)
+
+    # No change needed
+    if abs(target_qty - total_original_qty) < 0.0001:
+        return
+
+    # ── Proportional distribution with batch_qty caps & spillover ──
+    desired = []
     for entry in batch_entries:
-        ratio = abs(flt(entry.qty)) / total_original_qty
-        allocated_qty = flt(invoice_qty) * ratio
-        entry.qty = -allocated_qty
-        allocated_total += allocated_qty
+        original = abs(flt(entry.qty))
+        ratio = original / total_original_qty
+        desired_qty = target_qty * ratio
 
-    if allocated_total != flt(invoice_qty) and batch_entries:
-        diff = flt(invoice_qty) - allocated_total
-        batch_entries[-1].qty -= diff
+        batch_qty = flt(
+            frappe.db.get_value("Batch", entry.batch_no, "batch_qty") or 0
+        )
+        desired_qty = min(desired_qty, batch_qty)
+        desired.append(desired_qty)
 
-    bundle.total_qty = -flt(invoice_qty)
+    # Spill leftover (from capped batches) to batches with remaining room
+    actual_total = sum(desired)
+    leftover = target_qty - actual_total
+
+    for i, entry in enumerate(batch_entries):
+        if abs(leftover) < 0.0001:
+            break
+        batch_qty = flt(
+            frappe.db.get_value("Batch", entry.batch_no, "batch_qty") or 0
+        )
+        room = batch_qty - desired[i]
+        if room > 0:
+            take = min(room, leftover)
+            desired[i] += take
+            leftover -= take
+
+    # ── Apply ──
+    length = flt(item.length)
+    section_weight = flt(item.section_weight)
+    total_pieces = 0
+
+    for i, entry in enumerate(batch_entries):
+        entry.qty = -desired[i]
+
+        # Calculate pieces from qty using formula:
+        # qty = (pieces * length * section_weight) / 1000
+        # => pieces = (qty * 1000) / (length * section_weight)
+        if length and section_weight:
+            entry.pieces = (desired[i] * 1000) / (length * section_weight)
+        else:
+            entry.pieces = 0
+
+        total_pieces += entry.pieces
+
+    bundle.total_qty = -target_qty
     bundle.flags.ignore_validate = True
     bundle.flags.ignore_links = True
     bundle.save(ignore_permissions=True)
-
 
 from frappe.utils import get_datetime, add_to_date, nowtime
 
@@ -284,7 +390,7 @@ def before_submit(self, method):
         if flt(i.difference_qty) <= 0 and flt(i.invoice_qty) > 0 and i.serial_and_batch_bundle:
             i.qty = flt(i.invoice_qty)
             i.stock_qty = flt(i.invoice_qty) * flt(i.conversion_factor or 1)
-            update_bundle_to_invoice_qty(i, flt(i.invoice_qty))
+            update_bundle_to_invoice_qty(i, flt(i.invoice_qty),flt(i.qty),flt(i.custom_deliver_as_qty))
 
     cancel_stock_reservations_from_so(self)
 
@@ -509,13 +615,8 @@ def create_stock_reconciliation(self):
         if flt(dn_row.difference_qty) <= 0:
             continue
 
-        # The Stock Reconciliation just topped up stock so that invoice_qty
-        # is now fully available. The DN qty (and, for bundle items, the
-        # bundle entries) should reflect exactly invoice_qty — never the
-        # bloated batch/reservation total. Reuse update_bundle_to_invoice_qty
-        # so the negative-qty convention stays consistent everywhere.
         if dn_row.serial_and_batch_bundle:
-            update_bundle_to_invoice_qty(dn_row, flt(dn_row.invoice_qty))
+            update_bundle_to_invoice_qty(dn_row, flt(dn_row.invoice_qty),flt(dn_row.qty),flt(dn_row.custom_deliver_as_qty))
 
         dn_row.qty = flt(dn_row.invoice_qty)
         dn_row.stock_qty = flt(dn_row.invoice_qty) * flt(dn_row.conversion_factor or 1)
