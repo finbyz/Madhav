@@ -13,14 +13,16 @@ class FinishWorkOrder(Document):
             if row.stock_entry_reference:
                 se = frappe.get_doc("Stock Entry", row.stock_entry_reference)
                 if se.docstatus == 1:
+                    se.flags.ignore_links = True
                     se.cancel()
-
                 row.db_set("stock_entry_reference", "")
-                
-            if row.make_it_unplanned:
-                wo = frappe.get_doc("Work Order",row.work_order)
-                wo.cancel()
-                row.db_set("work_order","")
+
+            if row.make_it_unplanned == 1:
+                if frappe.db.exists("Work Order", row.work_order):
+                    wo = frappe.get_doc("Work Order", row.work_order)
+                    if wo.docstatus == 1:
+                        wo.cancel()
+                row.db_set("work_order", "")
 
             sre_name = frappe.db.exists(
                 "Stock Reservation Entry",
@@ -33,14 +35,12 @@ class FinishWorkOrder(Document):
 
             if sre_name:
                 sre = frappe.get_doc("Stock Reservation Entry", sre_name)
-
                 if sre.docstatus == 1:
                     sre.cancel()
-
                 sre.db_set("from_voucher_no", "")
-
     def on_update(self):
-        self.create_unplanned_work_orders()
+        if self.docstatus == 0:
+            self.create_unplanned_work_orders()
         
     def after_insert(self):
         for row in self.pending_work_orders:

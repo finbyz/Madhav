@@ -312,9 +312,10 @@ class StockTransfer(Document):
                 "name": sales_order_item,
                 "docstatus": 1
             },
-            fields=["name", "qty", "stock_reserved_qty"]
+            fields=["name", "qty", "stock_reserved_qty","warehouse"]
         )
-        
+        if frappe.db.get_value("Sales Order Item",{"parent": sales_order,"item_code": item_code,"name":sales_order_item},"warehouse") != warehouse:
+            return
         if not so_items:
             frappe.throw(f"❌ SO Item not found for {item_code} in {sales_order}")
         

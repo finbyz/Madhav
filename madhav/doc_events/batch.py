@@ -78,3 +78,6 @@ def get_next_cut_number(reference_batch):
             if num > max_num:
                 max_num = num
     return max_num + 1
+
+def before_insert(self,method):
+    self.manufacturing_date = frappe.db.get_value(self.reference_doctype,self.reference_name,"posting_date")

@@ -32,6 +32,7 @@ def create_batch(self):
 		"item": self.get("item_code"),
 		"reference_doctype": self.get("voucher_type"),
 		"reference_name": self.get("voucher_no"),
+  		"manufacturing_date":self.get("posting_date"),
 	})
 	
 	return make_batch(frappe._dict(dct))

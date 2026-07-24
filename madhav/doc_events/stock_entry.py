@@ -4,7 +4,7 @@ from frappe.utils import get_url_to_form
 from frappe.utils import nowdate, flt, cint, cstr, now_datetime
 
 def on_cancel(self,method):
-    if self.stock_entry_type == "Manufacture":
+    if self.stock_entry_type == "Manufacture" and self.work_order:
         for row in self.items:
             if row.is_finished_item:
                 doc = frappe.get_doc("Work Order",self.work_order)

@@ -238,7 +238,8 @@ doc_events = {
         "autoname":"madhav.doc_events.batch_group.autoname"
     },
     "Batch":{
-        "autoname":"madhav.doc_events.batch.autoname"
+        "autoname":"madhav.doc_events.batch.autoname",
+        "before_insert":"madhav.doc_events.batch.before_insert"
     },
     "Sales Order":{
         "before_validate":"madhav.doc_events.sales_order.calculate_qty_in_tonne"
