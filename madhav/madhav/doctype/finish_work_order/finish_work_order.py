@@ -9,21 +9,6 @@ from frappe.utils import flt
 class FinishWorkOrder(Document):
     def on_cancel(self):
         for row in self.pending_work_orders:
-
-            if row.stock_entry_reference:
-                se = frappe.get_doc("Stock Entry", row.stock_entry_reference)
-                if se.docstatus == 1:
-                    se.flags.ignore_links = True
-                    se.cancel()
-                row.db_set("stock_entry_reference", "")
-
-            if row.make_it_unplanned == 1:
-                if frappe.db.exists("Work Order", row.work_order):
-                    wo = frappe.get_doc("Work Order", row.work_order)
-                    if wo.docstatus == 1:
-                        wo.cancel()
-                row.db_set("work_order", "")
-
             sre_name = frappe.db.exists(
                 "Stock Reservation Entry",
                 {
@@ -38,6 +23,23 @@ class FinishWorkOrder(Document):
                 if sre.docstatus == 1:
                     sre.cancel()
                 sre.db_set("from_voucher_no", "")
+                
+            if row.stock_entry_reference:
+                se = frappe.get_doc("Stock Entry", row.stock_entry_reference)
+                if se.docstatus == 1:
+                    se.flags.ignore_links = True
+                    se.cancel()
+                row.db_set("stock_entry_reference", "")
+
+            if row.make_it_unplanned == 1:
+                if frappe.db.exists("Work Order", row.work_order):
+                    wo = frappe.get_doc("Work Order", row.work_order)
+                    if wo.docstatus == 1:
+                        se.flags.ignore_links = True
+                        wo.cancel()
+                row.db_set("work_order", "")
+
+
     def on_update(self):
         if self.docstatus == 0:
             self.create_unplanned_work_orders()
@@ -122,7 +124,6 @@ class FinishWorkOrder(Document):
         wo.stock_uom = row.stock_uom
         wo.company = self.company
         wo.fg_warehouse = row.target_warehouse
-        wo.finish_work_order = row.parent
         bom = frappe.get_value("BOM", {"item": row.item, "is_default": 1}, "name")
         wo.bom_no = bom
 
@@ -371,10 +372,11 @@ class FinishWorkOrder(Document):
                 se = frappe.new_doc("Stock Entry")
                 se.stock_entry_type = "Manufacture"
                 se.company = self.company
-                se.from_bom = 0
+                se.work_order = pwo.work_order
+                se.from_bom = 1
                 se.finished_good = pwo.item
-                se.fg_completed_qty = pwo.qty
-                se.finished_good_quantity = pwo.qty
+                se.fg_completed_qty = pwo.ready_qty if pwo.deliver_as_qty else pwo.calculated_qty
+                se.finished_good_quantity = pwo.ready_qty if pwo.deliver_as_qty else pwo.calculated_qty
 
                 # ✅ FIXED: Set BOTH posting_date AND posting_time
                 se.set_posting_time = 1
