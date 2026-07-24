@@ -199,7 +199,11 @@ class FinishWorkOrder(Document):
                 break
 
         if not so_detail:
-            frappe.throw(f"No available quantity in {sales_order} for {item_code}")
+            frappe.log_error(
+                title="Stock Reservation Skipped",
+                message=f"No available quantity in {sales_order} for {item_code}. Stock Entry was created without reservation."
+            )
+            return
 
         # RESERVED QTY CHECK
         already_reserved_qty = frappe.db.sql("""
@@ -213,7 +217,10 @@ class FinishWorkOrder(Document):
                 AND item_code = %s
         """, (sales_order, so_detail, item_code))[0][0] or 0
 
-        available_qty_to_reserve = flt(so_qty) - flt(already_reserved_qty)
+        available_qty_to_reserve = min(
+            flt(available_qty),
+            flt(so_qty) - flt(already_reserved_qty),
+        )
         frappe.log_error(
             title="Stock Reservation Debug",
             message=(f"SO: {sales_order}, Item: {item_code}, SO Qty: {so_qty}, Already Reserved: {already_reserved_qty}, Available to Reserve: {available_qty_to_reserve}") 
