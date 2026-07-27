@@ -285,7 +285,7 @@ doc_events = {
         "validate": "madhav.doc_events.quality_inspection.validate"
     },
     "Work Order":{
-        "on_update_after_submit":"madhav.doc_events.work_order.validate",
+        # "on_update_after_submit":"madhav.doc_events.work_order.validate",
         "validate":"madhav.doc_events.work_order.validate",
         "on_submit": "madhav.doc_events.work_order.update_so_pieces_from_work_order",
         "on_cancel": "madhav.doc_events.work_order.revert_so_pieces_from_work_order"
