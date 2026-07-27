@@ -8,7 +8,7 @@ def on_cancel(self,method):
         for row in self.items:
             if row.is_finished_item:
                 doc = frappe.get_doc("Work Order",self.work_order)
-                doc.db_set("completed_pcs",doc.completed_pcs - row.pieces)
+                doc.db_set("completed_pcs",max(0, doc.completed_pcs - row.pieces))
                 doc.db_set("pending_pcs",doc.pieces - doc.completed_pcs)
 
 def validate(doc, method):

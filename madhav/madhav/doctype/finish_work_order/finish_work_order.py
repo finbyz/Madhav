@@ -9,15 +9,6 @@ from frappe.utils import flt
 class FinishWorkOrder(Document):
     def on_cancel(self):
         for row in self.pending_work_orders:
-            if row.work_order and frappe.db.exists("Work Order", row.work_order):
-                wo = frappe.get_doc("Work Order", row.work_order)
-                completed = flt(wo.completed_pcs or 0)
-                total = flt(wo.pieces or 0)
-                pcs = flt(row.ready_pieces or 0)
-
-                new_completed = max(completed - pcs, 0)
-                wo.db_set("completed_pcs", new_completed)
-                wo.db_set("pending_pcs", total - new_completed)
             sre_name = frappe.db.exists(
                 "Stock Reservation Entry",
                 {
