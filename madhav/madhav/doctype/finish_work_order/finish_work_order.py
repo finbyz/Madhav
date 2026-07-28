@@ -425,7 +425,7 @@ class FinishWorkOrder(Document):
                         rm_row["remaining_qty"] = 0
                         rm_index += 1
 
-                if remaining_fg_qty > 0.0001:
+                if round(remaining_fg_qty, 2) > 0:
                     frappe.throw(
                         f"Row {pwo.idx}: Raw material pool exhausted. Need {remaining_fg_qty}"
                     )
