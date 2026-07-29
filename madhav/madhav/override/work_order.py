@@ -24,9 +24,9 @@ class WorkOrder(ERPNextWorkOrder):
 
         qty = frappe.db.sql(
             f""" select sum(qty) from
-            `tabWork Order` where sales_order = %s and docstatus = 1 and status <> 'Closed' and {cond}
+            `tabWork Order` where sales_order = %s and sales_order_item = %s and docstatus = 1 and status <> 'Closed' and {cond}
             """,
-            (self.sales_order, (self.product_bundle_item or self.production_item)),
+            (self.sales_order,self.sales_order_item, (self.product_bundle_item or self.production_item)),
             as_list=1,
         )
 

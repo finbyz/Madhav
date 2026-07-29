@@ -295,6 +295,8 @@ def get_available_qty_for_item(row):
 
 
 def update_bundle_to_invoice_qty(item, invoice_qty, qty, deliver_as_qty):
+    if not deliver_as_qty:
+        return
     if not item.serial_and_batch_bundle:
         return
 
@@ -309,7 +311,7 @@ def update_bundle_to_invoice_qty(item, invoice_qty, qty, deliver_as_qty):
     if not total_original_qty:
         return
 
-    target_qty = flt(invoice_qty) if deliver_as_qty else flt(qty)
+    target_qty = flt(invoice_qty)
 
     # No change needed
     if abs(target_qty - total_original_qty) < 0.0001:
@@ -387,7 +389,7 @@ def before_submit(self, method):
         # bundle to rebalance. For plain SO-reserved (non-batch, non-bundle)
         # items, leave `qty` exactly as entered — it represents the physical
         # delivery qty, not the billed qty.
-        if flt(i.difference_qty) <= 0 and flt(i.invoice_qty) > 0 and i.serial_and_batch_bundle:
+        if flt(i.difference_qty) <= 0 and flt(i.invoice_qty) > 0 and i.serial_and_batch_bundle and i.custom_deliver_as_qty:
             i.qty = flt(i.invoice_qty)
             i.stock_qty = flt(i.invoice_qty) * flt(i.conversion_factor or 1)
             update_bundle_to_invoice_qty(i, flt(i.invoice_qty),flt(i.qty),flt(i.custom_deliver_as_qty))
@@ -453,7 +455,6 @@ def create_stock_reconciliation(self):
     from frappe.utils import flt, nowtime, get_datetime, add_to_date
 
     items_with_invoice_qty = [row for row in self.items if flt(row.difference_qty) > 0 and row.custom_deliver_as_qty]
-
     if not items_with_invoice_qty:
         return
 

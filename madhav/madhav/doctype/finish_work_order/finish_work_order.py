@@ -9,21 +9,26 @@ from frappe.utils import flt
 class FinishWorkOrder(Document):
     def on_cancel(self):
         for row in self.pending_work_orders:
-            sre_name = frappe.db.exists(
+            # Cancel SRE first (filter docstatus=1 so a previously-cancelled
+            # SRE from a failed attempt doesn't mask the active one)
+            sre_name = frappe.db.get_value(
                 "Stock Reservation Entry",
                 {
                     "from_voucher_type": self.doctype,
                     "from_voucher_no": self.name,
                     "from_voucher_detail_no": row.name,
+                    "docstatus": 1,
                 },
+                "name",
             )
 
             if sre_name:
                 sre = frappe.get_doc("Stock Reservation Entry", sre_name)
-                if sre.docstatus == 1:
-                    sre.cancel()
+                sre.cancel()
                 sre.db_set("from_voucher_no", "")
-                
+
+            # Cancel SE immediately after its SRE so the reservation is
+            # cleared before the stock ledger validation runs
             if row.stock_entry_reference:
                 se = frappe.get_doc("Stock Entry", row.stock_entry_reference)
                 if se.docstatus == 1:
@@ -35,7 +40,7 @@ class FinishWorkOrder(Document):
                 if frappe.db.exists("Work Order", row.work_order):
                     wo = frappe.get_doc("Work Order", row.work_order)
                     if wo.docstatus == 1:
-                        se.flags.ignore_links = True
+                        wo.flags.ignore_links = True
                         wo.cancel()
                 row.db_set("work_order", "")
 
