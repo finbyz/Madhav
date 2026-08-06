@@ -117,7 +117,7 @@ class FinishWorkOrder(Document):
             if row.make_it_unplanned and not row.work_order:
 
                 new_wo = self.create_new_work_order(row)
-                row.work_order = new_wo
+                row.db_set("work_order", new_wo)
 
     def create_new_work_order(self, row):
 
