@@ -30,9 +30,10 @@ def _get_batch_constraints(voucher_type, voucher_detail_no, item_code=None):
     flag_data = flag_ranges.get(voucher_detail_no, {})
 
     raw_max = flag_data.get("max_length")
+    raw_min = flag_data.get("min_length")
     max_length = flt(raw_max) if raw_max not in (None, "", 0) else length_size + 1.5
 
-    min_length = length_size
+    min_length = raw_min
     if min_length > max_length:
         min_length, max_length = max_length, min_length
 
@@ -147,6 +148,149 @@ def _get_batch_debug_details(item_code, warehouse, constraints):
 
 
 # ---------------------------------------------------------------------------
+# Consolidated message builder
+# ---------------------------------------------------------------------------
+
+def _build_stock_reservation_summary(prep_items, filtered_out, reservation_results):
+    """
+    Build a single well-structured HTML message combining:
+    1. Preparation summary (table of items with eligible batches)
+    2. Filtered-out items (if any)
+    3. Reservation results (batches used per item)
+    """
+    from frappe.utils import flt
+
+    parts = []
+
+    # --- Section 1: Preparation Summary ---
+    if prep_items:
+        # Deduplicate by item_code (keep first occurrence)
+        seen = set()
+        unique_items = []
+        for item in prep_items:
+            if item["item_code"] not in seen:
+                seen.add(item["item_code"])
+                unique_items.append(item)
+
+        rows = ""
+        for item in unique_items:
+            rows += (
+                "<tr>"
+                "<td>{item_code}</td>"
+                "<td style='text-align:right'>{batches}</td>"
+                "<td style='text-align:right'>{available}</td>"
+                "<td style='text-align:right'>{requested}</td>"
+                "</tr>"
+            ).format(
+                item_code=item["item_code"],
+                batches=item["eligible_batches"],
+                available=flt(item["total_eligible_qty"], 3),
+                requested=flt(item["requested_qty"], 3),
+            )
+
+        parts.append(
+            "<p><b>{title}</b></p>"
+            "<table class='table table-bordered' style='width:100%'>"
+            "<thead><tr>"
+            "<th>{h_item}</th>"
+            "<th style='text-align:right'>{h_batches}</th>"
+            "<th style='text-align:right'>{h_avail}</th>"
+            "<th style='text-align:right'>{h_req}</th>"
+            "</tr></thead>"
+            "<tbody>{rows}</tbody>"
+            "</table>".format(
+                title=_("Preparation Summary"),
+                h_item=_("Item Code"),
+                h_batches=_("Eligible Batches"),
+                h_avail=_("Available Qty"),
+                h_req=_("Requested Qty"),
+                rows=rows,
+            )
+        )
+
+    # --- Section 2: Filtered-Out Items ---
+    if filtered_out:
+        # Deduplicate
+        seen = set()
+        unique_filtered = []
+        for entry in filtered_out:
+            code = entry.get("item_code")
+            if code not in seen:
+                seen.add(code)
+                unique_filtered.append(code)
+
+        items_str = "<br>".join(f"• {item}" for item in unique_filtered)
+        parts.append(
+            "<br><p><b>{title}</b></p>"
+            "<p>{items}</p>"
+            "<p><i>{reason}</i></p>".format(
+                title=_("⚠️ Items Skipped (No Eligible Batches)"),
+                items=items_str,
+                reason=_(
+                    "Required length is not available in stock. "
+                    "Please adjust the length or check available inventory."
+                ),
+            )
+        )
+
+    # --- Section 3: Reservation Results ---
+    if reservation_results:
+        # Deduplicate by item_code
+        seen = set()
+        unique_results = []
+        for r in reservation_results:
+            if r.item_code not in seen:
+                seen.add(r.item_code)
+                unique_results.append(r)
+
+        rows = ""
+        for r in unique_results:
+            status_badge = {
+                "Reserved": '<span class="badge badge-success">{0}</span>'.format(
+                    _("Reserved")
+                ),
+                "Partial": '<span class="badge badge-warning">{0}</span>'.format(
+                    _("Partial")
+                ),
+                "No Eligible Batches": '<span class="badge badge-danger">{0}</span>'.format(
+                    _("Failed")
+                ),
+            }.get(r.status, r.status)
+
+            rows += (
+                "<tr>"
+                "<td>{item_code}</td>"
+                "<td style='text-align:right'>{batches}</td>"
+                "<td>{status}</td>"
+                "</tr>"
+            ).format(
+                item_code=r.item_code,
+                batches=r.batch_count,
+                status=status_badge,
+            )
+
+        parts.append(
+            "<br><p><b>{title}</b></p>"
+            "<table class='table table-bordered' style='width:100%'>"
+            "<thead><tr>"
+            "<th>{h_item}</th>"
+            "<th style='text-align:right'>{h_batches}</th>"
+            "<th>{h_status}</th>"
+            "</tr></thead>"
+            "<tbody>{rows}</tbody>"
+            "</table>".format(
+                title=_("Reservation Results"),
+                h_item=_("Item Code"),
+                h_batches=_("Batches Used"),
+                h_status=_("Status"),
+                rows=rows,
+            )
+        )
+
+    return "<br>".join(parts) if parts else ""
+
+
+# ---------------------------------------------------------------------------
 # Stamp custom fields on SRE sb_entries after reservation
 # ---------------------------------------------------------------------------
 
@@ -219,16 +363,17 @@ def auto_reserve_serial_and_batch(self, based_on=None):
     )
 
     if not eligible_ordered:
-        frappe.msgprint(
-            _(
-                "No batches found with average length between {0}m and {1}m for Item {2}."
-            ).format(
-                frappe.bold(constraints.get("min_length")),
-                frappe.bold(constraints.get("max_length")),
-                frappe.bold(self.item_code),
-            ),
-            title=_("No Eligible Batches"),
-            indicator="orange",
+        results = frappe.flags.setdefault("stock_reservation_results", [])
+        results.append(
+            frappe._dict(
+                {
+                    "item_code": self.item_code,
+                    "batch_count": 0,
+                    "status": "No Eligible Batches",
+                    "min_length": constraints.get("min_length"),
+                    "max_length": constraints.get("max_length"),
+                }
+            )
         )
         _update_sb_entries_custom_fields(self)
         return
@@ -292,17 +437,17 @@ def auto_reserve_serial_and_batch(self, based_on=None):
                 # If we still need more quantity but have no more batches,
                 # return what we have (will trigger shortage error)
                 if cumulative_qty < qty:
-                    frappe.msgprint(
-                        _(
-                            "Insufficient eligible batches for item {0}. Only {1} {2} available out of required {3} {2}."
-                        ).format(
-                            frappe.bold(self.item_code),
-                            frappe.bold(cumulative_qty),
-                            self.stock_uom,
-                            frappe.bold(qty),
-                        ),
-                        title=_("Partial Stock Availability"),
-                        indicator="orange",
+                    results = frappe.flags.setdefault("stock_reservation_results", [])
+                    results.append(
+                        frappe._dict(
+                            {
+                                "item_code": self.item_code,
+                                "batch_count": len(selected_batches),
+                                "status": "Partial",
+                                "available_qty": cumulative_qty,
+                                "requested_qty": qty,
+                            }
+                        )
                     )
 
                 return selected_batches if selected_batches else ordered_batches
@@ -317,17 +462,20 @@ def auto_reserve_serial_and_batch(self, based_on=None):
     try:
         _ORIGINAL_AUTO_RESERVE_SERIAL_AND_BATCH(self, based_on=based_on)
 
-        # After reservation, check how many batches were actually reserved
+        # Collect result silently — caller will emit one consolidated message
         if hasattr(self, "sb_entries") and self.sb_entries:
             batch_count = len(
                 set([entry.batch_no for entry in self.sb_entries if entry.batch_no])
             )
-            frappe.msgprint(
-                _(
-                    "Stock reserved successfully using {0} batch(es) for item {1}."
-                ).format(frappe.bold(str(batch_count)), frappe.bold(self.item_code)),
-                title=_("Stock Reserved"),
-                indicator="green",
+            results = frappe.flags.setdefault("stock_reservation_results", [])
+            results.append(
+                frappe._dict(
+                    {
+                        "item_code": self.item_code,
+                        "batch_count": batch_count,
+                        "status": "Reserved",
+                    }
+                )
             )
     finally:
         _sabb.get_auto_batch_nos = _original_get_auto_batch_nos
@@ -357,6 +505,7 @@ def create_stock_reservation_entries_for_so_items(
         
     items_details = list(items_details or [])
     frappe.flags.stock_reservation_item_ranges = {}
+    frappe.flags.stock_reservation_results = []  # collected by auto_reserve_serial_and_batch
 
     try:
         if items_details:
@@ -375,16 +524,24 @@ def create_stock_reservation_entries_for_so_items(
                 )
 
                 # max_length from dialog, fallback to length_size + 1.5
+                dialog_min_length = row.get("min_length")
+                if dialog_min_length in (None, "", 0):
+                    dialog_min_length = (
+                        (flt(so_item.length_size) - 2)
+                        if flt(so_item.length_size) > 0
+                        else None
+                    )
                 dialog_max_length = row.get("max_length")
                 if dialog_max_length in (None, "", 0):
                     dialog_max_length = (
-                        (flt(so_item.length_size) + 1.5)
+                        (flt(so_item.length_size) + 2)
                         if flt(so_item.length_size) > 0
                         else None
                     )
 
                 # Store in flags so auto_reserve_serial_and_batch reads it
                 frappe.flags.stock_reservation_item_ranges[so_item.name] = {
+                    "min_length": dialog_min_length,
                     "max_length": dialog_max_length,
                 }
 
@@ -471,40 +628,12 @@ def create_stock_reservation_entries_for_so_items(
 
             # Show success message if items were successfully prepared
             if successful_items and notify:
-                success_msg = _("Prepared for stock reservation:\n")
-                for item in successful_items:
-                    success_msg += _(
-                        "• {0}: {1} eligible batch(es) found with {2} {3} available (requested: {4})\n"
-                    ).format(
-                        frappe.bold(item["item_code"]),
-                        item["eligible_batches"],
-                        frappe.bold(item["total_eligible_qty"]),
-                        "units",
-                        frappe.bold(item["requested_qty"]),
-                    )
-                frappe.msgprint(
-                    success_msg,
-                    title=_("Stock Reservation Preparation"),
-                    indicator="blue",
-                )
+                # Store for consolidated message — don't emit yet
+                frappe.flags.stock_reservation_prep_items = successful_items
 
             if filtered_out_items:
-                item_list = []
-                for entry in filtered_out_items:
-                    item_list.append(entry.get("item_code"))
-
-                frappe.msgprint(
-                    {
-                        "title": _("Stock Reservation Notice"),
-                        "indicator": "orange",
-                        "message": _(
-                            "Stock reservation could not be completed for some items.<br><br>"
-                            "<b>Items:</b><br>{0}<br><br>"
-                            "<b>Reason:</b> Required length is not available in stock.<br><br>"
-                            "Please adjust the length or check available inventory."
-                        ).format("<br>".join([f"• {item}" for item in item_list])),
-                    }
-                )
+                # Store for consolidated message — don't emit yet
+                frappe.flags.stock_reservation_filtered_out = filtered_out_items
 
             if not updated_items_details:
                 return
@@ -538,30 +667,31 @@ def create_stock_reservation_entries_for_so_items(
             from_voucher_type=from_voucher_type,
             notify=notify,
         )
-        # 🚨 IMPORTANT FIX
-        if from_voucher_type == "Purchase Receipt":
-            # Do NOT apply batch filtering logic
-            return _ORIGINAL_CREATE_STOCK_RESERVATION_ENTRIES_FOR_SO_ITEMS(
-                sales_order=sales_order,
-                items_details=items_details,
-                from_voucher_type=from_voucher_type,
-                notify=notify,
-            )
 
-        # Show final success message after reservation
-        if result and notify and items_details:
-            frappe.msgprint(
-                _(
-                    "Stock reservation completed successfully. Check the Stock Reservation document for details."
-                ),
-                title=_("Reservation Complete"),
-                indicator="green",
-            )
+        # Show final consolidated message after reservation
+        if notify:
+            prep_items = frappe.flags.get("stock_reservation_prep_items") or []
+            filtered_out = frappe.flags.get("stock_reservation_filtered_out") or []
+            reservation_results = frappe.flags.get("stock_reservation_results") or []
+
+            if prep_items or filtered_out or reservation_results:
+                summary_html = _build_stock_reservation_summary(
+                    prep_items, filtered_out, reservation_results
+                )
+                if summary_html:
+                    frappe.msgprint(
+                        summary_html,
+                        title=_("Stock Reservation Summary"),
+                        indicator="green",
+                    )
 
         return result
 
     finally:
         frappe.flags.stock_reservation_item_ranges = {}
+        frappe.flags.stock_reservation_results = []
+        frappe.flags.stock_reservation_prep_items = []
+        frappe.flags.stock_reservation_filtered_out = []
 
 
 # ---------------------------------------------------------------------------

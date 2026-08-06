@@ -10,6 +10,7 @@ def on_cancel(self,method):
                 doc = frappe.get_doc("Work Order",self.work_order)
                 doc.db_set("completed_pcs",max(0, doc.completed_pcs - row.pieces))
                 doc.db_set("pending_pcs",doc.pieces - doc.completed_pcs)
+                doc.db_set("pending_qty",doc.qty - row.qty)
 
 def validate(doc, method):
     """Recalculate rates/amounts safely for this app.

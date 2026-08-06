@@ -63,6 +63,7 @@ doctype_js = {
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
 doctype_list_js = {
     "Attendance" : "public/js/attendance_list.js",
+    "Work Order" : "public/js_list/work_order_list.js",
     # "Purchase Order" : "public/js/purchase_order_list.js"
 }
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
@@ -166,6 +167,7 @@ override_doctype_class = {
     "Blanket Order": "madhav.madhav.override.blanket_order.BlanketOrder",
     "Stock Reconciliation" : "madhav.madhav.override.stock_reconciliation.StockReconciliation",
     "Work Order": "madhav.madhav.override.work_order.WorkOrder",
+    "Stock Reservation Entry": "madhav.madhav.override.stock_reservation_entry.StockReservationEntry",
     # "Purchase Receipt": "madhav.madhav.override.purchase_rPurchaseReceipteceipt.",
 }
 

@@ -4,7 +4,7 @@ from frappe.utils import flt
 
 def validate(self,method):
     self.db_set("pending_pcs",flt(self.pieces) - flt(self.completed_pcs))
-
+    self.db_set("pending_qty",flt(self.qty) - flt(self.produced_qty))
 
 def update_so_pieces_from_work_order(doc, method=None):
 

@@ -320,18 +320,13 @@ class StockTransfer(Document):
             frappe.throw(f"❌ SO Item not found for {item_code} in {sales_order}")
         
         # Find the SO item with available quantity
-        so_detail = None
-        available_qty = 0
+        item = so_items[0]
         
-        for item in so_items:
-            available = flt(item.qty) - flt(item.stock_reserved_qty or 0)
-            if available > 0:
-                so_detail = item.name
-                available_qty = available
-                break
-
-        if not so_detail:
-            frappe.throw(f"❌ No available quantity in {sales_order} for {item_code}")
+        so_detail = item.name
+        available_qty = max(
+            0,
+            flt(item.qty) - flt(item.stock_reserved_qty or 0)
+        )
 
         # ==============================
         # RESERVED QTY CHECK
@@ -348,6 +343,28 @@ class StockTransfer(Document):
         """, (sales_order, so_detail, item_code))[0][0] or 0
 
         available_qty_to_reserve = flt(so_qty) - flt(already_reserved_qty)
+        # After:
+        over_reservation_allowance = flt(frappe.db.get_single_value(
+            "Stock Settings", "over_reservation_allowance"
+        ) or 0)
+
+        already_reserved_qty = frappe.db.sql("""
+            SELECT COALESCE(SUM(reserved_qty), 0)
+            FROM `tabStock Reservation Entry`
+            WHERE
+                voucher_type = 'Sales Order'
+                AND voucher_no = %s
+                AND voucher_detail_no = %s
+                AND docstatus = 1
+                AND item_code = %s
+        """, (sales_order, so_detail, item_code))[0][0] or 0
+
+        allowed_qty = flt(so_qty) * (1 + over_reservation_allowance / 100)
+
+        available_qty_to_reserve = max(
+            0,
+            flt(allowed_qty) - flt(already_reserved_qty)
+        )
         frappe.log_error(
             title="Stock Reservation Debug",
             message=(f"SO: {sales_order}, Item: {item_code}, SO Qty: {so_qty}, Already Reserved: {already_reserved_qty}, Available to Reserve: {available_qty_to_reserve}") 
@@ -402,7 +419,10 @@ class StockTransfer(Document):
             sb_entry = sre.append("sb_entries", {
                 "batch_no": batch_no,
                 "qty": reserve_qty,
-                "warehouse": warehouse
+                "warehouse": warehouse,
+                "pieces":frappe.db.get_value("Batch",batch_no,"pieces") or 0,
+                "length":frappe.db.get_value("Batch",batch_no,"average_length") or 0,
+                "section_weight":frappe.db.get_value("Batch",batch_no,"section_weight") or 0,
             })
             
             if so_item_data:

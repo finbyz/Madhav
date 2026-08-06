@@ -318,7 +318,7 @@ frappe.ui.form.on('Sales Order', {
                             label: __("Item Name"),
                             read_only: 1,
                             in_list_view: 1,
-                            columns: 2
+                            columns: 1
                         },
                         {
                             fieldname: "warehouse",
@@ -334,6 +334,14 @@ frappe.ui.form.on('Sales Order', {
                             label: __("Length"),
                             in_list_view: 1,
                             columns: 1
+                        },
+                        {
+                            fieldname: "min_length",
+                            fieldtype: "Float",
+                            label: __("Min Length"),
+                            in_list_view: 1,
+                            columns: 1
+
                         },
                         {
                             fieldname: "max_length",
@@ -436,7 +444,8 @@ frappe.ui.form.on('Sales Order', {
                                 item_name: item.item_name,
                                 warehouse: item.warehouse,
                                 length_size: item.length_size,
-                                max_length: flt(item.length_size) + 1.5,
+                                min_length: flt(item.length_size) - 2,
+                                max_length: flt(item.length_size) + 2,
                                 pieces: item.pieces,
                                 total_length: flt(item.pieces) * flt(item.length_size),
                                 section_weight: flt(weights[item.item_code] || 0),
