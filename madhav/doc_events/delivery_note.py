@@ -236,25 +236,34 @@ def change_qty_serial_and_batch(self):
                 qty = (pieces * entry_length * entry_section_weight) / 1000
             else:
                 qty = 0
-
+            
             final_qty.append(qty)
             total_allocated_pieces += pieces
-
         allocated_total_qty = sum(final_qty)
 
         # ── Write everything back ──
         for i, entry in enumerate(batch_entries):
             # Outward transaction stores negative qty
-            entry.qty = -final_qty[i]
-            entry.pieces = desired_pieces[i]
+                pieces = desired_pieces[i]
+                length = flt(entry.length)
+
+                # Calculate section weight from final qty, pieces and length
+                if pieces and length:
+                    section_weight = (final_qty[i] * 1000) / (pieces * length)
+                else:
+                    section_weight = 0
+
+                # Update bundle entry
+                entry.section_weight = section_weight
+                entry.qty = -final_qty[i]        # Outward transaction stores negative qty
+                entry.pieces = pieces
 
         item.qty = allocated_total_qty
         item.stock_qty = allocated_total_qty
         item.amount = flt(item.rate) * allocated_total_qty
         item.base_amount = item.amount * flt(self.conversion_rate or 1)
-
         item.pieces = max(0, total_allocated_pieces)
-
+        item.section_weight = section_weight
         bundle.total_qty = -allocated_total_qty
         bundle.flags.ignore_validate = True
         bundle.flags.ignore_links = True
