@@ -3,13 +3,18 @@ import frappe
 from frappe import _
 from frappe.utils import flt
 
-def _get_batch_constraints(voucher_type, voucher_detail_no, item_code=None):
+def _get_batch_constraints(voucher_type, voucher_detail_no, item_code=None,from_voucher_type=None):
     """
     Read length_size from SO Item and return min/max length constraints.
     min_length = length_size
     max_length = length_size + 1.5
     These can be overridden per-item via frappe.flags.stock_reservation_item_ranges
     """
+    # For Batch Wise Reservation Tool, don't apply length constraints
+    # Let auto batch selection work without length filtering
+    if from_voucher_type == "Batch Wise Reservation Tool":
+        return frappe._dict({"min_length": None, "max_length": None})
+    
     constraints = frappe._dict({"min_length": None, "max_length": None})
 
     if voucher_type != "Sales Order" or not voucher_detail_no:
@@ -324,7 +329,7 @@ def auto_reserve_serial_and_batch(self, based_on=None):
     import erpnext.stock.doctype.serial_and_batch_bundle.serial_and_batch_bundle as _sabb
 
     constraints = _get_batch_constraints(
-        self.voucher_type, self.voucher_detail_no, self.item_code
+        self.voucher_type, self.voucher_detail_no, self.item_code ,self.from_voucher_type
     )
 
     # No length constraints on this item — run original unchanged
@@ -494,6 +499,7 @@ def create_stock_reservation_entries_for_so_items(
     2. Set frappe.flags so auto_reserve_serial_and_batch can read constraints
     3. Filter out items with no eligible batches (show clear warning)
     4. Cap qty_to_reserve to eligible batch stock
+    5. Create Serial and Batch Bundle with specified batch_no if provided
     """
     if from_voucher_type in ["Purchase Receipt","Stock Entry"]:
         return _ORIGINAL_CREATE_STOCK_RESERVATION_ENTRIES_FOR_SO_ITEMS(
@@ -502,7 +508,6 @@ def create_stock_reservation_entries_for_so_items(
             from_voucher_type=from_voucher_type,
             notify=notify,
         )
-        
     items_details = list(items_details or [])
     frappe.flags.stock_reservation_item_ranges = {}
     frappe.flags.stock_reservation_results = []  # collected by auto_reserve_serial_and_batch
@@ -546,7 +551,7 @@ def create_stock_reservation_entries_for_so_items(
                 }
 
                 constraints = _get_batch_constraints(
-                    "Sales Order", so_item.name, so_item.item_code
+                    "Sales Order", so_item.name, so_item.item_code,from_voucher_type
                 )
 
                 if has_batch_no:
@@ -649,7 +654,7 @@ def create_stock_reservation_entries_for_so_items(
                     "Item", so_item.item_code, "has_batch_no"
                 )
                 constraints = _get_batch_constraints(
-                    "Sales Order", so_item.name, so_item.item_code
+                    "Sales Order", so_item.name, so_item.item_code,from_voucher_type
                 )
                 if has_batch_no:
                     so_item.qty_to_reserve = _get_filtered_available_qty(

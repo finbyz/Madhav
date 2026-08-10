@@ -5,6 +5,7 @@ import frappe
 from frappe.model.document import Document
 from frappe.utils import now, nowdate, nowtime
 from frappe.utils import flt
+from erpnext.stock.doctype.stock_reservation_entry.stock_reservation_entry import get_available_qty_to_reserve
 
 class FinishWorkOrder(Document):
     def on_cancel(self):
@@ -267,13 +268,76 @@ class FinishWorkOrder(Document):
         sre.from_voucher_type = from_voucher_type
         sre.from_voucher_no = from_voucher_no
         sre.from_voucher_detail_no = from_voucher_detail_no
-        sre.reserved_qty = reserve_qty
-        sre.voucher_qty = so_qty
-        sre.available_qty = available_qty
-        sre.available_qty_to_reserve = reserve_qty
-        
+        # Get actual stock available for reservation
+
         # Check if item actually has batch tracking
-        has_batch_no = frappe.get_cached_value("Item", item_code, "has_batch_no")
+        # Check if item actually has batch tracking
+        has_batch_no = frappe.get_cached_value(
+            "Item",
+            item_code,
+            "has_batch_no"
+        )
+
+        # Get actual stock available for reservation
+        if batch_no and has_batch_no:
+
+        # For batch items, calculate availability specifically
+        # for the generated FG batch.
+            batch_available_qty = frappe.db.sql("""
+                SELECT COALESCE(
+                    SUM(sbe.qty - IFNULL(sbe.delivered_qty, 0)),
+                    0
+                )
+                FROM `tabSerial and Batch Entry` sbe
+                INNER JOIN `tabSerial and Batch Bundle` sabb
+                    ON sabb.name = sbe.parent
+                WHERE
+                    sabb.item_code = %(item_code)s
+                    AND sbe.batch_no = %(batch_no)s
+                    AND sbe.warehouse = %(warehouse)s
+                    AND sabb.is_cancelled = 0
+            """, {
+                "item_code": item_code,
+                "batch_no": batch_no,
+                "warehouse": warehouse,
+            })[0][0] or 0
+
+            actual_available_qty = flt(batch_available_qty)
+
+        else:
+
+            actual_available_qty = get_available_qty_to_reserve(
+                item_code,
+                warehouse,
+                None,
+            )
+
+            actual_available_qty = flt(actual_available_qty)
+
+
+        if actual_available_qty <= 0:
+            frappe.throw(
+                f"Item {item_code} has no available stock to reserve "
+                f"in warehouse {warehouse}"
+                + (
+                    f" for batch {batch_no}"
+                    if batch_no
+                    else ""
+                )
+            )
+
+        reserve_qty = min(
+            flt(reserve_qty),
+            actual_available_qty,
+        )
+
+        if reserve_qty <= 0:
+            return
+
+        sre.reserved_qty = reserve_qty
+        sre.voucher_qty = flt(so_qty)
+        sre.available_qty = actual_available_qty
+        sre.available_qty_to_reserve = actual_available_qty
 
         # HANDLE BATCH NO
         if batch_no and has_batch_no and reserve_qty > 0:
@@ -281,33 +345,39 @@ class FinishWorkOrder(Document):
             sre.has_serial_no = 0
             sre.reservation_based_on = "Serial and Batch"
             sre.use_serial_batch_fields = 1
-            
-            so_item_data = frappe.db.get_value(
-                "Sales Order Item", 
-                so_detail, 
-                ["pieces", "length_size"], 
-                as_dict=True
-            )
-            weight_per_meter = frappe.db.get_value("Item", item_code, "weight_per_meter") or 0.0
 
-            sb_entry = sre.append("sb_entries", {
+            sre.append("sb_entries", {
                 "batch_no": batch_no,
                 "qty": reserve_qty,
                 "warehouse": warehouse,
-                "pieces":frappe.db.get_value("Batch",batch_no,"pieces") or 0,
-                "length":frappe.db.get_value("Batch",batch_no,"average_length") or 0,
-                "section_weight":frappe.db.get_value("Batch",batch_no,"section_weight") or 0,
-                
+                "pieces": frappe.db.get_value(
+                    "Batch",
+                    batch_no,
+                    "pieces"
+                ) or 0,
+                "length": frappe.db.get_value(
+                    "Batch",
+                    batch_no,
+                    "average_length"
+                ) or 0,
+                "section_weight": frappe.db.get_value(
+                    "Batch",
+                    batch_no,
+                    "section_weight"
+                ) or 0,
             })
 
-            
-            # Monkey-patch instance to bypass auto reservation clearing our explicit batch
-            sre.auto_reserve_serial_and_batch = lambda *args, **kwargs: None
+            # Prevent automatic batch reservation from replacing
+            # the explicitly selected batch
+            sre.auto_reserve_serial_and_batch = (
+                lambda *args, **kwargs: None
+            )
+
         else:
             sre.reservation_based_on = "Qty"
 
-        # Save and submit the SRE
         sre.flags.ignore_permissions = True
+
         sre.insert()
         sre.submit()
         if sre:

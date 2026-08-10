@@ -1,0 +1,118 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-08-06 15:03:49.004432",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "sales_order",
+  "sales_order_item",
+  "sales_order_item_qty",
+  "posting_date",
+  "item_code",
+  "item_name",
+  "batch_no",
+  "column_break_jshe",
+  "source_warehouse",
+  "reserved_qty",
+  "reserved_pieces",
+  "length",
+  "section_weight"
+ ],
+ "fields": [
+  {
+   "fieldname": "sales_order",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Sales Order",
+   "options": "Sales Order"
+  },
+  {
+   "fieldname": "posting_date",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "Posting Date"
+  },
+  {
+   "fieldname": "item_code",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Item Code",
+   "options": "Item"
+  },
+  {
+   "fieldname": "item_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Item Name"
+  },
+  {
+   "fieldname": "batch_no",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Batch No",
+   "options": "Batch"
+  },
+  {
+   "fieldname": "source_warehouse",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Source Warehouse",
+   "options": "Warehouse"
+  },
+  {
+   "fieldname": "reserved_qty",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Reserved Qty"
+  },
+  {
+   "fieldname": "reserved_pieces",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Reserved Pieces"
+  },
+  {
+   "fieldname": "length",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Length"
+  },
+  {
+   "fieldname": "column_break_jshe",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "sales_order_item",
+   "fieldtype": "Data",
+   "label": "Sales Order Item",
+   "read_only": 1
+  },
+  {
+   "fieldname": "sales_order_item_qty",
+   "fieldtype": "Float",
+   "label": "Sales Order Item Qty"
+  },
+  {
+   "fieldname": "section_weight",
+   "fieldtype": "Float",
+   "label": "Section Weight"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-08-07 17:58:28.738357",
+ "modified_by": "Administrator",
+ "module": "Madhav",
+ "name": "Staged Batch Reservations Verification",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}
