@@ -756,8 +756,7 @@ def fetch_available_batches(item_code, warehouse, pending_qty=0, reserve_qty=0):
 
 	required_qty = pending_qty - reserve_qty
 
-	if required_qty <= 0:
-		return []
+
 
 	# -----------------------------------------
 	# Get actual batch-wise stock from
@@ -792,7 +791,6 @@ def fetch_available_batches(item_code, warehouse, pending_qty=0, reserve_qty=0):
 		return []
 
 	batch_names = [d.batch for d in batch_stock]
-
 	# -----------------------------------------
 	# Batch Details
 	# -----------------------------------------
