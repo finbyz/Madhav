@@ -2,12 +2,221 @@
 // For license information, please see license.txt
 
 frappe.ui.form.on("Batch Wise Reservation Tool", {
+	refresh(frm) {
+		if (frm.doc.docstatus == 1) {
+			frm.trigger("render_batch_reserved");
+		}
+	},
 	fetch_sales_order(frm) {
 		if (frm.doc.docstatus == 0) {
 			frm.trigger("fetch_sales_order_details");
 		}
 	},
+	customer(frm) {
+		frm.set_query("sales_order", () => {
+			return {
+				filters: {
+					Category: frm.doc.customer
+				}
+			};
+		});
 
+	},
+	on_submit(frm) {
+		frm.trigger("render_batch_reserved");
+	},
+	render_batch_reserved(frm) {
+	frappe.call({
+		method: "madhav.madhav.doctype.batch_wise_reservation_tool.batch_wise_reservation_tool.get_reserved_batches",
+		args: {
+			docname: frm.doc.name
+		},
+		callback(r) {
+			let html;
+
+			if (!r.message || !r.message.length) {
+				html = `
+					<div style="
+						padding: 12px 16px;
+						border-radius: 6px;
+						background: #fff7ed;
+						border: 1px solid #fed7aa;
+						color: #9a3412;
+						font-weight: 500;
+					">
+						No batches reserved.
+					</div>
+				`;
+			} else {
+				let rows = r.message;
+
+				html = `
+					<div style="
+						border: 1px solid #dbe3ec;
+						border-radius: 8px;
+						overflow: hidden;
+						background: #ffffff;
+					">
+
+						<div style="
+							background: #eef4f9;
+							color: #334155;
+							padding: 10px 14px;
+							font-size: 14px;
+							font-weight: 600;
+							border-bottom: 1px solid #dbe3ec;
+						">
+							Reserved Batches
+
+							<span style="
+								float: right;
+								background: #dcfce7;
+								color: #15803d;
+								padding: 3px 9px;
+								border-radius: 12px;
+								font-size: 11px;
+								font-weight: 600;
+							">
+								${rows.length} Batch${rows.length > 1 ? "es" : ""}
+							</span>
+						</div>
+
+						<table style="
+							width: 100%;
+							border-collapse: collapse;
+							font-size: 13px;
+						">
+							<thead>
+								<tr style="background: #f8fafc;">
+									<th style="
+										padding: 9px 10px;
+										text-align: left;
+										border-bottom: 1px solid #e2e8f0;
+										color: #475569;
+									">
+										Sales Order
+									</th>
+
+									<th style="
+										padding: 9px 10px;
+										text-align: left;
+										border-bottom: 1px solid #e2e8f0;
+										color: #475569;
+									">
+										Item
+									</th>
+
+									<th style="
+										padding: 9px 10px;
+										text-align: left;
+										border-bottom: 1px solid #e2e8f0;
+										color: #475569;
+									">
+										Batch
+									</th>
+
+									<th style="
+										padding: 9px 10px;
+										text-align: right;
+										border-bottom: 1px solid #e2e8f0;
+										color: #475569;
+									">
+										Reserved Qty
+									</th>
+
+									<th style="
+										padding: 9px 10px;
+										text-align: left;
+										border-bottom: 1px solid #e2e8f0;
+										color: #475569;
+									">
+										Warehouse
+									</th>
+								</tr>
+							</thead>
+
+							<tbody>
+				`;
+
+				rows.forEach((row, index) => {
+					const bg = index % 2 === 0 ? "#ffffff" : "#fbfdff";
+
+					html += `
+						<tr style="background: ${bg};">
+
+							<td style="
+								padding: 9px 10px;
+								border-bottom: 1px solid #eef2f6;
+								color: #475569;
+							">
+								${frappe.utils.escape_html(row.sales_order || "")}
+							</td>
+
+							<td style="
+								padding: 9px 10px;
+								border-bottom: 1px solid #eef2f6;
+								color: #475569;
+							">
+								${frappe.utils.escape_html(row.item_code || "")}
+							</td>
+
+							<td style="
+								padding: 9px 10px;
+								border-bottom: 1px solid #eef2f6;
+							">
+								<span style="
+									background: #eff6ff;
+									color: #2563eb;
+									padding: 3px 8px;
+									border-radius: 4px;
+									font-weight: 600;
+									font-size: 12px;
+									border: 1px solid #dbeafe;
+								">
+									${frappe.utils.escape_html(row.batch_no || "")}
+								</span>
+							</td>
+
+							<td style="
+								padding: 9px 10px;
+								border-bottom: 1px solid #eef2f6;
+								text-align: right;
+							">
+								<span style="
+									background: #f0fdf4;
+									color: #15803d;
+									padding: 3px 8px;
+									border-radius: 4px;
+									font-weight: 600;
+									border: 1px solid #dcfce7;
+								">
+									${row.reserved_qty || 0}
+								</span>
+							</td>
+
+							<td style="
+								padding: 9px 10px;
+								border-bottom: 1px solid #eef2f6;
+								color: #64748b;
+							">
+								${frappe.utils.escape_html(row.warehouse || "")}
+							</td>
+
+						</tr>
+					`;
+				});
+
+				html += `
+							</tbody>
+						</table>
+					</div>
+				`;
+			}
+
+			frm.fields_dict.batch_reserved.$wrapper.html(html);
+		}
+	});
+},
 	fetch_sales_order_details(frm) {
 		// Collect filter values from the form
 		const filters = {

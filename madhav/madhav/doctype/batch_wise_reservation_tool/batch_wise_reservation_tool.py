@@ -853,6 +853,7 @@ def fetch_available_batches(item_code, warehouse, pending_qty=0, reserve_qty=0):
 			{
 				"batch": row.batch,
 				"item_code": row.item_code,
+				"item_name": frappe.db.get_value("Item", row.item_code, "item_name"),
 				"pieces": batch.pieces if batch else 0,
 				"length": batch.average_length if batch else 0,
 				"section_weight": batch.average_length if batch else 0,
@@ -865,3 +866,61 @@ def fetch_available_batches(item_code, warehouse, pending_qty=0, reserve_qty=0):
 	result.sort(key=lambda d: d["available_qty"], reverse=True)
 
 	return result
+
+@frappe.whitelist()
+def get_reserved_batches(docname):
+	"""
+	Fetch actual reserved batches from Stock Reservation Entry
+	created by this Batch Wise Reservation Tool.
+	"""
+
+	stock_reservation_entries = frappe.get_all(
+		"Stock Reservation Entry",
+		filters={
+			"from_voucher_type": "Batch Wise Reservation Tool",
+			"from_voucher_no": docname,
+			"docstatus": 1,
+		},
+		fields=[
+			"name",
+			"item_code",
+			"warehouse",
+			"voucher_type",
+			"voucher_no",
+			"voucher_detail_no",
+			"reserved_qty",
+			"status",
+		],
+		order_by="creation asc",
+	)
+
+	reserved_batches = []
+
+	for sre in stock_reservation_entries:
+
+		sb_entries = frappe.get_all(
+			"Serial and Batch Entry",
+			filters={
+				"parent": sre.name,
+				"parenttype": "Stock Reservation Entry",
+			},
+			fields=[
+				"batch_no",
+				"qty",
+				"warehouse",
+			],
+			order_by="idx asc",
+		)
+
+		for sb in sb_entries:
+			reserved_batches.append({
+				"sales_order": sre.voucher_no,
+				"item_code": sre.item_code,
+				"batch_no": sb.batch_no,
+				"reserved_qty": sb.qty,
+				"warehouse": sb.warehouse or sre.warehouse,
+				"status": sre.status,
+			})
+
+	return reserved_batches
+
