@@ -25,9 +25,6 @@ class BatchWiseReservationTool(Document):
 	def on_submit(self):
 		self.create_stock_reservationentries()
 
-	def on_cancel(self):
-		self.cancel_stock_reservation_entries()
-
 	def create_stock_reservationentries(self):
 		
 		if not self.reservation_batches:
@@ -66,17 +63,6 @@ class BatchWiseReservationTool(Document):
 				indicator="orange",
 			)
 
-	def cancel_stock_reservation_entries(self):
-		for row in self.reservation_batches:
-			sre_name = frappe.db.get_value(
-				"Staged Batch Reservations Verification",
-				row.name,
-				"stock_reservation_entry",
-			)
-			if sre_name:
-				sre = frappe.get_doc("Stock Reservation Entry", sre_name)
-				if sre.docstatus == 1:
-					sre.cancel()
 
 	def create_fg_stock_reservation(
 		self,

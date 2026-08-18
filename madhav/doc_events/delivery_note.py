@@ -3,6 +3,23 @@ import json
 from frappe.utils import flt, cint, nowtime
 from frappe import _
 
+def on_cancel(self,method):
+    stock_reconciliation_names = frappe.get_all(
+        "Stock Reconciliation Item",
+        filters={
+            "delivery_note_ref": self.name,
+            "docstatus": 1
+        },
+        pluck="parent",
+        distinct=True
+    )
+
+    for name in stock_reconciliation_names:
+        stock_reconciliation = frappe.get_doc("Stock Reconciliation", name)
+
+        if stock_reconciliation.docstatus == 1:
+            stock_reconciliation.cancel()
+
 def on_submit(doc, method=None):
     if not doc.items:
         return
@@ -254,15 +271,13 @@ def change_qty_serial_and_batch(self):
                     section_weight = 0
 
                 # Update bundle entry
-                entry.section_weight = section_weight
                 entry.qty = -final_qty[i]        # Outward transaction stores negative qty
-                entry.pieces = pieces
 
         item.qty = allocated_total_qty
         item.stock_qty = allocated_total_qty
         item.amount = flt(item.rate) * allocated_total_qty
         item.base_amount = item.amount * flt(self.conversion_rate or 1)
-        item.pieces = max(0, total_allocated_pieces)
+        # item.pieces = max(0, total_allocated_pieces)
         item.section_weight = section_weight
         bundle.total_qty = -allocated_total_qty
         bundle.flags.ignore_validate = True
@@ -366,12 +381,6 @@ def update_bundle_to_invoice_qty(item, invoice_qty, qty, deliver_as_qty):
         # Calculate pieces from qty using formula:
         # qty = (pieces * length * section_weight) / 1000
         # => pieces = (qty * 1000) / (length * section_weight)
-        if length and section_weight:
-            entry.pieces = (desired[i] * 1000) / (length * section_weight)
-        else:
-            entry.pieces = 0
-
-        total_pieces += entry.pieces
 
     bundle.total_qty = -target_qty
     bundle.flags.ignore_validate = True
@@ -387,11 +396,15 @@ def before_submit(self, method):
     # SRE and create a Stock Reconciliation to cover the excess.
     for i in self.items:
         available_qty = get_available_qty_for_item(i)
-
-        if flt(i.invoice_qty) > available_qty:
-            i.difference_qty = flt(i.invoice_qty) - available_qty
+        if i.against_sales_order:
+            if flt(i.invoice_qty) > available_qty:
+                i.difference_qty = flt(i.invoice_qty) - available_qty
+            else:
+                i.difference_qty = 0
         else:
-            i.difference_qty = 0
+            # For non-SO rows: positive difference_qty means invoice_qty > qty
+            # (i.e. we need to reconcile extra stock to cover the billed qty)
+            i.difference_qty = flt(i.invoice_qty) - flt(i.qty)
 
         # No overage: nothing to reconcile.
         # Only auto-sync qty/bundle to invoice_qty when there is an actual
@@ -463,7 +476,14 @@ def create_stock_reconciliation(self):
     import frappe
     from frappe.utils import flt, nowtime, get_datetime, add_to_date
 
-    items_with_invoice_qty = [row for row in self.items if flt(row.difference_qty) > 0 and row.custom_deliver_as_qty]
+    items_with_invoice_qty = [
+        row for row in self.items
+        if flt(row.difference_qty) > 0
+        and (
+            row.custom_deliver_as_qty  # SO-linked rows (deliver_as_qty flow)
+            or (not row.against_sales_order and flt(row.invoice_qty) and abs(flt(row.invoice_qty) - flt(row.qty)) > 0.0001)  # non-SO rows with qty mismatch
+        )
+    ]
     if not items_with_invoice_qty:
         return
 
@@ -567,7 +587,7 @@ def create_stock_reconciliation(self):
                                 if row.get("pieces")
                                 else 0
                             ),
-                            "length": flt(row.get("length")),
+                            "length": flt(row.get("length_size")),
                             "average_length": flt(row.get("average_length")),
                             "section_weight": flt(row.get("section_weight")),
                             "delivery_note_ref": self.name,
@@ -592,8 +612,8 @@ def create_stock_reconciliation(self):
                 "valuation_rate": valuation_rate,
                 "current_rate": flt(row.incoming_rate),
                 "pieces": flt(row.get("pieces")),
-                "length": flt(row.get("length")),
-                "average_length": flt(row.get("average_length")),
+                "length": flt(row.get("length_size")),
+                "average_length": flt(row.get("length")),
                 "section_weight": flt(row.get("section_weight")),
                 "delivery_note_ref": self.name,
                 "serial_and_batch_bundle": None,
@@ -615,10 +635,36 @@ def create_stock_reconciliation(self):
             sr_item.amount = flt(sr_item.qty) * flt(sr_item.valuation_rate)
 
     sr.save(ignore_permissions=True)
+    batch_metadata = {}
+    for sr_item in sr.items:
+        if not sr_item.batch_no:
+            continue
 
+        batch = frappe.db.get_value(
+            "Batch",
+            sr_item.batch_no,
+            ["average_length", "pieces"],
+            as_dict=True
+        )
+
+        if batch:
+            batch_metadata[sr_item.batch_no] = {
+                "length": batch.average_length,
+                "pieces": batch.pieces,
+            }
     # ── Submit SR ───────────────────────────────────────────────────
     sr.submit()
+    for batch_no, values in batch_metadata.items():
 
+        frappe.db.set_value(
+            "Batch",
+            batch_no,
+            {
+                "average_length": values["length"],
+                "pieces": values["pieces"],
+            },
+            update_modified=False
+        )
     # ── Update SBB & DN AFTER SUBMIT ─────────────────────────────
     for dn_row in self.items:
         # Skip items without difference (they were already updated safely in before_submit)

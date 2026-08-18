@@ -90,7 +90,7 @@ class StockTransfer(Document):
         self._fg_reservation_data = []
 
         se = self.create_stock_entry()
-
+        se.db_set("stock_transfer", self.name)
         for row in self.transfer_item:
             if not row.source_document_type:
                 continue
@@ -223,6 +223,29 @@ class StockTransfer(Document):
                 frappe.throw(
                     f"Row #{item.idx}: Qty {item_qty} cannot exceed Batch Qty {batch_qty} for Batch {item.batch}."
                 )
+
+            # Check warehouse-specific batch stock to prevent BatchNegativeStockError on submit
+            s_warehouse = item.source_warehouse or self.source_warehouse
+            if s_warehouse:
+                warehouse_batch_qty = flt(frappe.db.sql("""
+                    SELECT COALESCE(SUM(sbe.qty), 0)
+                    FROM `tabStock Ledger Entry` sle
+                    INNER JOIN `tabSerial and Batch Entry` sbe
+                        ON sbe.parent = sle.serial_and_batch_bundle
+                    WHERE sle.item_code = %s
+                      AND sbe.batch_no = %s
+                      AND sle.warehouse = %s
+                      AND sle.is_cancelled = 0
+                      AND sle.serial_and_batch_bundle IS NOT NULL
+                """, (item.item_code, item.batch, s_warehouse))[0][0])
+
+                if item_qty > warehouse_batch_qty:
+                    frappe.throw(
+                        f"Row #{item.idx}: Batch <b>{item.batch}</b> of Item <b>{item.item_code}</b> "
+                        f"has only <b>{warehouse_batch_qty}</b> qty available in warehouse "
+                        f"<b>{s_warehouse}</b>, but you are trying to transfer <b>{item_qty}</b>. "
+                        f"Please verify the source warehouse or batch."
+                    )
 
     def create_stock_entry(self):
         if not self.transfer_item:
