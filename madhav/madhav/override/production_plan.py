@@ -57,6 +57,24 @@ class CustomProductionPlan(ERPNextProductionPlan):
 					)
 					# row.pieces = flt(so_item.pieces or 0) - flt(so_item.production_plan_pieces or 0)
 					row.pending_pieces = flt(so_item.production_plan_pieces or 0)
+
+					# Exclude qty already reserved (Batch Wise Reservation Tool -
+					# both base and tolerance reservations) from the planned qty,
+					# same principle as pieces exclusion above.
+					already_reserved_qty = flt(
+						frappe.db.sql(
+							"""
+							select sum(reserved_qty) from `tabStock Reservation Entry`
+							where voucher_type = 'Sales Order'
+								and voucher_detail_no = %s
+								and docstatus = 1
+							""",
+							row.sales_order_item,
+						)[0][0]
+						or 0
+					)
+					row.planned_qty = max(0, flt(row.planned_qty or 0) - already_reserved_qty)
+
 					# Convert and store in inches as required for po_items
 					if so_item.length_size:
 						row.length = meters_to_inches(so_item.length_size)
@@ -258,6 +276,20 @@ class CustomProductionPlan(ERPNextProductionPlan):
 					row.pieces = flt(so_item.pieces or 0) - flt(so_item.production_plan_pieces or 0)
 					row.assorted_length = so_item.assorted_length
 					row.remark = so_item.remarks
+
+					already_reserved_qty = flt(
+						frappe.db.sql(
+							"""
+							select sum(reserved_qty) from `tabStock Reservation Entry`
+							where voucher_type = 'Sales Order'
+								and voucher_detail_no = %s
+								and docstatus = 1
+							""",
+							row.sales_order_item,
+						)[0][0]
+						or 0
+					)
+					row.planned_qty = max(0, flt(row.planned_qty or 0) - already_reserved_qty)
 		self.calculate_total_planned_qty()
 
 def custom_get_sales_orders(self):
