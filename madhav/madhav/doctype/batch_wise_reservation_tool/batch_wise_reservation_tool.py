@@ -212,7 +212,7 @@ class BatchWiseReservationTool(Document):
 		so_available_qty = max(
 			0,
 			floor_qty(
-				allowed_so_qty
+				so_qty
 				- delivered_qty
 				- already_reserved_qty,
 				3,
@@ -704,6 +704,65 @@ def add_to_reservation_batches(
 					batch_no, sales_order_item
 				)
 			)
+
+	# ---------------------------------------------------------
+	# CAP AT SALES ORDER LINE'S PENDING QTY (Subtask 1)
+	# No tolerance considered here - reservation must stay
+	# strictly within what's actually pending on the SO line.
+	# ---------------------------------------------------------
+
+	so_item = frappe.db.get_value(
+		"Sales Order Item",
+		sales_order_item,
+		["qty", "delivered_qty", "pieces"],
+		as_dict=True,
+	)
+
+	if not so_item:
+		frappe.throw(
+			frappe._("Sales Order Item {0} not found.").format(sales_order_item)
+		)
+
+	pending_qty = flt(so_item.qty) - flt(so_item.delivered_qty)
+
+	already_staged_qty = flt(sum(
+		flt(row.reserved_qty)
+		for row in doc.get("reservation_batches")
+		if row.sales_order_item == sales_order_item
+	))
+
+	remaining_qty = flt(pending_qty - already_staged_qty)
+
+	if remaining_qty <= 0:
+		frappe.throw(
+			frappe._(
+				"Sales Order Item {0} is already fully staged for reservation "
+				"({1} of {2} pending qty used). Cannot add Batch {3}."
+			).format(sales_order_item, already_staged_qty, pending_qty, batch_no)
+		)
+
+	if flt(reserved_qty) > remaining_qty:
+		frappe.throw(
+			frappe._(
+				"Cannot reserve {0} from Batch {1} for Sales Order Item {2}: "
+				"only {3} qty is still pending (excluding tolerance)."
+			).format(reserved_qty, batch_no, sales_order_item, remaining_qty)
+		)
+
+	already_staged_pieces = flt(sum(
+		flt(row.reserved_pieces)
+		for row in doc.get("reservation_batches")
+		if row.sales_order_item == sales_order_item
+	))
+	remaining_pieces = flt(so_item.pieces) - already_staged_pieces
+
+	if remaining_pieces > 0 and flt(pieces) > remaining_pieces:
+		frappe.throw(
+			frappe._(
+				"Cannot reserve {0} pieces from Batch {1} for Sales Order Item {2}: "
+				"only {3} pieces are still pending."
+			).format(pieces, batch_no, sales_order_item, remaining_pieces)
+		)
 
 	doc.append("reservation_batches", {
 		"sales_order":     sales_order,
