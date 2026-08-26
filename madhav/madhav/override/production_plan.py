@@ -24,7 +24,7 @@ def meters_to_inches(value):
 		return 0.0
 
 class CustomProductionPlan(ERPNextProductionPlan):
-    
+
 	def validate(self):
 		super().validate()
 		self.validate_production_plan()
@@ -38,60 +38,11 @@ class CustomProductionPlan(ERPNextProductionPlan):
 
 	@frappe.whitelist()
 	def get_items(self):
-		super().get_items()
-
-		# after fetching items, also pull custom fields from Sales Order Item and Sales Order
-		for row in self.get("po_items"):  # adjust child table name if needed
-			if row.sales_order and row.sales_order_item:
-				# Get custom fields from Sales Order Item
-				so_item = frappe.db.get_value(
-					"Sales Order Item",
-					row.sales_order_item,
-					["pieces", "length_size","assorted_length","production_plan_pieces","remarks"],
-					as_dict=True,
-				)
-				# frappe.throw(str(so_item))
-				if so_item:
-					row.section_weight = frappe.db.get_value(
-						"Item", row.item_code, "weight_per_meter"
-					)
-					# row.pieces = flt(so_item.pieces or 0) - flt(so_item.production_plan_pieces or 0)
-					row.pending_pieces = flt(so_item.production_plan_pieces or 0)
-
-					# Exclude qty already reserved (Batch Wise Reservation Tool -
-					# both base and tolerance reservations) from the planned qty,
-					# same principle as pieces exclusion above.
-					already_reserved_qty = flt(
-						frappe.db.sql(
-							"""
-							select sum(reserved_qty) from `tabStock Reservation Entry`
-							where voucher_type = 'Sales Order'
-								and voucher_detail_no = %s
-								and docstatus = 1
-							""",
-							row.sales_order_item,
-						)[0][0]
-						or 0
-					)
-					row.planned_qty = max(0, flt(row.planned_qty or 0) - already_reserved_qty)
-
-					# Convert and store in inches as required for po_items
-					if so_item.length_size:
-						row.length = meters_to_inches(so_item.length_size)
-						row.length_size_m = so_item.length_size or 0.0
-					row.assorted_length = so_item.assorted_length
-					row.remark = so_item.remarks
-
-				# Get customer information from Sales Order
-				so_details = frappe.db.get_value(
-					"Sales Order",
-					row.sales_order,
-					["customer", "customer_name"],
-					as_dict=True,
-				)
-				if so_details:
-					row.customer = so_details.customer or ""
-					row.customer_name = so_details.customer_name or ""
+		self.set("po_items", [])
+		if self.get_items_from == "Sales Order":
+			self.custom_get_so_items()
+		elif self.get_items_from == "Material Request":
+			self.get_mr_items()
 
 	@frappe.whitelist()
 	def get_open_sales_orders(self):
@@ -101,14 +52,6 @@ class CustomProductionPlan(ERPNextProductionPlan):
 			self.add_so_in_table(open_so)
 		else:
 			frappe.msgprint(_("Sales orders are not available for production"))
-
-	@frappe.whitelist()
-	def get_items(self):
-		self.set("po_items", [])
-		if self.get_items_from == "Sales Order":
-			self.custom_get_so_items()
-		elif self.get_items_from == "Material Request":
-			self.get_mr_items()
 
 	def custom_get_so_items(self):
 	# Check for empty table or empty rows
@@ -156,10 +99,13 @@ class CustomProductionPlan(ERPNextProductionPlan):
 				& (so_item.docstatus == 1)
 				& (so_item.is_manufacture == 1)
 				& (so_item.qty > so_item.work_order_qty)
-				& (so_item.item_name.like(f"%{self.item_name}%"))
-				# & (so_item.item_name.like(f"%{self.item_name.replace(' ', '%')}%"))
 			)
 		)
+
+		if self.item_name:
+			items_query = items_query.where(
+				so_item.item_name.like(f"%{self.item_name}%")
+			)
 
 		if self.item_code and frappe.db.exists("Item", self.item_code):
 			items_query = items_query.where(
@@ -252,13 +198,11 @@ class CustomProductionPlan(ERPNextProductionPlan):
 			)
 
 		packed_items = packed_items_query.run(as_dict=True)
-		# frappe.throw(str(items))
 		self.add_items(items + packed_items)
-		# self.add_items(items + packed_items)
 
 		for row in self.po_items:
 			if row.sales_order_item:
-				so_item = frappe.db.get_value(
+				so_item_row = frappe.db.get_value(
 					"Sales Order Item",
 					row.sales_order_item,
 					[
@@ -271,25 +215,44 @@ class CustomProductionPlan(ERPNextProductionPlan):
 					as_dict=True,
 				)
 
-				if so_item:
-					row.pending_pieces = so_item.production_plan_pieces or 0
-					row.pieces = flt(so_item.pieces or 0) - flt(so_item.production_plan_pieces or 0)
-					row.assorted_length = so_item.assorted_length
-					row.remark = so_item.remarks
+				if so_item_row:
+					row.pending_pieces = so_item_row.production_plan_pieces or 0
+					row.pieces = flt(so_item_row.pieces or 0) - flt(so_item_row.production_plan_pieces or 0)
+					row.assorted_length = so_item_row.assorted_length
+					row.remark = so_item_row.remarks
+
+					row.section_weight = frappe.db.get_value(
+						"Item", row.item_code, "weight_per_meter"
+					)
+					if so_item_row.length_size:
+						row.length = meters_to_inches(so_item_row.length_size)
+						row.length_size_m = so_item_row.length_size or 0.0
 
 					already_reserved_qty = flt(
 						frappe.db.sql(
-							"""
-							select sum(reserved_qty) from `tabStock Reservation Entry`
-							where voucher_type = 'Sales Order'
-								and voucher_detail_no = %s
-								and docstatus = 1
+						"""
+						select sum(reserved_qty) from `tabStock Reservation Entry`
+						where voucher_type = 'Sales Order'
+							and voucher_detail_no = %s
+							and docstatus = 1
 							""",
 							row.sales_order_item,
 						)[0][0]
 						or 0
 					)
 					row.planned_qty = max(0, flt(row.planned_qty or 0) - already_reserved_qty)
+
+			if row.sales_order:
+				so_details = frappe.db.get_value(
+					"Sales Order",
+					row.sales_order,
+					["customer", "customer_name"],
+					as_dict=True,
+				)
+				if so_details:
+					row.customer = so_details.customer or ""
+					row.customer_name = so_details.customer_name or ""
+
 		self.calculate_total_planned_qty()
 
 def custom_get_sales_orders(self):
@@ -334,10 +297,13 @@ def custom_get_sales_orders(self):
 			& (so.company == self.company)
 			# & (so.is_manufacture == 1)
 			& (so_item.qty > so_item.production_plan_qty)
-			& (so_item.item_name.like(f"%{self.item_name}%"))   
-			# & (so_item.item_name.like(f"%{self.item_name.replace(' ', '%')}%"))
 		)
 	)
+
+	if self.item_name:
+		open_so_query = open_so_query.where(
+			so_item.item_name.like(f"%{self.item_name}%")
+		)
 
 	date_field_mapper = {
 		"from_date": so.transaction_date >= self.from_date,
@@ -368,4 +334,3 @@ def custom_get_sales_orders(self):
 	open_so = open_so_query.run(as_dict=True)
 
 	return open_so
-
