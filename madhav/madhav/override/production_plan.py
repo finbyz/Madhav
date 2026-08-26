@@ -44,20 +44,39 @@ def get_already_reserved_qty(sales_order_item):
 
 
 def get_already_reserved_pieces(sales_order_item):
-	"""Pieces already staged/reserved via the Batch Wise Reservation
-	Tool (base + tolerance rows) against this SO line."""
-	return flt(
-		frappe.db.sql(
-			"""
-			select sum(sbr.reserved_pieces)
-			from `tabStaged Batch Reservations Verification` sbr
-			inner join `tabBatch Wise Reservation Tool` bwrt on bwrt.name = sbr.parent
-			where sbr.sales_order_item = %s and bwrt.docstatus = 1
-			""",
-			sales_order_item,
-		)[0][0]
-		or 0
+	"""Pieces actually reserved via the Batch Wise Reservation Tool for
+	this SO line, scaled to the *actual* Stock Reservation Entry qty -
+	not the originally staged qty. The staged pieces figure
+	(Staged Batch Reservations Verification.reserved_pieces) reflects
+	what was requested at staging time, but create_fg_stock_reservation
+	can cap the actual reserved qty below that (limited stock,
+	item-level availability, etc). Without scaling, pieces would never
+	reach zero for a line that's genuinely fully qty-reserved but was
+	capped during submission."""
+	rows = frappe.db.sql(
+		"""
+		select sbr.name, sbr.reserved_qty as staged_qty, sbr.reserved_pieces as staged_pieces,
+			sre.reserved_qty as actual_qty
+		from `tabStaged Batch Reservations Verification` sbr
+		inner join `tabBatch Wise Reservation Tool` bwrt on bwrt.name = sbr.parent
+		left join `tabStock Reservation Entry` sre
+			on sre.from_voucher_type = 'Batch Wise Reservation Tool'
+			and sre.from_voucher_detail_no = sbr.name
+			and sre.docstatus = 1
+		where sbr.sales_order_item = %s and bwrt.docstatus = 1
+		""",
+		sales_order_item,
+		as_dict=True,
 	)
+
+	total_pieces = 0.0
+	for r in rows:
+		staged_qty = flt(r.staged_qty)
+		actual_qty = flt(r.actual_qty)
+		if staged_qty <= 0 or not actual_qty:
+			continue
+		total_pieces += flt(r.staged_pieces) * min(1, actual_qty / staged_qty)
+	return total_pieces
 
 
 class CustomProductionPlan(ERPNextProductionPlan):
@@ -289,12 +308,19 @@ class CustomProductionPlan(ERPNextProductionPlan):
 
 		# Drop lines fully covered by existing reservations (both qty
 		# and pieces) instead of leaving a 0-value row in the plan.
-		fully_reserved_rows = [
-			row for row in self.po_items
+		# Filter by name (unique per row, even before save) and rebuild
+		# via self.set() rather than list.remove() in a loop, which is
+		# safer given how many rows can share identical field values
+		# (e.g. many unlinked rows with item_code/qty/None sales_order
+		# all equal) - self.set() also re-indexes idx correctly.
+		fully_reserved_names = {
+			row.name for row in self.po_items
 			if flt(row.planned_qty or 0) <= 0 and flt(row.pieces or 0) <= 0
-		]
-		for row in fully_reserved_rows:
-			self.po_items.remove(row)
+		}
+		if fully_reserved_names:
+			self.set("po_items", [
+				row for row in self.po_items if row.name not in fully_reserved_names
+			])
 
 		self.calculate_total_planned_qty()
 
