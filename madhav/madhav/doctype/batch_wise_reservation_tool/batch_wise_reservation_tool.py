@@ -30,7 +30,16 @@ def floor_qty(value, precision=3):
 # base (exact) quantity has been fully reserved.
 # ---------------------------------------------------------------
 
-MILL_EXTRA_WAREHOUSE = "For Mill (EXTRA) - MUPL"
+def get_tolerance_warehouse():
+	warehouse = frappe.db.get_single_value("Stock Settings", "batch_reservation_tolerance_warehouse")
+	if not warehouse:
+		frappe.throw(
+			frappe._(
+				"Please configure the Batch Reservation Tolerance Warehouse in Stock Settings "
+				"before reserving tolerance quantity."
+			)
+		)
+	return warehouse
 
 
 def get_so_total_qty(sales_order):
@@ -66,7 +75,7 @@ def get_used_tolerance_qty(sales_order):
 				and warehouse = %(wh)s
 				and docstatus = 1
 			""",
-			{"so": sales_order, "wh": MILL_EXTRA_WAREHOUSE},
+			{"so": sales_order, "wh": get_tolerance_warehouse()},
 		)[0][0]
 		or 0
 	)
@@ -266,7 +275,7 @@ class BatchWiseReservationTool(Document):
 			1 + over_reservation_allowance / 100
 		)
 
-		is_tolerance_row = (warehouse == MILL_EXTRA_WAREHOUSE)
+		is_tolerance_row = (warehouse == get_tolerance_warehouse())
 
 		if is_tolerance_row:
 			# ---------------------------------------------------------
@@ -780,7 +789,7 @@ def add_to_reservation_batches(
 
 	target_warehouse = warehouse or doc.warehouse
 
-	if target_warehouse == MILL_EXTRA_WAREHOUSE:
+	if target_warehouse == get_tolerance_warehouse():
 		# ---------------------------------------------------------
 		# TOLERANCE RESERVATION (Subtask 2)
 		# ---------------------------------------------------------
@@ -795,7 +804,7 @@ def add_to_reservation_batches(
 		base_staged_qty = flt(sum(
 			flt(row.reserved_qty)
 			for row in doc.get("reservation_batches")
-			if row.sales_order_item == sales_order_item and row.source_warehouse != MILL_EXTRA_WAREHOUSE
+			if row.sales_order_item == sales_order_item and row.source_warehouse != get_tolerance_warehouse()
 		))
 
 		already_reserved_base_qty = flt(
@@ -806,7 +815,7 @@ def add_to_reservation_batches(
 					and voucher_detail_no = %(sod)s and docstatus = 1
 					and warehouse != %(mill)s
 				""",
-				{"so": sales_order, "sod": sales_order_item, "mill": MILL_EXTRA_WAREHOUSE},
+				{"so": sales_order, "sod": sales_order_item, "mill": get_tolerance_warehouse()},
 			)[0][0]
 			or 0
 		)
@@ -826,7 +835,8 @@ def add_to_reservation_batches(
 		staged_tolerance_this_doc = flt(sum(
 			flt(row.reserved_qty)
 			for row in doc.get("reservation_batches")
-			if row.source_warehouse == MILL_EXTRA_WAREHOUSE
+			if row.source_warehouse == get_tolerance_warehouse()
+			
 		))
 		remaining_tolerance = tolerance_pool - used_tolerance - staged_tolerance_this_doc
 

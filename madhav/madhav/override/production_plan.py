@@ -23,6 +23,43 @@ def meters_to_inches(value):
 	except Exception:
 		return 0.0
 
+
+def get_already_reserved_qty(sales_order_item):
+	"""Qty still outstanding on Stock Reservation Entries for this SO
+	line - reserved minus delivered, so delivered stock isn't
+	subtracted twice (once via ERPNext's own pending_qty calc, and
+	again here)."""
+	return flt(
+		frappe.db.sql(
+			"""
+			select sum(reserved_qty - delivered_qty) from `tabStock Reservation Entry`
+			where voucher_type = 'Sales Order'
+				and voucher_detail_no = %s
+				and docstatus = 1
+			""",
+			sales_order_item,
+		)[0][0]
+		or 0
+	)
+
+
+def get_already_reserved_pieces(sales_order_item):
+	"""Pieces already staged/reserved via the Batch Wise Reservation
+	Tool (base + tolerance rows) against this SO line."""
+	return flt(
+		frappe.db.sql(
+			"""
+			select sum(sbr.reserved_pieces)
+			from `tabStaged Batch Reservations Verification` sbr
+			inner join `tabBatch Wise Reservation Tool` bwrt on bwrt.name = sbr.parent
+			where sbr.sales_order_item = %s and bwrt.docstatus = 1
+			""",
+			sales_order_item,
+		)[0][0]
+		or 0
+	)
+
+
 class CustomProductionPlan(ERPNextProductionPlan):
 
 	def validate(self):
@@ -217,7 +254,15 @@ class CustomProductionPlan(ERPNextProductionPlan):
 
 				if so_item_row:
 					row.pending_pieces = so_item_row.production_plan_pieces or 0
-					row.pieces = flt(so_item_row.pieces or 0) - flt(so_item_row.production_plan_pieces or 0)
+
+					already_reserved_pieces = get_already_reserved_pieces(row.sales_order_item)
+					row.pieces = max(
+						0,
+						flt(so_item_row.pieces or 0)
+						- flt(so_item_row.production_plan_pieces or 0)
+						- already_reserved_pieces,
+					)
+
 					row.assorted_length = so_item_row.assorted_length
 					row.remark = so_item_row.remarks
 
@@ -228,18 +273,7 @@ class CustomProductionPlan(ERPNextProductionPlan):
 						row.length = meters_to_inches(so_item_row.length_size)
 						row.length_size_m = so_item_row.length_size or 0.0
 
-					already_reserved_qty = flt(
-						frappe.db.sql(
-						"""
-						select sum(reserved_qty) from `tabStock Reservation Entry`
-						where voucher_type = 'Sales Order'
-							and voucher_detail_no = %s
-							and docstatus = 1
-							""",
-							row.sales_order_item,
-						)[0][0]
-						or 0
-					)
+					already_reserved_qty = get_already_reserved_qty(row.sales_order_item)
 					row.planned_qty = max(0, flt(row.planned_qty or 0) - already_reserved_qty)
 
 			if row.sales_order:
@@ -252,6 +286,15 @@ class CustomProductionPlan(ERPNextProductionPlan):
 				if so_details:
 					row.customer = so_details.customer or ""
 					row.customer_name = so_details.customer_name or ""
+
+		# Drop lines fully covered by existing reservations (both qty
+		# and pieces) instead of leaving a 0-value row in the plan.
+		fully_reserved_rows = [
+			row for row in self.po_items
+			if flt(row.planned_qty or 0) <= 0 and flt(row.pieces or 0) <= 0
+		]
+		for row in fully_reserved_rows:
+			self.po_items.remove(row)
 
 		self.calculate_total_planned_qty()
 
@@ -295,7 +338,6 @@ def custom_get_sales_orders(self):
 			(so.docstatus == 1)
 			& (so.status.notin(["Stopped", "Closed"]))
 			& (so.company == self.company)
-			# & (so.is_manufacture == 1)
 			& (so_item.qty > so_item.production_plan_qty)
 		)
 	)

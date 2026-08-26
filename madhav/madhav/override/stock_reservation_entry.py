@@ -77,7 +77,7 @@ class StockReservationEntry(_StockReservationEntry):
             # per-line max_voucher_qty cap below does not apply here.
             # Only Available Qty at the warehouse still limits it.
             # ---------------------------------------------------------
-            if self.warehouse == MILL_EXTRA_WAREHOUSE:
+            if self.from_voucher_type == "Batch Wise Reservation Tool":
                 allowed_qty = self.available_qty
             else:
                 allowed_qty = min(
