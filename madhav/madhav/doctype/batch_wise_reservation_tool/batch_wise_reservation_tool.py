@@ -21,6 +21,133 @@ def floor_qty(value, precision=3):
 	return math.floor((flt(value) * factor) + 1e-6) / factor
 
 
+# ---------------------------------------------------------------
+# Reservations from this specific warehouse are treated as
+# "extra / tolerance" reservations, drawn from a shared pool
+# calculated at 20% (Stock Settings.over_reservation_allowance)
+# of the TOTAL Sales Order quantity (all lines combined) - not
+# per line. A line may only draw from this pool once its own
+# base (exact) quantity has been fully reserved.
+# ---------------------------------------------------------------
+
+def get_tolerance_warehouse(throw=True):
+	"""Returns the configured tolerance warehouse, or None if unset.
+
+	Pass throw=False when the caller only needs it for an equality
+	check (e.g. "is this a tolerance row?") - a missing setting there
+	just means the answer is "no", not an error. Only throw when the
+	code is actually about to perform tolerance-specific logic (i.e.
+	we already know we're handling a tolerance row and genuinely need
+	the warehouse value to proceed).
+	"""
+	warehouse = frappe.db.get_single_value("Stock Settings", "batch_reservation_tolerance_warehouse")
+	if not warehouse and throw:
+		frappe.throw(
+			frappe._(
+				"Please configure the Batch Reservation Tolerance Warehouse in Stock Settings "
+				"before reserving tolerance quantity."
+			)
+		)
+	return warehouse
+
+
+def get_so_total_qty(sales_order):
+	return flt(
+		frappe.db.sql(
+			"""
+			select sum(qty) from `tabSales Order Item`
+			where parent = %s and docstatus = 1
+			""",
+			sales_order,
+		)[0][0]
+		or 0
+	)
+
+
+def get_tolerance_pool(sales_order):
+	total_so_qty = get_so_total_qty(sales_order)
+	tolerance_pct = flt(
+		frappe.db.get_single_value("Stock Settings", "over_reservation_allowance") or 0
+	)
+	return flt(total_so_qty * tolerance_pct / 100)
+
+
+def get_used_tolerance_qty(sales_order):
+	"""Tolerance qty already reserved (submitted SREs) against this SO
+	from the tolerance warehouse, across ANY document. Returns 0 if
+	the tolerance warehouse isn't configured, rather than throwing -
+	this is called as part of routine pool bookkeeping, not only when
+	a tolerance reservation is actively being made."""
+	warehouse = get_tolerance_warehouse(throw=False)
+	if not warehouse:
+		return 0
+	return flt(
+		frappe.db.sql(
+			"""
+			select sum(reserved_qty) from `tabStock Reservation Entry`
+			where voucher_type = 'Sales Order'
+				and voucher_no = %(so)s
+				and warehouse = %(wh)s
+				and docstatus = 1
+			""",
+			{"so": sales_order, "wh": warehouse},
+		)[0][0]
+		or 0
+	)
+
+
+def validate_tolerance_row(sales_order, sales_order_item, warehouse, reserved_qty, exclude_doc=None):
+	"""Re-usable check for a tolerance-warehouse row: base must be
+	exhausted, and the SO-wide pool must have room. Called both at
+	staging time (add_to_reservation_batches) and again at submit
+	time (create_fg_stock_reservation), since a staged row can become
+	invalid if other reservations consume the base/pool in between."""
+	so_item = frappe.db.get_value(
+		"Sales Order Item", sales_order_item, ["qty", "delivered_qty"], as_dict=True
+	)
+	if not so_item:
+		frappe.throw(frappe._("Sales Order Item {0} not found.").format(sales_order_item))
+
+	pending_qty = flt(so_item.qty) - flt(so_item.delivered_qty)
+
+	# We're actively performing tolerance logic here, so a missing
+	# configuration is a genuine error - throw.
+	tolerance_wh = get_tolerance_warehouse()
+
+	already_reserved_base_qty = flt(
+		frappe.db.sql(
+			"""
+			select sum(reserved_qty) from `tabStock Reservation Entry`
+			where voucher_type = 'Sales Order' and voucher_detail_no = %(sod)s
+				and docstatus = 1 and warehouse != %(wh)s
+				and (%(exclude)s is null or name != %(exclude)s)
+			""",
+			{"sod": sales_order_item, "wh": tolerance_wh, "exclude": exclude_doc},
+		)[0][0]
+		or 0
+	)
+
+	if pending_qty - already_reserved_base_qty > 0.0001:
+		frappe.throw(
+			frappe._(
+				"Cannot reserve extra (tolerance) quantity for Sales Order Item {0}: "
+				"the base quantity ({1} still pending) must be fully reserved first."
+			).format(sales_order_item, pending_qty - already_reserved_base_qty)
+		)
+
+	tolerance_pool = get_tolerance_pool(sales_order)
+	used_tolerance = get_used_tolerance_qty(sales_order)
+	remaining_tolerance = tolerance_pool - used_tolerance
+
+	if flt(reserved_qty) > remaining_tolerance:
+		frappe.throw(
+			frappe._(
+				"Cannot reserve {0} as tolerance qty: only {1} of the tolerance pool "
+				"remains for Sales Order {2}."
+			).format(reserved_qty, remaining_tolerance, sales_order)
+		)
+
+
 class BatchWiseReservationTool(Document):
 	def on_submit(self):
 		self.create_stock_reservationentries()
@@ -29,7 +156,7 @@ class BatchWiseReservationTool(Document):
 		self.cancel_stock_reservation_entries()
 
 	def create_stock_reservationentries(self):
-		
+
 		if not self.reservation_batches:
 			frappe.throw(frappe._("No reservation batches found. Please add batch reservations before submitting."))
 
@@ -39,21 +166,26 @@ class BatchWiseReservationTool(Document):
 		# whole submission on the first shortfall.
 		self._reservation_warnings = []
 
-		# Validate all rows firstcreate_stock_reservation_entries_for_so_items
+		# Running total of tolerance pool already consumed for this SO
+		# (from previously submitted documents). Incremented in-memory
+		# as we process rows below, so multiple lines drawing from the
+		# same SO-level pool within this single submission stay in sync.
+		self._tolerance_pool_used = get_used_tolerance_qty(self.sales_order) if self.get("sales_order") else 0
+
 		for row in self.reservation_batches:
 			self.create_fg_stock_reservation(
-			item_code=row.item_code,
-			warehouse = row.source_warehouse,
-			qty = round(row.reserved_qty,3),
-			so_qty = row.sales_order_item_qty,
-			stock_uom = frappe.db.get_value("Item",row.item_code,"stock_uom"),
-			sales_order=row.sales_order,
-			sales_order_item=row.sales_order_item,
-			batch_no=row.batch_no,
-			from_voucher_type = self.doctype,
-			from_voucher_no = self.name,
-			from_voucher_detail_no = row.name
-		)
+				item_code=row.item_code,
+				warehouse=row.source_warehouse,
+				qty=round(row.reserved_qty, 3),
+				so_qty=row.sales_order_item_qty,
+				stock_uom=frappe.db.get_value("Item", row.item_code, "stock_uom"),
+				sales_order=row.sales_order,
+				sales_order_item=row.sales_order_item,
+				batch_no=row.batch_no,
+				from_voucher_type=self.doctype,
+				from_voucher_no=self.name,
+				from_voucher_detail_no=row.name
+			)
 
 		if self._reservation_warnings:
 			lines = "<br>".join(self._reservation_warnings)
@@ -67,16 +199,23 @@ class BatchWiseReservationTool(Document):
 			)
 
 	def cancel_stock_reservation_entries(self):
-		for row in self.reservation_batches:
-			sre_name = frappe.db.get_value(
-				"Staged Batch Reservations Verification",
-				row.name,
-				"stock_reservation_entry",
-			)
-			if sre_name:
-				sre = frappe.get_doc("Stock Reservation Entry", sre_name)
-				if sre.docstatus == 1:
-					sre.cancel()
+		"""Cancel every Stock Reservation Entry created from this
+		document. Looked up directly via from_voucher_type/from_voucher_no
+		rather than a per-row back-reference field (which is never
+		populated by create_fg_stock_reservation), so this reliably
+		finds and cancels everything this document created."""
+		sre_names = frappe.get_all(
+			"Stock Reservation Entry",
+			filters={
+				"from_voucher_type": self.doctype,
+				"from_voucher_no": self.name,
+				"docstatus": 1,
+			},
+			pluck="name",
+		)
+		for sre_name in sre_names:
+			sre = frappe.get_doc("Stock Reservation Entry", sre_name)
+			sre.cancel()
 
 	def create_fg_stock_reservation(
 		self,
@@ -209,15 +348,33 @@ class BatchWiseReservationTool(Document):
 			1 + over_reservation_allowance / 100
 		)
 
-		so_available_qty = max(
-			0,
-			floor_qty(
-				allowed_so_qty
-				- delivered_qty
-				- already_reserved_qty,
-				3,
-			),
-		)
+		is_tolerance_row = (warehouse == get_tolerance_warehouse(throw=False))
+
+		if is_tolerance_row:
+			# Re-validate here too - staging only checked this at the
+			# time the row was added; other reservations may have
+			# consumed the base/pool since then.
+			validate_tolerance_row(sales_order, sales_order_item, warehouse, qty)
+
+			# ---------------------------------------------------------
+			# draw from the shared SO-level tolerance pool
+			# instead of the per-line SO qty cap.
+			# ---------------------------------------------------------
+			tolerance_pool = get_tolerance_pool(sales_order)
+			remaining_tolerance = tolerance_pool - flt(self._tolerance_pool_used)
+			so_available_qty = max(0, floor_qty(remaining_tolerance, 3))
+		else:
+			# Base reservation - strictly against the SO Item qty,
+			# no tolerance (subtask 1 behaviour, unchanged).
+			so_available_qty = max(
+				0,
+				floor_qty(
+					so_qty
+					- delivered_qty
+					- already_reserved_qty,
+					3,
+				),
+			)
 
 		# ---------------------------------------------------------
 		# BATCH AVAILABLE QTY
@@ -358,9 +515,9 @@ class BatchWiseReservationTool(Document):
 
 		requested_qty = qty
 
-		# Defensive: ensure the warnings list exists even if this method
-		# is ever called directly (e.g. from a script) without going
-		# through create_stock_reservationentries() first.
+		# Defensive: ensure the warnings/pool-tracking state exists even
+		# if this method is ever called directly (e.g. from a script)
+		# without going through create_stock_reservationentries() first.
 		if not hasattr(self, "_reservation_warnings"):
 			self._reservation_warnings = []
 
@@ -491,6 +648,9 @@ class BatchWiseReservationTool(Document):
 		sre.flags.ignore_permissions = True
 		sre.insert()
 		sre.submit()
+
+		if is_tolerance_row:
+			self._tolerance_pool_used = flt(getattr(self, "_tolerance_pool_used", 0)) + flt(reserve_qty)
 
 		frappe.log_error(
 			title="Stock Reserved",
@@ -696,7 +856,7 @@ def add_to_reservation_batches(
 	if doc.docstatus != 0:
 		frappe.throw(frappe._("Cannot modify a submitted or cancelled document."))
 
-	# Duplicate guard
+		# Duplicate guard
 	for row in doc.get("reservation_batches"):
 		if row.batch_no == batch_no and row.sales_order_item == sales_order_item:
 			frappe.throw(
@@ -704,6 +864,110 @@ def add_to_reservation_batches(
 					batch_no, sales_order_item
 				)
 			)
+
+	target_warehouse = warehouse or doc.warehouse
+
+	if target_warehouse == get_tolerance_warehouse(throw=False):
+		# ---------------------------------------------------------
+		# TOLERANCE RESERVATION (Subtask 2)
+		# ---------------------------------------------------------
+		validate_tolerance_row(sales_order, sales_order_item, target_warehouse, reserved_qty)
+
+		doc.append("reservation_batches", {
+			"sales_order":     sales_order,
+			"sales_order_item": sales_order_item,
+			"sales_order_item_qty": sales_order_item_qty,
+			"posting_date":    posting_date or doc.posting_date,
+			"item_code":       item_code,
+			"item_name":       item_name,
+			"batch_no":        batch_no,
+			"source_warehouse": target_warehouse,
+			"reserved_qty":    flt(reserved_qty),
+			"reserved_pieces": flt(pieces),
+			"length":          flt(length),
+			"section_weight":  flt(section_weight),
+		})
+
+		doc.save(ignore_permissions=True)
+		new_row = doc.reservation_batches[-1]
+		return {
+			"sales_order": new_row.sales_order,
+			"sales_order_item": new_row.sales_order_item,
+			"sales_order_item_qty": new_row.sales_order_item_qty,
+			"posting_date": str(new_row.posting_date) if new_row.posting_date else "",
+			"item_code": new_row.item_code,
+			"item_name": new_row.item_name,
+			"batch_no": new_row.batch_no,
+			"source_warehouse": new_row.source_warehouse,
+			"reserved_qty": flt(new_row.reserved_qty),
+			"reserved_pieces": flt(new_row.reserved_pieces),
+			"length": flt(new_row.length),
+			"section_weight": flt(new_row.section_weight),
+		}
+
+	# ---------------------------------------------------------
+	# CAP AT SALES ORDER LINE'S PENDING QTY
+	# No tolerance considered here - reservation must stay
+	# strictly within what's actually pending on the SO line.
+	# ---------------------------------------------------------
+
+	so_item = frappe.db.get_value(
+		"Sales Order Item",
+		sales_order_item,
+		["qty", "delivered_qty", "pieces"],
+		as_dict=True,
+	)
+
+	if not so_item:
+		frappe.throw(
+			frappe._("Sales Order Item {0} not found.").format(sales_order_item)
+		)
+
+	pending_qty = flt(so_item.qty) - flt(so_item.delivered_qty)
+
+	already_staged_qty = flt(sum(
+		flt(row.reserved_qty)
+		for row in doc.get("reservation_batches")
+		if row.sales_order_item == sales_order_item
+	))
+
+	remaining_qty = flt(pending_qty - already_staged_qty)
+
+	if remaining_qty <= 0:
+		frappe.throw(
+			frappe._(
+				"Sales Order Item {0} is already fully staged for reservation "
+				"({1} of {2} pending qty used). Cannot add Batch {3}."
+			).format(sales_order_item, already_staged_qty, pending_qty, batch_no)
+		)
+
+	if flt(reserved_qty) > remaining_qty:
+		frappe.throw(
+			frappe._(
+				"Cannot reserve {0} from Batch {1} for Sales Order Item {2}: "
+				"only {3} qty is still pending (excluding tolerance)."
+			).format(reserved_qty, batch_no, sales_order_item, remaining_qty)
+		)
+
+	already_staged_pieces = flt(sum(
+		flt(row.reserved_pieces)
+		for row in doc.get("reservation_batches")
+		if row.sales_order_item == sales_order_item
+	))
+	remaining_pieces = flt(so_item.pieces) - already_staged_pieces
+
+	# Fixed: previously "remaining_pieces > 0 and pieces > remaining_pieces"
+	# silently skipped this check once remaining_pieces was already <= 0,
+	# letting any amount of pieces through unchecked exactly when the cap
+	# should have been tightest. max(0, remaining_pieces) means a
+	# negative/zero remainder still blocks any further pieces.
+	if flt(pieces) > max(0, remaining_pieces):
+		frappe.throw(
+			frappe._(
+				"Cannot reserve {0} pieces from Batch {1} for Sales Order Item {2}: "
+				"only {3} pieces are still pending."
+			).format(pieces, batch_no, sales_order_item, remaining_pieces)
+		)
 
 	doc.append("reservation_batches", {
 		"sales_order":     sales_order,
@@ -923,4 +1187,3 @@ def get_reserved_batches(docname):
 			})
 
 	return reserved_batches
-

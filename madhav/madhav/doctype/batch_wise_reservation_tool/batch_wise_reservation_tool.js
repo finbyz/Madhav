@@ -2,6 +2,15 @@
 // For license information, please see license.txt
 
 frappe.ui.form.on("Batch Wise Reservation Tool", {
+	setup(frm) {
+		frm.set_query("sales_order", () => {
+			let filters = { docstatus: 1 };
+			if (frm.doc.customer) {
+				filters.customer = frm.doc.customer;
+			}
+			return { filters: filters };
+		});
+	},
 	refresh(frm) {
 		if (frm.doc.docstatus == 1) {
 			frm.trigger("render_batch_reserved");
@@ -13,14 +22,7 @@ frappe.ui.form.on("Batch Wise Reservation Tool", {
 		}
 	},
 	customer(frm) {
-		frm.set_query("sales_order", () => {
-			return {
-				filters: {
-					Category: frm.doc.customer
-				}
-			};
-		});
-
+		frm.set_value("sales_order", "");
 	},
 	on_submit(frm) {
 		frm.trigger("render_batch_reserved");
