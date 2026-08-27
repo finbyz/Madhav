@@ -558,39 +558,40 @@ def cancel_stock_reservations_from_so(doc):
 
 
 def _snapshot_sre(sre):
-    """Capture fields needed to recreate a Stock Reservation Entry."""
-    return {
-        "item_code": sre.item_code,
-        "warehouse": sre.warehouse,
-        "company": sre.company,
-        "stock_uom": sre.stock_uom,
-        "voucher_type": sre.voucher_type,
-        "voucher_no": sre.voucher_no,
-        "voucher_detail_no": sre.voucher_detail_no,
-        "voucher_qty": flt(sre.voucher_qty),
-        "reserved_qty": flt(sre.reserved_qty),
-        "delivered_qty": flt(sre.delivered_qty),
-        "available_qty": flt(sre.available_qty),
-        "reservation_based_on": sre.reservation_based_on,
-        "has_batch_no": cint(sre.has_batch_no),
-        "has_serial_no": cint(sre.has_serial_no),
-        "from_voucher_type": sre.from_voucher_type,
-        "from_voucher_no": sre.from_voucher_no,
-        "from_voucher_detail_no": sre.from_voucher_detail_no,
-        "sb_entries": [
-            {
-                "batch_no": e.batch_no,
-                "serial_no": e.serial_no,
-                "qty": flt(e.qty),
-                "delivered_qty": flt(e.get("delivered_qty")),
-                "warehouse": e.warehouse,
-                "pieces": flt(e.get("pieces")),
-                "length": flt(e.get("length")),
-                "section_weight": flt(e.get("section_weight")),
-            }
-            for e in (sre.get("sb_entries") or [])
-        ],
-    }
+	"""Capture fields needed to recreate a Stock Reservation Entry."""
+	return {
+		"name": sre.name,
+		"item_code": sre.item_code,
+		"warehouse": sre.warehouse,
+		"company": sre.company,
+		"stock_uom": sre.stock_uom,
+		"voucher_type": sre.voucher_type,
+		"voucher_no": sre.voucher_no,
+		"voucher_detail_no": sre.voucher_detail_no,
+		"voucher_qty": flt(sre.voucher_qty),
+		"reserved_qty": flt(sre.reserved_qty),
+		"delivered_qty": flt(sre.delivered_qty),
+		"available_qty": flt(sre.available_qty),
+		"reservation_based_on": sre.reservation_based_on,
+		"has_batch_no": cint(sre.has_batch_no),
+		"has_serial_no": cint(sre.has_serial_no),
+		"from_voucher_type": sre.from_voucher_type,
+		"from_voucher_no": sre.from_voucher_no,
+		"from_voucher_detail_no": sre.from_voucher_detail_no,
+		"sb_entries": [
+			{
+				"batch_no": e.batch_no,
+				"serial_no": e.serial_no,
+				"qty": flt(e.qty),
+				"delivered_qty": flt(e.get("delivered_qty")),
+				"warehouse": e.warehouse,
+				"pieces": flt(e.get("pieces")),
+				"length": flt(e.get("length")),
+				"section_weight": flt(e.get("section_weight")),
+			}
+			for e in (sre.get("sb_entries") or [])
+		],
+	}
 
 
 def _store_cancelled_sre_snapshot(delivery_note, snapshots):
@@ -623,454 +624,543 @@ def _store_cancelled_sre_snapshot(delivery_note, snapshots):
 
 
 def _load_cancelled_sre_snapshot(delivery_note):
-    # Support current + legacy comment prefixes
-    prefixes = (CANCELLED_SRE_COMMENT_PREFIX, "MADHAV_DN_CANCELLED_SRE::")
-    comments = frappe.get_all(
-        "Comment",
-        filters={
-            "reference_doctype": "Delivery Note",
-            "reference_name": delivery_note,
-            "comment_type": "Info",
-        },
-        fields=["name", "content"],
-        order_by="creation desc",
-        limit=20,
-    )
-    for comment in comments:
-        content = comment.content or ""
-        for prefix in prefixes:
-            if content.startswith(prefix):
-                try:
-                    return json.loads(content[len(prefix) :]), comment.name
-                except Exception:
-                    frappe.log_error(
-                        title="DN Cancel - Invalid SRE Snapshot",
-                        message=f"{delivery_note}\n{content}",
-                    )
-                    return [], comment.name
-    return [], None
+	"""Load SRE snapshot stored on the DN.
+
+	Raises if a snapshot comment exists but cannot be parsed — cancel must not
+	silently continue without restoring reservations.
+	"""
+	prefixes = (CANCELLED_SRE_COMMENT_PREFIX, "MADHAV_DN_CANCELLED_SRE::")
+	comments = frappe.get_all(
+		"Comment",
+		filters={
+			"reference_doctype": "Delivery Note",
+			"reference_name": delivery_note,
+			"comment_type": "Info",
+		},
+		fields=["name", "content"],
+		order_by="creation desc",
+		limit=20,
+	)
+	for comment in comments:
+		content = comment.content or ""
+		for prefix in prefixes:
+			if not content.startswith(prefix):
+				continue
+			payload = content[len(prefix) :]
+			try:
+				snapshots = json.loads(payload)
+			except Exception:
+				frappe.log_error(
+					title="DN Cancel - Invalid SRE Snapshot",
+					message=f"{delivery_note}\n{content}",
+				)
+				frappe.throw(
+					_(
+						"Could not read stock reservation snapshot for Delivery Note {0}. "
+						"Cancellation aborted so reservations are not left inconsistent."
+					).format(frappe.bold(delivery_note)),
+					title=_("Invalid Reservation Snapshot"),
+				)
+			if not isinstance(snapshots, list):
+				frappe.throw(
+					_(
+						"Stock reservation snapshot for Delivery Note {0} is invalid "
+						"(expected a list of reservations)."
+					).format(frappe.bold(delivery_note)),
+					title=_("Invalid Reservation Snapshot"),
+				)
+			return snapshots, comment.name
+	return [], None
 
 
 def on_cancel(doc, method=None):
-    """Release stock adjustments, restore reserved qty, re-sync SO on DN cancel."""
-    if getattr(doc, "is_return", 0):
-        return
+	"""Release stock adjustments, restore reserved qty, re-sync SO on DN cancel."""
+	if getattr(doc, "is_return", 0):
+		return
 
-    release_stock_used_by_delivery_note(doc)
-    # ERPNext undeliver can no-op when Serial/Batch SRE has no matching SBB on DN.
-    reverse_sre_delivery_for_dn(doc)
-    # Restore only from submit-time snapshot (reserved DNs). Never invent SRE
-    # for unreserved DNs.
-    restore_stock_reservations_after_cancel(doc)
-    update_sales_order_quantities_on_cancel(doc)
+	release_stock_used_by_delivery_note(doc)
+	# Only undeliver the residual this DN still holds on SREs (do not reduce
+	# earlier Delivery Notes' delivered qty a second time).
+	reverse_sre_delivery_for_dn(doc)
+	# Restore every cancelled reservation from the submit-time snapshot.
+	restore_stock_reservations_after_cancel(doc)
+	update_sales_order_quantities_on_cancel(doc)
 
 
 def release_stock_used_by_delivery_note(doc):
-    """Cancel Stock Reconciliations created for this DN (keep cancelled docs for audit)."""
-    cancel_stock_reconciliations_for_delivery_note(doc.name, delete=False)
+	"""Cancel Stock Reconciliations created for this DN (keep cancelled docs for audit)."""
+	cancel_stock_reconciliations_for_delivery_note(doc.name, delete=False)
 
 
 def reverse_sre_delivery_for_dn(doc):
-    """Force-reduce SRE delivered_qty by this DN's stock qty.
+	"""Reduce SRE delivered_qty only by what this DN still accounts for.
 
-    Standard ERPNext cancel only undelivers Serial/Batch SREs when the DN row
-    still has a matching Serial and Batch Bundle. Madhav DNs often clear / never
-    keep that bundle, so delivered_qty stays stuck and Get Items From shows no
-    reserved qty after cancel.
-    """
-    if not frappe.db.get_single_value("Stock Settings", "enable_stock_reservation"):
-        return
+	ERPNext may already have undelivered on cancel. Re-running a full
+	``stock_qty`` undeliver would eat previously delivered qty from earlier
+	DNs. We only undeliver the excess above deliveries from other submitted DNs.
+	"""
+	if not frappe.db.get_single_value("Stock Settings", "enable_stock_reservation"):
+		return
 
-    for item in doc.items:
-        if not item.against_sales_order or not item.so_detail:
-            continue
+	# Aggregate this DN's stock qty per SO line
+	dn_qty_by_detail = {}
+	for item in doc.items:
+		if not item.against_sales_order or not item.so_detail:
+			continue
+		dn_qty_by_detail.setdefault(
+			item.so_detail,
+			frappe._dict(
+				sales_order=item.against_sales_order,
+				qty=0,
+				dn_items=[],
+			),
+		)
+		dn_qty_by_detail[item.so_detail].qty += flt(item.stock_qty)
+		dn_qty_by_detail[item.so_detail].dn_items.append(item)
 
-        qty_to_undeliver = flt(item.stock_qty)
-        if qty_to_undeliver <= 0:
-            continue
+	for so_detail, info in dn_qty_by_detail.items():
+		other_delivered = _delivered_qty_excluding_dn(so_detail, doc.name)
+		# Newest first so we peel this DN's delivery before earlier DNs'.
+		sre_names = frappe.get_all(
+			"Stock Reservation Entry",
+			filters={
+				"docstatus": 1,
+				"voucher_type": "Sales Order",
+				"voucher_no": info.sales_order,
+				"voucher_detail_no": so_detail,
+				"status": ["in", ["Partially Delivered", "Delivered"]],
+			},
+			pluck="name",
+			order_by="creation desc",
+		)
+		if not sre_names:
+			continue
 
-        # Do not filter by warehouse — DN warehouse may differ from SRE warehouse.
-        sre_list = frappe.get_all(
-            "Stock Reservation Entry",
-            filters={
-                "docstatus": 1,
-                "voucher_type": "Sales Order",
-                "voucher_no": item.against_sales_order,
-                "voucher_detail_no": item.so_detail,
-                "status": ["in", ["Partially Delivered", "Delivered"]],
-            },
-            pluck="name",
-            order_by="creation",
-        )
-        if not sre_list:
-            continue
+		sres = [frappe.get_doc("Stock Reservation Entry", n) for n in sre_names]
+		current_delivered = sum(flt(s.delivered_qty) for s in sres)
+		# Anything above other DNs' delivered is residual from this DN (or a
+		# failed ERPNext undeliver). Never undeliver below other_delivered.
+		excess = current_delivered - other_delivered
+		if excess <= 0:
+			continue
 
-        batch_qty = _dn_item_batch_qty_map(item)
+		qty_to_undeliver = min(excess, flt(info.qty))
+		if qty_to_undeliver <= 0:
+			continue
 
-        for sre_name in sre_list:
-            if qty_to_undeliver <= 0:
-                break
+		# Prefer undelivering against batches used on this DN's rows
+		batch_qty = {}
+		for item in info.dn_items:
+			for batch_no, qty in _dn_item_batch_qty_map(item).items():
+				batch_qty[batch_no] = batch_qty.get(batch_no, 0) + qty
 
-            sre = frappe.get_doc("Stock Reservation Entry", sre_name)
-            can = min(flt(sre.delivered_qty), qty_to_undeliver)
-            if can <= 0:
-                continue
-
-            undelivered = _undeliver_sre_qty(sre, can, batch_qty)
-            if undelivered <= 0:
-                continue
-
-            sre.db_set("delivered_qty", flt(sre.delivered_qty) - undelivered, update_modified=False)
-            sre.reload()
-            sre.update_status()
-            sre.update_reserved_stock_in_bin()
-            qty_to_undeliver -= undelivered
+		for sre in sres:
+			if qty_to_undeliver <= 0:
+				break
+			can = min(flt(sre.delivered_qty), qty_to_undeliver)
+			if can <= 0:
+				continue
+			undelivered = _undeliver_sre_qty(sre, can, batch_qty)
+			if undelivered <= 0:
+				continue
+			sre.db_set("delivered_qty", flt(sre.delivered_qty) - undelivered, update_modified=False)
+			sre.reload()
+			sre.update_status()
+			sre.update_reserved_stock_in_bin()
+			qty_to_undeliver -= undelivered
 
 
 def _dn_item_batch_qty_map(item):
-    batch_qty = {}
-    if not item.serial_and_batch_bundle:
-        return batch_qty
-    try:
-        sbb = frappe.get_doc("Serial and Batch Bundle", item.serial_and_batch_bundle)
-    except Exception:
-        return batch_qty
-    for entry in sbb.entries or []:
-        if entry.batch_no:
-            batch_qty[entry.batch_no] = batch_qty.get(entry.batch_no, 0) + abs(flt(entry.qty))
-    return batch_qty
+	batch_qty = {}
+	if not item.serial_and_batch_bundle:
+		return batch_qty
+	try:
+		sbb = frappe.get_doc("Serial and Batch Bundle", item.serial_and_batch_bundle)
+	except Exception:
+		return batch_qty
+	for entry in sbb.entries or []:
+		if entry.batch_no:
+			batch_qty[entry.batch_no] = batch_qty.get(entry.batch_no, 0) + abs(flt(entry.qty))
+	return batch_qty
 
 
 def _undeliver_sre_qty(sre, qty, batch_qty=None):
-    """Reduce sb_entry delivered_qty then return how much header delivered can fall."""
-    if qty <= 0:
-        return 0
+	"""Reduce sb_entry delivered_qty then return how much header delivered can fall."""
+	if qty <= 0:
+		return 0
 
-    if sre.reservation_based_on != "Serial and Batch" or not sre.get("sb_entries"):
-        return qty
+	if sre.reservation_based_on != "Serial and Batch" or not sre.get("sb_entries"):
+		return qty
 
-    remaining = qty
-    batch_qty = dict(batch_qty or {})
+	remaining = qty
+	batch_qty = dict(batch_qty or {})
 
-    def _undo_from_entries(prefer_batches):
-        nonlocal remaining
-        for entry in sre.sb_entries:
-            if remaining <= 0:
-                break
-            if prefer_batches and entry.batch_no not in batch_qty:
-                continue
-            limit = batch_qty.get(entry.batch_no, remaining) if prefer_batches else remaining
-            undo = min(flt(entry.delivered_qty), remaining, limit)
-            if undo <= 0:
-                continue
-            entry.db_set("delivered_qty", flt(entry.delivered_qty) - undo, update_modified=False)
-            remaining -= undo
-            if prefer_batches and entry.batch_no in batch_qty:
-                batch_qty[entry.batch_no] = max(batch_qty[entry.batch_no] - undo, 0)
+	def _undo_from_entries(prefer_batches):
+		nonlocal remaining
+		for entry in sre.sb_entries:
+			if remaining <= 0:
+				break
+			if prefer_batches and entry.batch_no not in batch_qty:
+				continue
+			limit = batch_qty.get(entry.batch_no, remaining) if prefer_batches else remaining
+			undo = min(flt(entry.delivered_qty), remaining, limit)
+			if undo <= 0:
+				continue
+			entry.db_set("delivered_qty", flt(entry.delivered_qty) - undo, update_modified=False)
+			remaining -= undo
+			if prefer_batches and entry.batch_no in batch_qty:
+				batch_qty[entry.batch_no] = max(batch_qty[entry.batch_no] - undo, 0)
 
-    if batch_qty:
-        _undo_from_entries(prefer_batches=True)
-    if remaining > 0:
-        _undo_from_entries(prefer_batches=False)
+	if batch_qty:
+		_undo_from_entries(prefer_batches=True)
+	if remaining > 0:
+		_undo_from_entries(prefer_batches=False)
 
-    return qty - remaining
+	return qty - remaining
 
 
 def update_sales_order_quantities_on_cancel(doc):
-    """Re-sync SO delivered_qty / per_delivered after DN cancel cleanup (Manjot task 3).
+	"""Re-sync SO delivered_qty / per_delivered after DN cancel cleanup (Manjot task 3).
 
-    ERPNext runs update_prevdoc_status in DeliveryNote.on_cancel before this hook.
-    Re-run after Madhav SR/SRE cleanup and refresh bin reserved qty for affected lines.
-    """
-    so_item_rows = [
-        row.so_detail for row in doc.items if row.against_sales_order and row.so_detail
-    ]
-    if not so_item_rows:
-        return
+	ERPNext runs update_prevdoc_status in DeliveryNote.on_cancel before this hook.
+	Re-run after Madhav SR/SRE cleanup and refresh bin reserved qty for affected lines.
+	"""
+	so_item_rows = [
+		row.so_detail for row in doc.items if row.against_sales_order and row.so_detail
+	]
+	if not so_item_rows:
+		return
 
-    doc.update_prevdoc_status()
+	doc.update_prevdoc_status()
 
-    so_names = {row.against_sales_order for row in doc.items if row.against_sales_order}
-    for so_name in so_names:
-        affected = [
-            row.so_detail
-            for row in doc.items
-            if row.against_sales_order == so_name and row.so_detail
-        ]
-        so = frappe.get_doc("Sales Order", so_name)
-        so.update_reserved_qty(affected)
+	so_names = {row.against_sales_order for row in doc.items if row.against_sales_order}
+	for so_name in so_names:
+		affected = [
+			row.so_detail
+			for row in doc.items
+			if row.against_sales_order == so_name and row.so_detail
+		]
+		so = frappe.get_doc("Sales Order", so_name)
+		so.update_reserved_qty(affected)
+
+
+def _distribute_delivered_across_snapshots(snapshots, exclude_dn):
+	"""Assign delivered_qty per restored SRE without double-counting SO deliveries.
+
+	Each snapshot keeps its own pre-cancel delivered_qty. Any extra delivered
+	qty from other submitted DNs (beyond the sum of snapshot delivered) is
+	spread across reservations by remaining capacity (reserved - own delivered).
+	"""
+	from collections import defaultdict
+
+	prepared = [dict(s) for s in snapshots]
+	by_detail = defaultdict(list)
+	for snap in prepared:
+		by_detail[snap.get("voucher_detail_no")].append(snap)
+
+	for so_detail, group in by_detail.items():
+		if not so_detail:
+			continue
+		other_dn_delivered = _delivered_qty_excluding_dn(so_detail, exclude_dn)
+		own_total = sum(flt(s.get("delivered_qty")) for s in group)
+		extra = max(other_dn_delivered - own_total, 0)
+
+		for snap in group:
+			own = flt(snap.get("delivered_qty"))
+			reserved = flt(snap.get("reserved_qty"))
+			# Never invent delivered above this reservation's size
+			snap["delivered_qty"] = min(own, reserved)
+			for entry in snap.get("sb_entries") or []:
+				entry["delivered_qty"] = min(
+					flt(entry.get("delivered_qty")),
+					flt(entry.get("qty")),
+				)
+
+		if extra <= 0:
+			continue
+
+		for snap in group:
+			if extra <= 0:
+				break
+			reserved = flt(snap.get("reserved_qty"))
+			room = max(reserved - flt(snap.get("delivered_qty")), 0)
+			if room <= 0:
+				continue
+			add = min(room, extra)
+			snap["delivered_qty"] = flt(snap.get("delivered_qty")) + add
+			extra -= add
+			# Mirror extra onto batch rows with remaining capacity
+			remaining_add = add
+			for entry in snap.get("sb_entries") or []:
+				if remaining_add <= 0:
+					break
+				entry_room = max(flt(entry.get("qty")) - flt(entry.get("delivered_qty")), 0)
+				if entry_room <= 0:
+					continue
+				entry_add = min(entry_room, remaining_add)
+				entry["delivered_qty"] = flt(entry.get("delivered_qty")) + entry_add
+				remaining_add -= entry_add
+
+	return prepared
 
 
 def restore_stock_reservations_after_cancel(doc):
-    """
-    Restore Stock Reservation Entries from the submit-time snapshot.
+	"""
+	Restore Stock Reservation Entries from the submit-time snapshot.
 
-    Only runs when a snapshot exists (reserved DN). Unreserved DNs have no
-    snapshot and must not get a new reservation invented on cancel.
-    """
-    if not frappe.db.get_single_value("Stock Settings", "enable_stock_reservation"):
-        return
+	Restores every snapshot row (all batches). Unreserved DNs have no snapshot
+	and must not get a new reservation invented on cancel.
+	"""
+	if not frappe.db.get_single_value("Stock Settings", "enable_stock_reservation"):
+		return
 
-    snapshots, comment_name = _load_cancelled_sre_snapshot(doc.name)
-    if not snapshots:
-        return
+	snapshots, comment_name = _load_cancelled_sre_snapshot(doc.name)
+	if not snapshots:
+		return
 
-    errors = []
-    for snapshot in snapshots:
-        try:
-            snapshot = dict(snapshot)
-            sales_order = snapshot.get("voucher_no")
-            so_detail = snapshot.get("voucher_detail_no")
-            warehouse = snapshot.get("warehouse")
-            reserved_qty = flt(snapshot.get("reserved_qty"))
+	prepared = _distribute_delivered_across_snapshots(snapshots, doc.name)
 
-            # If reservation is already fully available again, skip recreate.
-            if _get_active_reserved_qty(sales_order, so_detail, warehouse) + 0.0001 >= reserved_qty:
-                continue
+	errors = []
+	for snapshot in prepared:
+		try:
+			# Skip only when THIS reservation is still submitted. Do not skip
+			# other batches just because another SRE on the SO line is active.
+			if _snapshot_sre_still_active(snapshot):
+				continue
+			_recreate_stock_reservation_from_snapshot(snapshot)
+		except Exception:
+			frappe.log_error(
+				title="DN Cancel - SRE Restore Error",
+				message=f"{doc.name}\n{frappe.as_json(snapshot)}\n{frappe.get_traceback()}",
+			)
+			errors.append(
+				f"{snapshot.get('item_code') or ''} / "
+				f"{snapshot.get('voucher_no') or ''} / "
+				f"reserved {flt(snapshot.get('reserved_qty'))}"
+			)
 
-            # Preserve previously delivered qty from the submit-time snapshot
-            # (other DNs / prior SRE history). Also include any other submitted
-            # DNs created after this DN was submitted.
-            snapshot["delivered_qty"] = min(
-                max(
-                    flt(snapshot.get("delivered_qty")),
-                    _delivered_qty_excluding_dn(so_detail, doc.name),
-                ),
-                reserved_qty,
-            )
-            # Keep batch/serial delivered from snapshot only when it does not
-            # exceed restored reserved; do not invent delivery on restored rows.
-            for entry in snapshot.get("sb_entries") or []:
-                entry["delivered_qty"] = min(
-                    flt(entry.get("delivered_qty")),
-                    flt(entry.get("qty")),
-                )
+	if comment_name:
+		frappe.delete_doc("Comment", comment_name, ignore_permissions=True, force=True)
 
-            _recreate_stock_reservation_from_snapshot(snapshot)
-        except Exception:
-            frappe.log_error(
-                title="DN Cancel - SRE Restore Error",
-                message=f"{doc.name}\n{frappe.as_json(snapshot)}\n{frappe.get_traceback()}",
-            )
-            errors.append(
-                f"{snapshot.get('item_code') or ''} / "
-                f"{snapshot.get('voucher_no') or ''} / "
-                f"reserved {flt(snapshot.get('reserved_qty'))}"
-            )
+	if errors:
+		frappe.throw(
+			_(
+				"Failed to restore stock reservation(s) while cancelling Delivery Note {0}:<br>{1}"
+			).format(frappe.bold(doc.name), "<br>".join(frappe.bold(e) for e in errors)),
+			title=_("Stock Reservation Restore Failed"),
+		)
 
-    if comment_name:
-        frappe.delete_doc("Comment", comment_name, ignore_permissions=True, force=True)
 
-    if errors:
-        frappe.throw(
-            _(
-                "Failed to restore stock reservation(s) while cancelling Delivery Note {0}:<br>{1}"
-            ).format(frappe.bold(doc.name), "<br>".join(frappe.bold(e) for e in errors)),
-            title=_("Stock Reservation Restore Failed"),
-        )
+def _snapshot_sre_still_active(snapshot):
+	"""True when the snapshotted SRE was never cancelled and is still submitted."""
+	sre_name = snapshot.get("name")
+	if not sre_name or not frappe.db.exists("Stock Reservation Entry", sre_name):
+		return False
+	return cint(frappe.db.get_value("Stock Reservation Entry", sre_name, "docstatus")) == 1
 
 
 def _delivered_qty_excluding_dn(so_detail, exclude_dn):
-    """Stock qty still delivered against SO item from other submitted DNs."""
-    if not so_detail:
-        return 0
-    return flt(
-        frappe.db.sql(
-            """
-            select coalesce(sum(dni.stock_qty), 0)
-            from `tabDelivery Note Item` dni
-            join `tabDelivery Note` dn on dn.name = dni.parent
-            where dni.so_detail = %s
-              and dn.docstatus = 1
-              and ifnull(dn.is_return, 0) = 0
-              and dn.name != %s
-            """,
-            (so_detail, exclude_dn or ""),
-        )[0][0]
-    )
+	"""Stock qty still delivered against SO item from other submitted DNs."""
+	if not so_detail:
+		return 0
+	return flt(
+		frappe.db.sql(
+			"""
+			select coalesce(sum(dni.stock_qty), 0)
+			from `tabDelivery Note Item` dni
+			join `tabDelivery Note` dn on dn.name = dni.parent
+			where dni.so_detail = %s
+			  and dn.docstatus = 1
+			  and ifnull(dn.is_return, 0) = 0
+			  and dn.name != %s
+			""",
+			(so_detail, exclude_dn or ""),
+		)[0][0]
+	)
 
 
 def _get_active_reserved_qty(sales_order, so_detail, warehouse=None):
-    """Net reserved qty still available to deliver (reserved - delivered)."""
-    filters = {
-        "voucher_type": "Sales Order",
-        "voucher_no": sales_order,
-        "voucher_detail_no": so_detail,
-        "docstatus": 1,
-        "status": ["in", ["Reserved", "Partially Reserved", "Partially Delivered"]],
-    }
-    if warehouse:
-        filters["warehouse"] = warehouse
+	"""Net reserved qty still available to deliver (reserved - delivered)."""
+	filters = {
+		"voucher_type": "Sales Order",
+		"voucher_no": sales_order,
+		"voucher_detail_no": so_detail,
+		"docstatus": 1,
+		"status": ["in", ["Reserved", "Partially Reserved", "Partially Delivered"]],
+	}
+	if warehouse:
+		filters["warehouse"] = warehouse
 
-    rows = frappe.get_all(
-        "Stock Reservation Entry",
-        filters=filters,
-        fields=["reserved_qty", "delivered_qty"],
-    )
-    return sum(flt(r.reserved_qty) - flt(r.delivered_qty) for r in rows)
+	rows = frappe.get_all(
+		"Stock Reservation Entry",
+		filters=filters,
+		fields=["reserved_qty", "delivered_qty"],
+	)
+	return sum(flt(r.reserved_qty) - flt(r.delivered_qty) for r in rows)
 
 
 def _get_active_reserved_stock_qty(sales_order, so_detail, warehouse=None):
-    """Gross reserved qty on active SREs (do not subtract delivered).
+	"""Gross reserved qty on active SREs (do not subtract delivered)."""
+	filters = {
+		"voucher_type": "Sales Order",
+		"voucher_no": sales_order,
+		"voucher_detail_no": so_detail,
+		"docstatus": 1,
+		"status": ["in", ["Reserved", "Partially Reserved", "Partially Delivered", "Delivered"]],
+	}
+	if warehouse:
+		filters["warehouse"] = warehouse
 
-    Used when restoring multiple batch SREs against the same SO line so we
-    do not over-reserve beyond voucher_qty after the first batch is restored.
-    """
-    filters = {
-        "voucher_type": "Sales Order",
-        "voucher_no": sales_order,
-        "voucher_detail_no": so_detail,
-        "docstatus": 1,
-        "status": ["in", ["Reserved", "Partially Reserved", "Partially Delivered", "Delivered"]],
-    }
-    if warehouse:
-        filters["warehouse"] = warehouse
-
-    rows = frappe.get_all(
-        "Stock Reservation Entry",
-        filters=filters,
-        fields=["reserved_qty"],
-    )
-    return sum(flt(r.reserved_qty) for r in rows)
+	rows = frappe.get_all(
+		"Stock Reservation Entry",
+		filters=filters,
+		fields=["reserved_qty"],
+	)
+	return sum(flt(r.reserved_qty) for r in rows)
 
 
 def _recreate_stock_reservation_from_snapshot(snapshot):
-    reserved_qty = flt(snapshot.get("reserved_qty"))
-    if reserved_qty <= 0:
-        return
+	reserved_qty = flt(snapshot.get("reserved_qty"))
+	if reserved_qty <= 0:
+		return
 
-    sales_order = snapshot.get("voucher_no")
-    so_detail = snapshot.get("voucher_detail_no")
-    warehouse = snapshot.get("warehouse")
-    delivered_qty = flt(snapshot.get("delivered_qty"))
-    voucher_qty = flt(snapshot.get("voucher_qty") or reserved_qty)
+	sales_order = snapshot.get("voucher_no")
+	so_detail = snapshot.get("voucher_detail_no")
+	warehouse = snapshot.get("warehouse")
+	delivered_qty = flt(snapshot.get("delivered_qty"))
+	voucher_qty = flt(snapshot.get("voucher_qty") or reserved_qty)
 
-    # Prefer live SO line qty — snapshot voucher_qty may be a partial reserve size.
-    if so_detail and frappe.db.exists("Sales Order Item", so_detail):
-        soi = frappe.db.get_value(
-            "Sales Order Item",
-            so_detail,
-            ["qty", "stock_qty", "conversion_factor"],
-            as_dict=True,
-        )
-        if soi:
-            voucher_qty = flt(soi.stock_qty) or (
-                flt(soi.qty) * flt(soi.conversion_factor or 1)
-            )
+	# Prefer live SO line qty — snapshot voucher_qty may be a partial reserve size.
+	if so_detail and frappe.db.exists("Sales Order Item", so_detail):
+		soi = frappe.db.get_value(
+			"Sales Order Item",
+			so_detail,
+			["qty", "stock_qty", "conversion_factor"],
+			as_dict=True,
+		)
+		if soi:
+			voucher_qty = flt(soi.stock_qty) or (
+				flt(soi.qty) * flt(soi.conversion_factor or 1)
+			)
 
-    # Multi-batch / multi-DN: do not over-reserve beyond what SO still allows.
-    active_qty = _get_active_reserved_stock_qty(sales_order, so_detail, warehouse)
-    remaining_capacity = max(voucher_qty - delivered_qty - active_qty, 0)
-    if remaining_capacity <= 0:
-        return
+	# Headroom is based on gross reserved vs voucher only. Do not subtract
+	# delivered_qty here — that belongs on the SRE after submit and would
+	# incorrectly shrink later batches in a multi-batch restore.
+	active_qty = _get_active_reserved_stock_qty(sales_order, so_detail, warehouse)
+	remaining_capacity = max(voucher_qty - active_qty, 0)
+	if remaining_capacity <= 0:
+		return
 
-    if reserved_qty > remaining_capacity:
-        reserved_qty = remaining_capacity
+	if reserved_qty > remaining_capacity:
+		reserved_qty = remaining_capacity
 
-    # Delivered qty cannot exceed what we are restoring
-    if delivered_qty > reserved_qty:
-        # Keep prior deliveries visible by raising reserved up to voucher capacity.
-        need = min(delivered_qty, voucher_qty - active_qty)
-        if need <= 0:
-            return
-        reserved_qty = need
-        delivered_qty = min(delivered_qty, reserved_qty)
+	# Keep prior delivered on this reservation; clamp to what we can restore.
+	delivered_qty = min(delivered_qty, reserved_qty)
 
-    sre = frappe.new_doc("Stock Reservation Entry")
-    sre.item_code = snapshot.get("item_code")
-    sre.warehouse = warehouse
-    sre.company = snapshot.get("company")
-    sre.stock_uom = snapshot.get("stock_uom")
-    sre.voucher_type = snapshot.get("voucher_type") or "Sales Order"
-    sre.voucher_no = sales_order
-    sre.voucher_detail_no = so_detail
-    sre.voucher_qty = voucher_qty
-    sre.reserved_qty = reserved_qty
-    sre.available_qty = flt(snapshot.get("available_qty") or reserved_qty)
-    sre.available_qty_to_reserve = reserved_qty
-    from_voucher_type = snapshot.get("from_voucher_type")
-    from_voucher_no = snapshot.get("from_voucher_no")
-    from_voucher_detail_no = snapshot.get("from_voucher_detail_no")
-    # DN-cancel restore runs after the DN is cancelled — linking from_voucher
-    # to that DN raises CancelledLinkError.
-    if from_voucher_type and from_voucher_no:
-        if cint(frappe.db.get_value(from_voucher_type, from_voucher_no, "docstatus")) == 2:
-            from_voucher_type = from_voucher_no = from_voucher_detail_no = None
-    sre.from_voucher_type = from_voucher_type
-    sre.from_voucher_no = from_voucher_no
-    sre.from_voucher_detail_no = from_voucher_detail_no
+	sre = frappe.new_doc("Stock Reservation Entry")
+	sre.item_code = snapshot.get("item_code")
+	sre.warehouse = warehouse
+	sre.company = snapshot.get("company")
+	sre.stock_uom = snapshot.get("stock_uom")
+	sre.voucher_type = snapshot.get("voucher_type") or "Sales Order"
+	sre.voucher_no = sales_order
+	sre.voucher_detail_no = so_detail
+	sre.voucher_qty = voucher_qty
+	sre.reserved_qty = reserved_qty
+	sre.available_qty = flt(snapshot.get("available_qty") or reserved_qty)
+	sre.available_qty_to_reserve = reserved_qty
+	from_voucher_type = snapshot.get("from_voucher_type")
+	from_voucher_no = snapshot.get("from_voucher_no")
+	from_voucher_detail_no = snapshot.get("from_voucher_detail_no")
+	# DN-cancel restore runs after the DN is cancelled — linking from_voucher
+	# to that DN raises CancelledLinkError.
+	if from_voucher_type and from_voucher_no:
+		if cint(frappe.db.get_value(from_voucher_type, from_voucher_no, "docstatus")) == 2:
+			from_voucher_type = from_voucher_no = from_voucher_detail_no = None
+	sre.from_voucher_type = from_voucher_type
+	sre.from_voucher_no = from_voucher_no
+	sre.from_voucher_detail_no = from_voucher_detail_no
 
-    reservation_based_on = snapshot.get("reservation_based_on") or "Qty"
-    sb_entries = snapshot.get("sb_entries") or []
+	reservation_based_on = snapshot.get("reservation_based_on") or "Qty"
+	sb_entries = snapshot.get("sb_entries") or []
 
-    if reservation_based_on == "Serial and Batch" and sb_entries:
-        sre.has_batch_no = 1
-        sre.has_serial_no = cint(snapshot.get("has_serial_no"))
-        sre.reservation_based_on = "Serial and Batch"
-        sre.use_serial_batch_fields = 1
+	if reservation_based_on == "Serial and Batch" and sb_entries:
+		sre.has_batch_no = 1
+		sre.has_serial_no = cint(snapshot.get("has_serial_no"))
+		sre.reservation_based_on = "Serial and Batch"
+		sre.use_serial_batch_fields = 1
 
-        # Keep all batches from the snapshot. If we capped reserved_qty, scale
-        # batch lines proportionally so every batch is still represented.
-        total_sb_qty = sum(flt(e.get("qty")) for e in sb_entries if e.get("batch_no") or e.get("serial_no"))
-        scale = (reserved_qty / total_sb_qty) if total_sb_qty > 0 and abs(total_sb_qty - reserved_qty) > 0.0001 else 1.0
+		# Keep all batches from the snapshot at original qty when possible.
+		# Only scale if we had to cap reserved_qty for voucher headroom.
+		total_sb_qty = sum(
+			flt(e.get("qty")) for e in sb_entries if e.get("batch_no") or e.get("serial_no")
+		)
+		scale = (
+			(reserved_qty / total_sb_qty)
+			if total_sb_qty > 0 and abs(total_sb_qty - reserved_qty) > 0.0001
+			else 1.0
+		)
 
-        for entry in sb_entries:
-            if not entry.get("batch_no") and not entry.get("serial_no"):
-                continue
-            entry_qty = flt(entry.get("qty")) * scale
-            if entry_qty <= 0:
-                continue
-            entry_delivered = min(flt(entry.get("delivered_qty")) * scale, entry_qty)
-            sre.append(
-                "sb_entries",
-                {
-                    "batch_no": entry.get("batch_no"),
-                    "serial_no": entry.get("serial_no"),
-                    "qty": entry_qty,
-                    "delivered_qty": entry_delivered,
-                    "warehouse": entry.get("warehouse") or warehouse,
-                    "pieces": flt(entry.get("pieces")),
-                    "length": flt(entry.get("length")),
-                    "section_weight": flt(entry.get("section_weight")),
-                },
-            )
+		for entry in sb_entries:
+			if not entry.get("batch_no") and not entry.get("serial_no"):
+				continue
+			entry_qty = flt(entry.get("qty")) * scale
+			if entry_qty <= 0:
+				continue
+			entry_delivered = min(flt(entry.get("delivered_qty")) * scale, entry_qty)
+			sre.append(
+				"sb_entries",
+				{
+					"batch_no": entry.get("batch_no"),
+					"serial_no": entry.get("serial_no"),
+					"qty": entry_qty,
+					"delivered_qty": entry_delivered,
+					"warehouse": entry.get("warehouse") or warehouse,
+					"pieces": flt(entry.get("pieces")),
+					"length": flt(entry.get("length")),
+					"section_weight": flt(entry.get("section_weight")),
+				},
+			)
 
-        if not sre.sb_entries:
-            return
+		if not sre.sb_entries:
+			return
 
-        # Recompute reserved from actual sb rows after scaling
-        reserved_qty = sum(flt(e.qty) for e in sre.sb_entries)
-        sre.reserved_qty = reserved_qty
-        sre.available_qty_to_reserve = reserved_qty
+		reserved_qty = sum(flt(e.qty) for e in sre.sb_entries)
+		sre.reserved_qty = reserved_qty
+		sre.available_qty_to_reserve = reserved_qty
+		delivered_qty = min(delivered_qty, reserved_qty)
 
-        # Keep explicit batches from snapshot; do not auto-pick
-        sre.auto_reserve_serial_and_batch = lambda *args, **kwargs: None
-    else:
-        sre.reservation_based_on = "Qty"
-        sre.has_batch_no = 0
-        sre.has_serial_no = 0
+		# Keep explicit batches from snapshot; do not auto-pick
+		sre.auto_reserve_serial_and_batch = lambda *args, **kwargs: None
+	else:
+		sre.reservation_based_on = "Qty"
+		sre.has_batch_no = 0
+		sre.has_serial_no = 0
 
-    sre.flags.ignore_permissions = True
-    sre.insert()
-    sre.submit()
+	sre.flags.ignore_permissions = True
+	sre.insert()
+	sre.submit()
 
-    # Preserve previously delivered qty (other DNs / partial history) after submit
-    if delivered_qty > 0:
-        sre.db_set("delivered_qty", delivered_qty, update_modified=False)
-        if sre.reservation_based_on == "Serial and Batch":
-            for entry in sre.sb_entries:
-                if flt(entry.delivered_qty) > 0:
-                    frappe.db.set_value(
-                        "Serial and Batch Entry",
-                        entry.name,
-                        "delivered_qty",
-                        flt(entry.delivered_qty),
-                        update_modified=False,
-                    )
-        sre.reload()
-        sre.update_status()
-        sre.update_reserved_qty_in_voucher()
-        sre.update_reserved_stock_in_bin()
+	# Preserve this reservation's delivered qty after submit (earlier DNs /
+	# prior history on this SRE only — already distributed per snapshot).
+	if delivered_qty > 0:
+		sre.db_set("delivered_qty", delivered_qty, update_modified=False)
+		if sre.reservation_based_on == "Serial and Batch":
+			# Prefer entry-level delivered from snapshot; if header has delivered
+			# but entries were zero, leave entries as stored on insert.
+			for entry in sre.sb_entries:
+				if flt(entry.delivered_qty) > 0:
+					frappe.db.set_value(
+						"Serial and Batch Entry",
+						entry.name,
+						"delivered_qty",
+						flt(entry.delivered_qty),
+						update_modified=False,
+					)
+		sre.reload()
+		sre.update_status()
+		sre.update_reserved_qty_in_voucher()
+		sre.update_reserved_stock_in_bin()
 
 
 def cancel_stock_reconciliations_for_delivery_note(delivery_note, delete=False):
