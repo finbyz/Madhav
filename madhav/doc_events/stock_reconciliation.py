@@ -39,6 +39,16 @@ def validate(self, method=None):
             new_qty = flt(row.current_qty) + diff_qty
             if new_qty > 0:
                 row.qty = new_qty
-                row.valuation_rate = row.current_amount / row.qty
+                # Preserve value when stock already has a valuation; never wipe to 0
+                # when current_amount is missing (e.g. empty warehouse at posting time).
+                if flt(row.current_amount):
+                    row.valuation_rate = flt(row.current_amount) / new_qty
+                elif not flt(row.valuation_rate):
+                    row.valuation_rate = (
+                        flt(row.current_valuation_rate)
+                        or flt(row.current_rate)
+                        or flt(frappe.get_cached_value("Item", row.item_code, "valuation_rate"))
+                        or 1
+                    )
 
             # row.amount = total_amount
