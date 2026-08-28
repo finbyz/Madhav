@@ -152,9 +152,6 @@ class BatchWiseReservationTool(Document):
 	def on_submit(self):
 		self.create_stock_reservationentries()
 
-	def on_cancel(self):
-		self.cancel_stock_reservation_entries()
-
 	def create_stock_reservationentries(self):
 
 		if not self.reservation_batches:

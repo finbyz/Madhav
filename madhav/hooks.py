@@ -253,6 +253,7 @@ doc_events = {
         "validate": "madhav.doc_events.delivery_note.validate",
         "before_submit":"madhav.doc_events.delivery_note.before_submit",
         "on_cancel": "madhav.doc_events.delivery_note.on_cancel",
+        "on_cancel":"madhav.doc_events.delivery_note.on_cancel"
     },
 
     "Attendance":{
