@@ -570,7 +570,8 @@ class FinishWorkOrder(Document):
                 })
 
                 se.fg_completed_qty = fg_final_qty
-
+                wo = frappe.get_doc("Work Order", pwo.work_order)
+                manu_qty = flt(wo.produced_qty or 0)
                 # Submit Stock Entry
                 se.insert()
                 se.submit()
@@ -647,7 +648,7 @@ class FinishWorkOrder(Document):
             doc.db_set("completed_pcs", completed + pcs)
             doc.db_set("pending_pcs", total - (completed + pcs))
             ready_qty  = fg_final_qty
-            doc.db_set("pending_qty", flt(doc.qty or 0) -  flt(ready_qty or 0))
+            doc.db_set("pending_qty", flt(doc.qty or 0) -  flt(manu_qty + ready_qty or 0))
         # ==============================
         # EXCESS RM
         # ==============================
