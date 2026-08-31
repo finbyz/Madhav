@@ -71,8 +71,147 @@ from frappe.utils import flt, get_datetime, add_to_date, nowtime
 
 
 def before_insert(self, method):
+    fix_group_cost_center(self)
+    populate_missing_batch_bundle(self)
     change_qty_serial_and_batch(self)
 
+
+def fix_group_cost_center(self):
+    """
+    Delivery Notes made via the standard "Create > Delivery Note" button
+    run core ERPNext's get_mapped_doc + set_missing_values(), which can
+    overwrite a row's cost_center with the company's group/root cost
+    center even when the source Sales Order Item already had a valid
+    leaf-level cost center set. ERPNext refuses to submit against a group
+    cost center ("... is a group cost center and group cost centers
+    cannot be used in transactions"), so this silently blocks submit
+    despite the correct value being available one hop away on the SO.
+
+    Re-sync from the SO Item whenever the DN row ended up on a group
+    cost center (or with none at all) but the SO row has a valid leaf
+    cost center to fall back to.
+    """
+    for item in self.items:
+        if not item.so_detail:
+            continue
+
+        current = item.get("cost_center")
+        if current and not frappe.db.get_value("Cost Center", current, "is_group"):
+            # Already a valid leaf cost center — leave it alone.
+            continue
+
+        so_cost_center = frappe.db.get_value("Sales Order Item", item.so_detail, "cost_center")
+        if not so_cost_center:
+            continue
+
+        if frappe.db.get_value("Cost Center", so_cost_center, "is_group"):
+            # SO row itself only has a group center — nothing safe to copy.
+            continue
+
+        item.cost_center = so_cost_center
+
+
+def populate_missing_batch_bundle(self):
+    """
+    Delivery Notes made via the standard "Create > Delivery Note" button
+    (core get_mapped_doc) never run our SRE/batch-bundle logic — that only
+    happens in make_delivery_note_custom (the "Get Items From > Sales
+    Order" dialog). Rows can end up with neither batch_no nor
+    serial_and_batch_bundle set, even though the SO has active,
+    batch-tracked Stock Reservation Entries backing the row.
+
+    Attach the correct Serial and Batch Bundle here so both creation paths
+    converge on the same data shape before any invoice_qty /
+    reconciliation logic runs.
+    """
+    from erpnext.stock.doctype.stock_reservation_entry.stock_reservation_entry import (
+        get_ssb_bundle_for_voucher,
+    )
+
+    for item in self.items:
+        if not item.against_sales_order or not item.so_detail:
+            continue
+        if item.serial_and_batch_bundle or item.batch_no:
+            continue
+
+        sre_list = frappe.get_all(
+            "Stock Reservation Entry",
+            filters={
+                "voucher_type": "Sales Order",
+                "voucher_no": item.against_sales_order,
+                "voucher_detail_no": item.so_detail,
+                "docstatus": 1,
+            },
+            # get_ssb_bundle_for_voucher (erpnext core) reads item_code,
+            # warehouse, has_serial_no and has_batch_no directly off this
+            # dict via sre["field"] — fetching only name/reservation_based_on
+            # caused a KeyError there, which silently prevented the bundle
+            # from ever being attached.
+            fields=[
+                "name",
+                "reservation_based_on",
+                "item_code",
+                "warehouse",
+                "has_serial_no",
+                "has_batch_no",
+            ],
+        )
+
+        batch_sres = [s for s in sre_list if s.reservation_based_on == "Serial and Batch"]
+        if not batch_sres:
+            continue
+
+        if len(batch_sres) == 1:
+            bundle_name = get_ssb_bundle_for_voucher(batch_sres[0])
+            if bundle_name:
+                item.serial_and_batch_bundle = bundle_name
+        else:
+            # SO item was reserved across more than one SRE — merge their
+            # batch entries into a single bundle so this DN row still
+            # represents the full reserved quantity.
+            item.serial_and_batch_bundle = _build_merged_batch_bundle(item, batch_sres)
+
+
+def _build_merged_batch_bundle(item, sre_rows):
+    from erpnext.stock.doctype.stock_reservation_entry.stock_reservation_entry import (
+        get_ssb_bundle_for_voucher,
+    )
+
+    merged_entries = []
+    for sre in sre_rows:
+        bundle_name = get_ssb_bundle_for_voucher(sre)
+        if not bundle_name:
+            continue
+        src_bundle = frappe.get_doc("Serial and Batch Bundle", bundle_name)
+        merged_entries.extend(e for e in src_bundle.entries if e.batch_no)
+
+    if not merged_entries:
+        return None
+
+    new_bundle = frappe.new_doc("Serial and Batch Bundle")
+    new_bundle.item_code = item.item_code
+    new_bundle.warehouse = item.warehouse
+    new_bundle.voucher_type = "Delivery Note"
+    new_bundle.type_of_transaction = "Outward"
+
+    for e in merged_entries:
+        new_bundle.append(
+            "entries",
+            {
+                "batch_no": e.batch_no,
+                "qty": -abs(flt(e.qty)),
+                "warehouse": e.warehouse or item.warehouse,
+                "pieces": flt(e.get("pieces")),
+                "length": flt(e.get("length")),
+                "section_weight": flt(e.get("section_weight")),
+            },
+        )
+
+    new_bundle.total_qty = -sum(abs(flt(e.qty)) for e in merged_entries)
+    new_bundle.flags.ignore_validate = True
+    new_bundle.flags.ignore_links = True
+    new_bundle.insert(ignore_permissions=True)
+    return new_bundle.name
 
 def validate(self, method):
 
@@ -81,6 +220,16 @@ def validate(self, method):
             deliver_as_qty = frappe.db.get_value(
                 "Sales Order", row.against_sales_order, "deliver_as_qty"
             )
+
+            # Sync the row-level flag from the Sales Order regardless of
+            # how this row was created (standard "Create > Delivery Note"
+            # mapping vs. the custom reserved-stock selector). The
+            # quantity-difference handling in before_submit relies on
+            # this row-level field, so without this sync it silently
+            # never runs for Delivery Notes made via the standard path.
+            if deliver_as_qty and not row.custom_deliver_as_qty:
+                row.custom_deliver_as_qty = 1
+
             if deliver_as_qty and not row.invoice_qty:
                 frappe.throw(f"Invoice Qty is mandatory for row {row.idx}")
 
@@ -109,7 +258,10 @@ def get_batch_available_pieces(item_code, warehouse, batch_no):
 
 def change_qty_serial_and_batch(self):
     for item in self.items:
+        #print("DEBUG entry:", item.item_code, item.against_sales_order, item.serial_and_batch_bundle, flush=True)
+
         if not item.against_sales_order:
+            #print("DEBUG skip - no against_sales_order:", item.item_code, flush=True)
             continue
 
         deliver_as_qty = frappe.db.get_value(
@@ -119,6 +271,7 @@ def change_qty_serial_and_batch(self):
         )
 
         if not item.serial_and_batch_bundle:
+            #print("DEBUG skip - no serial_and_batch_bundle:", item.item_code, flush=True)
             continue
 
         bundle = frappe.get_doc(
@@ -131,9 +284,12 @@ def change_qty_serial_and_batch(self):
         target_qty = flt(item.qty)
 
         batch_entries = [e for e in bundle.entries if e.batch_no]
+        #print("DEBUG batch_entries count:", len(batch_entries), flush=True)
         if not batch_entries:
+            #print("DEBUG skip - no batch_entries", flush=True)
             continue
 
+        #print("DEBUG bundle entries:", [(e.batch_no, e.length, e.section_weight, e.qty) for e in batch_entries], flush=True)
         total_original_qty = sum(abs(flt(e.qty)) for e in batch_entries)
         if not total_original_qty:
             continue
@@ -193,7 +349,7 @@ def change_qty_serial_and_batch(self):
         for i, entry in enumerate(batch_entries):
             available = available_pieces_cache.get(entry.batch_no, 0)
             dp = raw_pieces[i]
-            if available:
+            if available and available > 0:
                 dp = min(dp, available)
             desired_pieces.append(dp)
 
@@ -236,7 +392,7 @@ def change_qty_serial_and_batch(self):
                 qty = (pieces * entry_length * entry_section_weight) / 1000
             else:
                 qty = 0
-            
+
             final_qty.append(qty)
             total_allocated_pieces += pieces
         allocated_total_qty = sum(final_qty)
@@ -267,6 +423,7 @@ def change_qty_serial_and_batch(self):
         bundle.total_qty = -allocated_total_qty
         bundle.flags.ignore_validate = True
         bundle.flags.ignore_links = True
+        #print("DEBUG final item.qty:", item.qty, "item.amount:", item.amount, flush=True)
         bundle.save(ignore_permissions=True)
         bundle.reload()
 
@@ -385,7 +542,20 @@ def before_submit(self, method):
     # For each row, work out how much qty is available "for free" (from the
     # existing reservation / batch / bundle) before we'd need to cancel the
     # SRE and create a Stock Reconciliation to cover the excess.
+    #
+    # FIX: gate difference_qty on custom_deliver_as_qty. Previously this was
+    # computed unconditionally for every row, which meant rows NOT flagged
+    # for "deliver as qty" could still end up with a difference_qty > 0.
+    # That leaked downstream into cancel_stock_reservations_from_so and the
+    # final loop in create_stock_reconciliation (both of which only check
+    # difference_qty > 0, not the ticked flag), letting mixed ticked/unticked
+    # rows on one DN cross-contaminate. Fixing it here, at the source, closes
+    # that gap for every consumer at once.
     for i in self.items:
+        if not i.custom_deliver_as_qty:
+            i.difference_qty = 0
+            continue
+
         available_qty = get_available_qty_for_item(i)
 
         if flt(i.invoice_qty) > available_qty:
@@ -958,6 +1128,19 @@ def create_stock_reconciliation(self):
 
     # ── Submit SR ───────────────────────────────────────────────────
     sr.submit()
+
+    # ── Sync batch details (ported from "Update Batch details" Server Script) ──
+    for row in sr.items:
+        if row.batch_no:
+            frappe.db.set_value(
+                "Batch",
+                row.batch_no,
+                {
+                    "pieces": row.pieces,
+                    "assorted_length": row.assorted_length,
+                    "average_length": row.average_length,
+                },
+            )
 
     # ── Update SBB & DN AFTER SUBMIT ─────────────────────────────
     for dn_row in self.items:
