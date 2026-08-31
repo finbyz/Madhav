@@ -1,7 +1,16 @@
 import frappe
 import json
-from frappe.utils import flt, cint, nowtime
+import math
+from frappe.utils import flt, cint, nowtime, nowdate
 from frappe import _
+
+from madhav.madhav.utils.stock_piece_utils import (
+	int_pieces_from_qty,
+	qty_from_pieces,
+	resolve_entry_length,
+	resolve_entry_pieces,
+	resolve_entry_section_weight,
+)
 
 def on_submit(doc, method=None):
     if not doc.items:
@@ -131,6 +140,106 @@ def get_batch_available_pieces(item_code, warehouse, batch_no):
     return flt(result[0].total_pieces) if result and result[0].total_pieces else 0
 
 
+def get_ssb_bundle_for_voucher_from_sre(sre):
+	"""Create a DN Serial/Batch Bundle from SRE with reservation length and integer pieces."""
+	sre_row = sre if isinstance(sre, dict) else sre.as_dict()
+	sre_name = sre_row.get("name")
+	so_detail = sre_row.get("voucher_detail_no")
+	item_code = sre_row.get("item_code")
+
+	sb_entries = frappe.db.sql(
+		"""
+		SELECT
+			serial_no,
+			batch_no,
+			qty,
+			delivered_qty,
+			pieces,
+			length,
+			section_weight,
+			warehouse
+		FROM `tabSerial and Batch Entry`
+		WHERE parent = %s
+		  AND parenttype = 'Stock Reservation Entry'
+		  AND qty > IFNULL(delivered_qty, 0)
+		ORDER BY idx
+		""",
+		sre_name,
+		as_dict=True,
+	)
+	if not sb_entries:
+		return None
+
+	bundle = frappe.new_doc("Serial and Batch Bundle")
+	bundle.type_of_transaction = "Outward"
+	bundle.voucher_type = "Delivery Note"
+	bundle.posting_date = nowdate()
+	bundle.posting_time = nowtime()
+
+	for field in ("item_code", "warehouse", "has_serial_no", "has_batch_no"):
+		setattr(bundle, field, sre_row[field])
+
+	for row in sb_entries:
+		avail_qty = flt(row.qty) - flt(row.delivered_qty)
+		length = resolve_entry_length(row, row.batch_no, so_detail)
+		section_weight = resolve_entry_section_weight(
+			row, item_code, length, row.batch_no
+		)
+		pieces = resolve_entry_pieces(row, avail_qty, length, section_weight)
+
+		bundle.append(
+			"entries",
+			{
+				"serial_no": row.serial_no,
+				"batch_no": row.batch_no,
+				"qty": avail_qty,
+				"pieces": pieces,
+				"length": length,
+				"section_weight": section_weight,
+				"warehouse": row.warehouse or sre_row.get("warehouse"),
+			},
+		)
+
+	bundle.flags.ignore_permissions = True
+	bundle.save(ignore_permissions=True)
+	return bundle.name
+
+
+def _apply_reserved_dims_to_dn_item(dn_item, so_item, sre):
+	"""Stamp SO/reservation length and integer pieces on the DN row."""
+	reserved_stock_qty = flt(sre.reserved_qty) - flt(sre.delivered_qty)
+	so_stock_qty = flt(so_item.stock_qty) or (
+		flt(so_item.qty) * flt(so_item.conversion_factor or 1)
+	)
+	so_pieces = cint(so_item.get("pieces"))
+	so_length = flt(so_item.get("length_size"))
+
+	if so_length:
+		if hasattr(dn_item, "length_size"):
+			dn_item.length_size = so_length
+		if hasattr(dn_item, "length_sizeso"):
+			dn_item.length_sizeso = so_length
+
+	scaled_pieces = so_pieces
+	if so_pieces and so_stock_qty > 0 and reserved_stock_qty > 0:
+		scaled_pieces = max(
+			0, int(math.ceil(so_pieces * reserved_stock_qty / so_stock_qty))
+		)
+
+	if hasattr(dn_item, "lengthpieces_so") and scaled_pieces:
+		dn_item.lengthpieces_so = scaled_pieces
+	if hasattr(dn_item, "pieces") and scaled_pieces:
+		dn_item.pieces = scaled_pieces
+
+	if hasattr(dn_item, "section_weight"):
+		if flt(so_item.get("section_weight")):
+			dn_item.section_weight = flt(so_item.section_weight)
+		elif so_length and scaled_pieces and reserved_stock_qty:
+			dn_item.section_weight = (reserved_stock_qty * 1000) / (
+				scaled_pieces * so_length
+			)
+
+
 def change_qty_serial_and_batch(self):
     for item in self.items:
         if not item.against_sales_order:
@@ -224,26 +333,31 @@ def change_qty_serial_and_batch(self):
                 desired_qty[i] += take
                 leftover_qty -= take
 
-        # ── Step 2: Convert each entry's qty → pieces using ITS OWN length/section_weight ──
-        # qty = (pieces * length * section_weight) / 1000
-        # => pieces = (qty * 1000) / (length * section_weight)
+        # ── Step 2: Integer pieces per entry from reserved length/section weight ──
         raw_pieces = []
         for i, entry in enumerate(batch_entries):
-            entry_length = flt(entry.length)
-            entry_section_weight = flt(entry.section_weight)
-            if entry_length and entry_section_weight:
-                pieces = (desired_qty[i] * 1000) / (entry_length * entry_section_weight)
-            else:
-                pieces = 0
+            entry_length = resolve_entry_length(
+                entry, entry.batch_no, item.so_detail
+            )
+            entry_section_weight = resolve_entry_section_weight(
+                entry, item.item_code, entry_length, entry.batch_no
+            )
+            if entry_length and not flt(entry.length):
+                entry.length = entry_length
+            if entry_section_weight and not flt(entry.section_weight):
+                entry.section_weight = entry_section_weight
+            pieces = int_pieces_from_qty(
+                desired_qty[i], entry_length, entry_section_weight
+            )
             raw_pieces.append(pieces)
 
         target_total_pieces = sum(raw_pieces)
 
-        # ── Step 3: Cap pieces against what's actually available in the batch, spill leftover ──
+        # ── Step 3: Cap integer pieces against batch availability, spill leftover ──
         available_pieces_cache = {
-            entry.batch_no: get_batch_available_pieces(
+            entry.batch_no: int(round(get_batch_available_pieces(
                 item.item_code, entry.warehouse or item.warehouse, entry.batch_no
-            )
+            )))
             for entry in batch_entries
         }
 
@@ -253,13 +367,13 @@ def change_qty_serial_and_batch(self):
             dp = raw_pieces[i]
             if available:
                 dp = min(dp, available)
-            desired_pieces.append(dp)
+            desired_pieces.append(int(dp))
 
         actual_total_pieces = sum(desired_pieces)
         leftover_pieces = target_total_pieces - actual_total_pieces
 
         for i, entry in enumerate(batch_entries):
-            if abs(leftover_pieces) < 0.0001:
+            if leftover_pieces <= 0:
                 break
             available = available_pieces_cache.get(entry.batch_no, 0)
             if not available:
@@ -267,61 +381,45 @@ def change_qty_serial_and_batch(self):
             room = available - desired_pieces[i]
             if room > 0:
                 take = min(room, leftover_pieces)
-                desired_pieces[i] += take
-                leftover_pieces -= take
+                desired_pieces[i] += int(take)
+                leftover_pieces -= int(take)
 
-        # If total available pieces across all batches is less than what's
-        # needed, leftover_pieces stays > 0 here — meaning we physically
-        # can't fulfil target_qty in full. Flag it rather than silently
-        # under-delivering.
-        if leftover_pieces > 0.0001:
+        if leftover_pieces > 0:
             frappe.msgprint(
                 f"Not enough available pieces for {item.item_code} in "
-                f"{item.warehouse}: short by {leftover_pieces:.2f} pieces.",
+                f"{item.warehouse}: short by {leftover_pieces} pieces.",
                 indicator="orange",
                 alert=True,
             )
 
-        # ── Step 4: Recompute qty from FINAL pieces so qty & pieces stay in sync ──
+        # ── Step 4: Recompute qty from integer pieces ──
         final_qty = []
         total_allocated_pieces = 0
+        last_section_weight = 0
         for i, entry in enumerate(batch_entries):
             entry_length = flt(entry.length)
             entry_section_weight = flt(entry.section_weight)
-            pieces = desired_pieces[i]
-
-            if entry_length and entry_section_weight:
-                qty = (pieces * entry_length * entry_section_weight) / 1000
-            else:
-                qty = 0
-            
+            pieces = int(desired_pieces[i])
+            qty = qty_from_pieces(pieces, entry_length, entry_section_weight)
             final_qty.append(qty)
             total_allocated_pieces += pieces
+            last_section_weight = entry_section_weight
+
         allocated_total_qty = sum(final_qty)
 
-        # ── Write everything back ──
+        # ── Write everything back (keep reservation length; integer pieces) ──
         for i, entry in enumerate(batch_entries):
-            # Outward transaction stores negative qty
-                pieces = desired_pieces[i]
-                length = flt(entry.length)
-
-                # Calculate section weight from final qty, pieces and length
-                if pieces and length:
-                    section_weight = (final_qty[i] * 1000) / (pieces * length)
-                else:
-                    section_weight = 0
-
-                # Update bundle entry
-                entry.section_weight = section_weight
-                entry.qty = -final_qty[i]        # Outward transaction stores negative qty
-                entry.pieces = pieces
+            pieces = int(desired_pieces[i])
+            entry.qty = -final_qty[i]
+            entry.pieces = pieces
 
         item.qty = allocated_total_qty
         item.stock_qty = allocated_total_qty
         item.amount = flt(item.rate) * allocated_total_qty
         item.base_amount = item.amount * flt(self.conversion_rate or 1)
-        item.pieces = max(0, total_allocated_pieces)
-        item.section_weight = section_weight
+        item.pieces = int(total_allocated_pieces)
+        if last_section_weight:
+            item.section_weight = last_section_weight
         bundle.total_qty = -allocated_total_qty
         bundle.flags.ignore_validate = True
         bundle.flags.ignore_links = True
@@ -432,23 +530,28 @@ def update_bundle_to_invoice_qty(item, invoice_qty, qty, deliver_as_qty):
         desired[0] += leftover
         leftover = 0
 
-    # ── Apply ──
-    length = flt(item.length)
-    section_weight = flt(item.section_weight)
+    # ── Apply per-entry reservation length; integer pieces ──
     total_pieces = 0
 
     for i, entry in enumerate(batch_entries):
+        entry_length = resolve_entry_length(
+            entry, entry.batch_no, item.so_detail
+        )
+        entry_section_weight = resolve_entry_section_weight(
+            entry, item.item_code, entry_length, entry.batch_no
+        )
+        if entry_length and not flt(entry.length):
+            entry.length = entry_length
+        if entry_section_weight and not flt(entry.section_weight):
+            entry.section_weight = entry_section_weight
+
+        pieces = int_pieces_from_qty(desired[i], entry_length, entry_section_weight)
         entry.qty = -desired[i]
+        entry.pieces = pieces
+        total_pieces += pieces
 
-        # Calculate pieces from qty using formula:
-        # qty = (pieces * length * section_weight) / 1000
-        # => pieces = (qty * 1000) / (length * section_weight)
-        if length and section_weight:
-            entry.pieces = (desired[i] * 1000) / (length * section_weight)
-        else:
-            entry.pieces = 0
-
-        total_pieces += entry.pieces
+    if hasattr(item, "pieces"):
+        item.pieces = int(total_pieces)
 
     bundle.total_qty = -target_qty
     bundle.flags.ignore_validate = True
@@ -1451,7 +1554,6 @@ import json
 from frappe.utils import flt
 from erpnext.stock.doctype.stock_reservation_entry.stock_reservation_entry import (
     get_sre_details_for_voucher,
-    get_ssb_bundle_for_voucher,
 )
 from erpnext.stock.doctype.packed_item.packed_item import make_packing_list
 from frappe.model.mapper import get_mapped_doc
@@ -1570,9 +1672,10 @@ def make_delivery_note_custom(source_name, target_doc=None, kwargs=None):
             dn_item.qty = flt(sre.reserved_qty) / flt(dn_item.conversion_factor or 1)
             dn_item.warehouse = sre.warehouse
             dn_item.custom_deliver_as_qty = so.deliver_as_qty
-            # batch / serial handling
+            _apply_reserved_dims_to_dn_item(dn_item, so_item, sre)
+            # batch / serial handling — copy reservation length/pieces into bundle
             if sre.reservation_based_on == "Serial and Batch":
-                dn_item.serial_and_batch_bundle = get_ssb_bundle_for_voucher(sre)
+                dn_item.serial_and_batch_bundle = get_ssb_bundle_for_voucher_from_sre(sre)
 
             if frappe.get_meta("Delivery Note Item").has_field("custom_sre"):
                 dn_item.custom_sre = sre.name
