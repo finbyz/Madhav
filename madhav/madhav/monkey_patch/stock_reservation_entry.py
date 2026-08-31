@@ -1,7 +1,7 @@
 from __future__ import annotations
 import frappe
 from frappe import _
-from frappe.utils import flt
+from frappe.utils import flt, cint
 
 def _get_batch_constraints(voucher_type, voucher_detail_no, item_code=None,from_voucher_type=None):
     """
@@ -14,7 +14,7 @@ def _get_batch_constraints(voucher_type, voucher_detail_no, item_code=None,from_
     # Let auto batch selection work without length filtering
     if from_voucher_type == "Batch Wise Reservation Tool":
         return frappe._dict({"min_length": None, "max_length": None})
-    
+
     constraints = frappe._dict({"min_length": None, "max_length": None})
 
     if voucher_type != "Sales Order" or not voucher_detail_no:
@@ -30,20 +30,36 @@ def _get_batch_constraints(voucher_type, voucher_detail_no, item_code=None,from_
     if length_size <= 0:
         return constraints
 
+    default_min = length_size
+    default_max = length_size + 1.5
+
     # Check if dialog passed a custom max_length for this item
     flag_ranges = getattr(frappe.flags, "stock_reservation_item_ranges", {}) or {}
-    flag_data = flag_ranges.get(voucher_detail_no, {})
+    flag_data = flag_ranges.get(voucher_detail_no) or {}
 
     raw_max = flag_data.get("max_length")
     raw_min = flag_data.get("min_length")
-    max_length = flt(raw_max) if raw_max not in (None, "", 0) else length_size + 1.5
 
-    min_length = raw_min
+    max_length = flt(raw_max) if raw_max not in (None, "", 0) else default_max
+    min_length = flt(raw_min) if raw_min not in (None, "", 0) else default_min
+
+    # Never compare or filter with None (Update Items / auto re-reserve paths).
+    min_length = flt(min_length) or default_min
+    max_length = flt(max_length) or default_max
+
     if min_length > max_length:
         min_length, max_length = max_length, min_length
 
     constraints.update({"min_length": min_length, "max_length": max_length})
     return constraints
+
+
+def _default_length_window(length_size):
+    """Return (min_length, max_length) for batch filtering; never None when length_size > 0."""
+    length_size = flt(length_size)
+    if length_size <= 0:
+        return None, None
+    return length_size - 2, length_size + 2
 
 
 def _get_eligible_batches_ordered(batch_nos, min_length=None, max_length=None):
@@ -305,19 +321,27 @@ def _update_sb_entries_custom_fields(doc):
     if doc.voucher_type != "Sales Order" or not doc.voucher_detail_no:
         return
 
-    so_item = frappe.get_doc("Sales Order Item", doc.voucher_detail_no)
-    weight_per_meter = flt(
-        frappe.db.get_value("Item", so_item.item_code, "weight_per_meter")
+    from madhav.madhav.utils.stock_piece_utils import (
+        int_pieces_from_qty,
+        resolve_entry_length,
+        resolve_entry_section_weight,
     )
 
+    so_item = frappe.get_doc("Sales Order Item", doc.voucher_detail_no)
+
     for row in doc.get("sb_entries", []):
-        row.peices = flt(so_item.get("pieces"))
-        row.length = flt(so_item.get("length_size"))
-        row.section_weight = (
-            flt(so_item.get("pieces"))
-            * flt(so_item.get("length_size"))
-            * weight_per_meter
-        ) / 1000
+        length = resolve_entry_length(row, row.batch_no, doc.voucher_detail_no)
+        section_weight = resolve_entry_section_weight(
+            row, doc.item_code, length, row.batch_no
+        )
+        row.length = length
+        row.section_weight = section_weight
+
+        entry_qty = flt(row.qty)
+        if entry_qty and length and section_weight:
+            row.pieces = int_pieces_from_qty(entry_qty, length, section_weight)
+        else:
+            row.pieces = cint(so_item.get("pieces"))
 
 def auto_reserve_serial_and_batch(self, based_on=None):
     """
@@ -528,21 +552,15 @@ def create_stock_reservation_entries_for_so_items(
                     "Item", so_item.item_code, "has_batch_no"
                 )
 
-                # max_length from dialog, fallback to length_size + 1.5
+                # Length window for batch filter — never store None when length_size exists
                 dialog_min_length = row.get("min_length")
-                if dialog_min_length in (None, "", 0):
-                    dialog_min_length = (
-                        (flt(so_item.length_size) - 2)
-                        if flt(so_item.length_size) > 0
-                        else None
-                    )
                 dialog_max_length = row.get("max_length")
-                if dialog_max_length in (None, "", 0):
-                    dialog_max_length = (
-                        (flt(so_item.length_size) + 2)
-                        if flt(so_item.length_size) > 0
-                        else None
-                    )
+                if dialog_min_length in (None, "", 0) or dialog_max_length in (None, "", 0):
+                    default_min, default_max = _default_length_window(so_item.length_size)
+                    if dialog_min_length in (None, "", 0):
+                        dialog_min_length = default_min
+                    if dialog_max_length in (None, "", 0):
+                        dialog_max_length = default_max
 
                 # Store in flags so auto_reserve_serial_and_batch reads it
                 frappe.flags.stock_reservation_item_ranges[so_item.name] = {
@@ -646,10 +664,18 @@ def create_stock_reservation_entries_for_so_items(
             items_details = updated_items_details
 
         else:
-            # Called on SO submit (no dialog) — apply length filter per item
+            # Called on SO submit / Update Items (no dialog) — set length window per item
             for so_item in sales_order.get("items") or []:
                 if not so_item.get("reserve_stock"):
                     continue
+
+                default_min, default_max = _default_length_window(so_item.length_size)
+                if default_min is not None:
+                    frappe.flags.stock_reservation_item_ranges[so_item.name] = {
+                        "min_length": default_min,
+                        "max_length": default_max,
+                    }
+
                 has_batch_no = frappe.get_cached_value(
                     "Item", so_item.item_code, "has_batch_no"
                 )
