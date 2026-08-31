@@ -99,8 +99,17 @@ frappe.ui.form.on('Delivery Note Item', {
 
 function calculate_qty(cdt, cdn) {
 	let row = locals[cdt][cdn];
+	// Reserved / Deliver-as-Qty rows: physical Qty comes from reservation weight.
+	// Do not rebuild Qty from pieces×length×section_weight (that drifts 0.445→0.443).
+	if (
+		row.against_sales_order &&
+		(cint(row.custom_deliver_as_qty) || row.serial_and_batch_bundle)
+	) {
+		return;
+	}
+
 	let pieces = flt(row.pieces);
-	let avg_len = flt(row.average_length);
+	let avg_len = flt(row.average_length || row.length_size);
 	let section_weight = flt(row.section_weight);
 
 	let qty = (pieces * avg_len * section_weight) / 1000;
