@@ -1,6 +1,5 @@
 import frappe
 import json
-import math
 from frappe.utils import flt, cint, nowtime, nowdate
 from frappe import _
 
@@ -207,11 +206,9 @@ def get_ssb_bundle_for_voucher_from_sre(sre):
 
 def _apply_reserved_dims_to_dn_item(dn_item, so_item, sre):
 	"""Stamp SO/reservation length and integer pieces on the DN row."""
+	from madhav.madhav.utils.stock_piece_utils import int_pieces_from_qty
+
 	reserved_stock_qty = flt(sre.reserved_qty) - flt(sre.delivered_qty)
-	so_stock_qty = flt(so_item.stock_qty) or (
-		flt(so_item.qty) * flt(so_item.conversion_factor or 1)
-	)
-	so_pieces = cint(so_item.get("pieces"))
 	so_length = flt(so_item.get("length_size"))
 
 	if so_length:
@@ -220,11 +217,46 @@ def _apply_reserved_dims_to_dn_item(dn_item, so_item, sre):
 		if hasattr(dn_item, "length_sizeso"):
 			dn_item.length_sizeso = so_length
 
-	scaled_pieces = so_pieces
-	if so_pieces and so_stock_qty > 0 and reserved_stock_qty > 0:
-		scaled_pieces = max(
-			0, int(math.ceil(so_pieces * reserved_stock_qty / so_stock_qty))
+	# Prefer pieces already on this SRE's batch rows (per-batch, not full SO)
+	sre_name = sre.name if hasattr(sre, "name") else sre.get("name")
+	sre_pieces = 0
+	if sre_name and frappe.db.has_column("Serial and Batch Entry", "pieces"):
+		sre_pieces = cint(
+			frappe.db.sql(
+				"""
+				select coalesce(sum(pieces), 0)
+				from `tabSerial and Batch Entry`
+				where parent = %s and parenttype = 'Stock Reservation Entry'
+				""",
+				sre_name,
+			)[0][0]
 		)
+
+	section_weight = flt(so_item.get("section_weight"))
+	if not section_weight and so_item.item_code:
+		section_weight = flt(
+			frappe.db.get_value("Item", so_item.item_code, "weight_per_meter") or 0
+		)
+
+	if sre_pieces > 0:
+		scaled_pieces = sre_pieces
+	elif so_length and section_weight and reserved_stock_qty > 0:
+		# Single ceil from reserved weight — do not ceil(SO pieces × ratio)
+		scaled_pieces = int_pieces_from_qty(
+			reserved_stock_qty, so_length, section_weight
+		)
+	else:
+		so_pieces = cint(so_item.get("pieces"))
+		so_stock_qty = flt(so_item.stock_qty) or (
+			flt(so_item.qty) * flt(so_item.conversion_factor or 1)
+		)
+		if so_pieces and so_stock_qty > 0 and reserved_stock_qty > 0:
+			# Already-integer SO pieces: round proportionally (no second ceil)
+			scaled_pieces = max(
+				0, int(round(so_pieces * reserved_stock_qty / so_stock_qty))
+			)
+		else:
+			scaled_pieces = so_pieces
 
 	if hasattr(dn_item, "lengthpieces_so") and scaled_pieces:
 		dn_item.lengthpieces_so = scaled_pieces
@@ -232,8 +264,8 @@ def _apply_reserved_dims_to_dn_item(dn_item, so_item, sre):
 		dn_item.pieces = scaled_pieces
 
 	if hasattr(dn_item, "section_weight"):
-		if flt(so_item.get("section_weight")):
-			dn_item.section_weight = flt(so_item.section_weight)
+		if section_weight:
+			dn_item.section_weight = section_weight
 		elif so_length and scaled_pieces and reserved_stock_qty:
 			dn_item.section_weight = (reserved_stock_qty * 1000) / (
 				scaled_pieces * so_length
@@ -302,39 +334,26 @@ def change_qty_serial_and_batch(self):
             bundle.reload()
             continue
 
-        # ── Step 1 (steel): Proportional QTY, capped by Batch.batch_qty ──
+        # ── Step 1 (steel): Proportional QTY from reserved/fetched weight ──
+        # Do NOT cap by Batch.batch_qty — that field is receipt size, not
+        # available stock, and was shrinking reserved qty on DN save
+        # (e.g. 0.445 → 0.443).
         desired_qty = []
         for entry in batch_entries:
             original = abs(flt(entry.qty))
             ratio = original / total_original_qty
-            dq = target_qty * ratio
-            batch_qty = flt(
-                frappe.db.get_value("Batch", entry.batch_no, "batch_qty") or 0
-            )
-            if batch_qty > 0:
-                dq = min(dq, batch_qty)
-            desired_qty.append(dq)
+            desired_qty.append(target_qty * ratio)
 
-        actual_total_qty = sum(desired_qty)
-        leftover_qty = target_qty - actual_total_qty
-        for i, entry in enumerate(batch_entries):
-            if abs(leftover_qty) < 0.0001:
-                break
-            batch_qty = flt(
-                frappe.db.get_value("Batch", entry.batch_no, "batch_qty") or 0
-            )
-            if batch_qty <= 0:
-                desired_qty[i] += leftover_qty
-                leftover_qty = 0
-                break
-            room = batch_qty - desired_qty[i]
-            if room > 0:
-                take = min(room, leftover_qty)
-                desired_qty[i] += take
-                leftover_qty -= take
+        # Absorb floating remainder on the first entry
+        leftover_qty = target_qty - sum(desired_qty)
+        if abs(leftover_qty) > 0.0000001 and desired_qty:
+            desired_qty[0] += leftover_qty
 
-        # ── Step 2: Integer pieces per entry from reserved length/section weight ──
-        raw_pieces = []
+        # ── Step 2: Integer pieces for display / piece ledger (do NOT rewrite weight) ──
+        # Reserved/fetched qty is the physical weight from stock reservation.
+        # Converting qty → ceil(pieces) → qty_from_pieces drifts weight
+        # (e.g. 0.445 → 0.443) and breaks Deliver-as-Qty vs Invoice Qty.
+        desired_pieces = []
         for i, entry in enumerate(batch_entries):
             entry_length = resolve_entry_length(
                 entry, entry.batch_no, item.so_detail
@@ -346,12 +365,19 @@ def change_qty_serial_and_batch(self):
                 entry.length = entry_length
             if entry_section_weight and not flt(entry.section_weight):
                 entry.section_weight = entry_section_weight
-            pieces = int_pieces_from_qty(
-                desired_qty[i], entry_length, entry_section_weight
-            )
-            raw_pieces.append(pieces)
 
-        target_total_pieces = sum(raw_pieces)
+            # Prefer pieces already on the reservation/bundle for this row.
+            # Recalculate only when missing — avoids ceil(SO pieces) again (+1 PC).
+            existing_pieces = cint(flt(entry.pieces))
+            if existing_pieces > 0:
+                pieces = existing_pieces
+            else:
+                pieces = int_pieces_from_qty(
+                    desired_qty[i], entry_length, entry_section_weight
+                )
+            desired_pieces.append(pieces)
+
+        target_total_pieces = sum(desired_pieces)
 
         # ── Step 3: Cap integer pieces against batch availability, spill leftover ──
         available_pieces_cache = {
@@ -361,13 +387,10 @@ def change_qty_serial_and_batch(self):
             for entry in batch_entries
         }
 
-        desired_pieces = []
         for i, entry in enumerate(batch_entries):
             available = available_pieces_cache.get(entry.batch_no, 0)
-            dp = raw_pieces[i]
-            if available:
-                dp = min(dp, available)
-            desired_pieces.append(int(dp))
+            if available and desired_pieces[i] > available:
+                desired_pieces[i] = available
 
         actual_total_pieces = sum(desired_pieces)
         leftover_pieces = target_total_pieces - actual_total_pieces
@@ -392,29 +415,20 @@ def change_qty_serial_and_batch(self):
                 alert=True,
             )
 
-        # ── Step 4: Recompute qty from integer pieces ──
-        final_qty = []
+        # ── Step 4: Keep reserved weight; only stamp integer pieces ──
         total_allocated_pieces = 0
         last_section_weight = 0
         for i, entry in enumerate(batch_entries):
-            entry_length = flt(entry.length)
-            entry_section_weight = flt(entry.section_weight)
             pieces = int(desired_pieces[i])
-            qty = qty_from_pieces(pieces, entry_length, entry_section_weight)
-            final_qty.append(qty)
-            total_allocated_pieces += pieces
-            last_section_weight = entry_section_weight
-
-        allocated_total_qty = sum(final_qty)
-
-        # ── Write everything back (keep reservation length; integer pieces) ──
-        for i, entry in enumerate(batch_entries):
-            pieces = int(desired_pieces[i])
-            entry.qty = -final_qty[i]
+            entry.qty = -desired_qty[i]
             entry.pieces = pieces
+            total_allocated_pieces += pieces
+            last_section_weight = flt(entry.section_weight)
+
+        allocated_total_qty = sum(desired_qty)
 
         item.qty = allocated_total_qty
-        item.stock_qty = allocated_total_qty
+        item.stock_qty = allocated_total_qty * flt(item.conversion_factor or 1)
         item.amount = flt(item.rate) * allocated_total_qty
         item.base_amount = item.amount * flt(self.conversion_rate or 1)
         item.pieces = int(total_allocated_pieces)
