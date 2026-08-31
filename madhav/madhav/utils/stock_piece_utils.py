@@ -8,13 +8,25 @@ from frappe.utils import flt
 
 
 def int_pieces_from_qty(qty, length, section_weight):
-	"""Whole PC count from weight — matches Sales Order Math.ceil behaviour."""
+	"""Whole PC count from weight — ceil of theoretical pieces (SO behaviour).
+
+	Example: 30.458 → 31.
+
+	Also guards float noise so values like 31.0000000002 do not become 32.
+	"""
 	length = flt(length)
 	section_weight = flt(section_weight)
 	qty = flt(qty)
 	if not length or not section_weight or qty <= 0:
 		return 0
-	return max(0, int(math.ceil((qty * 1000) / (length * section_weight))))
+
+	raw = (qty * 1000) / (length * section_weight)
+	# Near-exact integers: trust round (float dust), do not ceil up by 1
+	near = round(raw)
+	if abs(raw - near) < 1e-6:
+		return max(0, int(near))
+	# Tiny epsilon so ceil(N) is not ceil(N + 1e-15)
+	return max(0, int(math.ceil(raw - 1e-9)))
 
 
 def resolve_entry_length(entry, batch_no=None, so_detail=None):
@@ -72,7 +84,18 @@ def resolve_entry_section_weight(entry, item_code, length, batch_no=None):
 
 
 def resolve_entry_pieces(entry, avail_qty, length, section_weight):
-	"""Integer pieces for a reservation row, scaled when qty is partial."""
+	"""Integer pieces for a reservation row from reserved weight (single ceil).
+
+	Do not re-ceil already-rounded SO pieces — that adds a spurious +1 PC.
+	"""
+	avail_qty = flt(avail_qty)
+	length = flt(length)
+	section_weight = flt(section_weight)
+
+	# Primary: derive once from this row's reserved weight
+	if avail_qty > 0 and length and section_weight:
+		return int_pieces_from_qty(avail_qty, length, section_weight)
+
 	if isinstance(entry, dict):
 		stored = flt(entry.get("pieces"))
 		total_qty = flt(entry.get("qty"))
@@ -82,16 +105,15 @@ def resolve_entry_pieces(entry, avail_qty, length, section_weight):
 		total_qty = flt(getattr(entry, "qty", 0))
 		delivered = flt(getattr(entry, "delivered_qty", 0))
 
+	if stored <= 0:
+		return 0
+
 	orig_avail = total_qty - delivered
-	avail_qty = flt(avail_qty)
+	if orig_avail > 0 and abs(orig_avail - avail_qty) > 0.0001 and avail_qty > 0:
+		# Proportional share of already-integer pieces — round, do not ceil again
+		return max(0, int(round(stored * (avail_qty / orig_avail))))
 
-	if stored > 0 and orig_avail > 0:
-		if abs(orig_avail - avail_qty) < 0.0001:
-			return int(round(stored))
-		scaled = stored * (avail_qty / orig_avail)
-		return max(0, int(math.ceil(scaled))) if scaled > 0 else 0
-
-	return int_pieces_from_qty(avail_qty, length, section_weight)
+	return max(0, int(round(stored)))
 
 
 def qty_from_pieces(pieces, length, section_weight):
