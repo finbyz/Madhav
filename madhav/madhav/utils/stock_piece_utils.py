@@ -30,26 +30,92 @@ def int_pieces_from_qty(qty, length, section_weight):
 
 
 def resolve_entry_length(entry, batch_no=None, so_detail=None):
-	"""Prefer reservation length, then SO line, then batch average."""
+	"""Prefer actual batch length, then reservation row, then SO ordered length."""
 	if isinstance(entry, dict):
-		length = flt(entry.get("length"))
+		stored = flt(entry.get("length"))
 		batch_no = batch_no or entry.get("batch_no")
 	else:
-		length = flt(getattr(entry, "length", 0))
+		stored = flt(getattr(entry, "length", 0))
 		batch_no = batch_no or getattr(entry, "batch_no", None)
 
-	if length:
-		return length
+	# Physical batch length (e.g. 6.50) must win over SO ordered length (e.g. 6).
+	if batch_no:
+		batch_length = flt(
+			frappe.db.get_value("Batch", batch_no, "average_length") or 0
+		)
+		if batch_length:
+			return batch_length
+
+	if stored:
+		return stored
 
 	if so_detail:
 		length = flt(frappe.db.get_value("Sales Order Item", so_detail, "length_size"))
 		if length:
 			return length
 
-	if batch_no:
-		return flt(frappe.db.get_value("Batch", batch_no, "average_length") or 0)
+	return 0
+
+
+def resolve_sre_dn_length(sre_name, so_detail=None):
+	"""Qty-weighted batch length for a DN item from SRE bundle rows."""
+	if not sre_name:
+		return 0
+
+	rows = frappe.db.sql(
+		"""
+		select batch_no, qty, delivered_qty, length
+		from `tabSerial and Batch Entry`
+		where parent = %s and parenttype = 'Stock Reservation Entry'
+		""",
+		sre_name,
+		as_dict=True,
+	)
+
+	total_qty = 0.0
+	weighted = 0.0
+	for row in rows:
+		avail = flt(row.qty) - flt(row.delivered_qty)
+		if avail <= 0:
+			continue
+		length = resolve_entry_length(row, row.batch_no, so_detail)
+		total_qty += avail
+		weighted += length * avail
+
+	if total_qty > 0:
+		return flt(weighted / total_qty)
 
 	return 0
+
+
+def sync_dn_item_length_from_entries(item, entries, so_detail=None):
+	"""Stamp DN item length_size from bundle/reservation batch rows."""
+	total_qty = 0.0
+	weighted = 0.0
+	for entry in entries:
+		if isinstance(entry, dict):
+			qty = abs(flt(entry.get("qty")))
+			batch_no = entry.get("batch_no")
+			stored_length = flt(entry.get("length"))
+		else:
+			qty = abs(flt(entry.qty))
+			batch_no = getattr(entry, "batch_no", None)
+			stored_length = flt(getattr(entry, "length", 0))
+
+		if not qty:
+			continue
+
+		length = stored_length or resolve_entry_length(entry, batch_no, so_detail)
+		total_qty += qty
+		weighted += qty * length
+
+	if not total_qty:
+		return 0
+
+	result = flt(weighted / total_qty)
+	if result and hasattr(item, "length_size"):
+		item.length_size = result
+	return result
 
 
 def resolve_entry_section_weight(entry, item_code, length, batch_no=None):

@@ -9,6 +9,8 @@ from madhav.madhav.utils.stock_piece_utils import (
 	resolve_entry_length,
 	resolve_entry_pieces,
 	resolve_entry_section_weight,
+	resolve_sre_dn_length,
+	sync_dn_item_length_from_entries,
 )
 
 def on_submit(doc, method=None):
@@ -205,20 +207,25 @@ def get_ssb_bundle_for_voucher_from_sre(sre):
 
 
 def _apply_reserved_dims_to_dn_item(dn_item, so_item, sre):
-	"""Stamp SO/reservation length and integer pieces on the DN row."""
+	"""Stamp batch/reservation length and integer pieces on the DN row."""
 	from madhav.madhav.utils.stock_piece_utils import int_pieces_from_qty
 
 	reserved_stock_qty = flt(sre.reserved_qty) - flt(sre.delivered_qty)
 	so_length = flt(so_item.get("length_size"))
+	so_detail = so_item.get("name") or getattr(so_item, "name", None)
+	sre_name = sre.name if hasattr(sre, "name") else sre.get("name")
 
-	if so_length:
-		if hasattr(dn_item, "length_size"):
-			dn_item.length_size = so_length
-		if hasattr(dn_item, "length_sizeso"):
-			dn_item.length_sizeso = so_length
+	# SO ordered length is reference only; DN shows actual reserved batch length.
+	if so_length and hasattr(dn_item, "length_sizeso"):
+		dn_item.length_sizeso = so_length
+
+	reserved_length = resolve_sre_dn_length(sre_name, so_detail)
+	if not reserved_length:
+		reserved_length = so_length
+	if reserved_length and hasattr(dn_item, "length_size"):
+		dn_item.length_size = reserved_length
 
 	# Prefer pieces already on this SRE's batch rows (per-batch, not full SO)
-	sre_name = sre.name if hasattr(sre, "name") else sre.get("name")
 	sre_pieces = 0
 	if sre_name and frappe.db.has_column("Serial and Batch Entry", "pieces"):
 		sre_pieces = cint(
@@ -240,10 +247,10 @@ def _apply_reserved_dims_to_dn_item(dn_item, so_item, sre):
 
 	if sre_pieces > 0:
 		scaled_pieces = sre_pieces
-	elif so_length and section_weight and reserved_stock_qty > 0:
-		# Single ceil from reserved weight — do not ceil(SO pieces × ratio)
+	elif reserved_length and section_weight and reserved_stock_qty > 0:
+		# Single ceil from reserved weight using batch length, not SO ordered length
 		scaled_pieces = int_pieces_from_qty(
-			reserved_stock_qty, so_length, section_weight
+			reserved_stock_qty, reserved_length, section_weight
 		)
 	else:
 		so_pieces = cint(so_item.get("pieces"))
@@ -266,9 +273,9 @@ def _apply_reserved_dims_to_dn_item(dn_item, so_item, sre):
 	if hasattr(dn_item, "section_weight"):
 		if section_weight:
 			dn_item.section_weight = section_weight
-		elif so_length and scaled_pieces and reserved_stock_qty:
+		elif reserved_length and scaled_pieces and reserved_stock_qty:
 			dn_item.section_weight = (reserved_stock_qty * 1000) / (
-				scaled_pieces * so_length
+				scaled_pieces * reserved_length
 			)
 
 
@@ -434,6 +441,7 @@ def change_qty_serial_and_batch(self):
         item.pieces = int(total_allocated_pieces)
         if last_section_weight:
             item.section_weight = last_section_weight
+        sync_dn_item_length_from_entries(item, batch_entries, item.so_detail)
         bundle.total_qty = -allocated_total_qty
         bundle.flags.ignore_validate = True
         bundle.flags.ignore_links = True
@@ -566,6 +574,8 @@ def update_bundle_to_invoice_qty(item, invoice_qty, qty, deliver_as_qty):
 
     if hasattr(item, "pieces"):
         item.pieces = int(total_pieces)
+
+    sync_dn_item_length_from_entries(item, batch_entries, item.so_detail)
 
     bundle.total_qty = -target_qty
     bundle.flags.ignore_validate = True
@@ -1690,6 +1700,23 @@ def make_delivery_note_custom(source_name, target_doc=None, kwargs=None):
             # batch / serial handling — copy reservation length/pieces into bundle
             if sre.reservation_based_on == "Serial and Batch":
                 dn_item.serial_and_batch_bundle = get_ssb_bundle_for_voucher_from_sre(sre)
+                if dn_item.serial_and_batch_bundle:
+                    bundle_entries = frappe.get_all(
+                        "Serial and Batch Entry",
+                        filters={
+                            "parent": dn_item.serial_and_batch_bundle,
+                            "parenttype": "Serial and Batch Bundle",
+                        },
+                        fields=["batch_no", "qty", "length"],
+                    )
+                    batch_nos = {
+                        e.batch_no for e in bundle_entries if e.get("batch_no")
+                    }
+                    if len(batch_nos) == 1 and hasattr(dn_item, "batch_no"):
+                        dn_item.batch_no = next(iter(batch_nos))
+                    sync_dn_item_length_from_entries(
+                        dn_item, bundle_entries, dn_item.so_detail
+                    )
 
             if frappe.get_meta("Delivery Note Item").has_field("custom_sre"):
                 dn_item.custom_sre = sre.name
