@@ -10,6 +10,7 @@ from madhav.madhav.utils.stock_piece_utils import (
 	resolve_entry_pieces,
 	resolve_entry_section_weight,
 	resolve_sre_dn_length,
+	sum_undelivered_pieces_from_sre_rows,
 	sync_dn_item_length_from_entries,
 )
 
@@ -230,18 +231,21 @@ def _apply_reserved_dims_to_dn_item(dn_item, so_item, sre):
 	if reserved_length and hasattr(dn_item, "length_size"):
 		dn_item.length_size = reserved_length
 
-	# Prefer pieces already on this SRE's batch rows (per-batch, not full SO)
+	# Prefer undelivered pieces on SRE batch rows (skip fully delivered batches).
 	sre_pieces = 0
 	if sre_name and frappe.db.has_column("Serial and Batch Entry", "pieces"):
-		sre_pieces = cint(
-			frappe.db.sql(
-				"""
-				select coalesce(sum(pieces), 0)
-				from `tabSerial and Batch Entry`
-				where parent = %s and parenttype = 'Stock Reservation Entry'
-				""",
-				sre_name,
-			)[0][0]
+		sre_rows = frappe.db.sql(
+			"""
+			select batch_no, qty, delivered_qty, pieces, length, section_weight
+			from `tabSerial and Batch Entry`
+			where parent = %s and parenttype = 'Stock Reservation Entry'
+			  and qty > ifnull(delivered_qty, 0)
+			""",
+			sre_name,
+			as_dict=True,
+		)
+		sre_pieces = sum_undelivered_pieces_from_sre_rows(
+			sre_rows, so_detail, so_item.get("item_code")
 		)
 
 	section_weight = flt(so_item.get("section_weight"))
@@ -380,9 +384,19 @@ def change_qty_serial_and_batch(self):
 
             # Prefer pieces already on the reservation/bundle for this row.
             # Recalculate only when missing — avoids ceil(SO pieces) again (+1 PC).
+            # Scale stored pieces when this bundle row is a partial undelivered share.
             existing_pieces = cint(flt(entry.pieces))
-            if existing_pieces > 0:
-                pieces = existing_pieces
+            row_avail_qty = abs(flt(entry.qty))
+            if hasattr(entry, "delivered_qty"):
+                row_avail_qty = max(0.0, row_avail_qty - flt(entry.delivered_qty))
+            if existing_pieces > 0 and row_avail_qty > 0:
+                if abs(row_avail_qty - desired_qty[i]) > 0.0001 and desired_qty[i] > 0:
+                    pieces = max(
+                        0,
+                        int(round(existing_pieces * (desired_qty[i] / row_avail_qty))),
+                    )
+                else:
+                    pieces = existing_pieces
             else:
                 pieces = int_pieces_from_qty(
                     desired_qty[i], entry_length, entry_section_weight
@@ -1683,6 +1697,10 @@ def make_delivery_note_custom(source_name, target_doc=None, kwargs=None):
             if not so_item:
                 continue
 
+            available_reserved = flt(sre.reserved_qty) - flt(sre.delivered_qty)
+            if available_reserved <= 0:
+                continue
+
             dn_item = get_mapped_doc(
                 "Sales Order Item",
                 so_item.name,
@@ -1699,8 +1717,8 @@ def make_delivery_note_custom(source_name, target_doc=None, kwargs=None):
                 ignore_permissions=True,
             )
 
-            # qty from reserved (full available reserved qty for this SRE)
-            dn_item.qty = flt(sre.reserved_qty) / flt(dn_item.conversion_factor or 1)
+            # qty from undelivered reserved stock for this SRE
+            dn_item.qty = available_reserved / flt(dn_item.conversion_factor or 1)
             dn_item.warehouse = sre.warehouse
             dn_item.custom_deliver_as_qty = so.deliver_as_qty
             _apply_reserved_dims_to_dn_item(dn_item, so_item, sre)

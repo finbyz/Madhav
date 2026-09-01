@@ -57,17 +57,20 @@ def resolve_entry_length(entry, batch_no=None, so_detail=None):
 	return 0
 
 
-def _entry_qty_for_length(entry):
-	"""Positive qty weight for length aggregation (SRE avail or bundle abs qty)."""
+def _entry_avail_qty(entry):
+	"""Positive qty for aggregation; excludes delivered portion on SRE rows."""
 	if isinstance(entry, dict):
-		qty = flt(entry.get("qty")) - flt(entry.get("delivered_qty", 0))
-		if qty <= 0:
-			qty = abs(flt(entry.get("qty")))
+		total = flt(entry.get("qty"))
+		delivered = flt(entry.get("delivered_qty", 0))
 	else:
-		qty = flt(getattr(entry, "qty", 0)) - flt(getattr(entry, "delivered_qty", 0))
-		if qty <= 0:
-			qty = abs(flt(getattr(entry, "qty", 0)))
-	return qty
+		total = flt(getattr(entry, "qty", 0))
+		delivered = flt(getattr(entry, "delivered_qty", 0))
+
+	# Outward DN / bundle rows store negative qty; delivered_qty is on SRE only.
+	if total < 0:
+		return abs(total)
+
+	return max(0.0, total - delivered)
 
 
 def resolve_weighted_length_from_entries(entries, so_detail=None):
@@ -88,7 +91,7 @@ def resolve_weighted_length_from_entries(entries, so_detail=None):
 	resolved_lengths = []
 
 	for entry in entries or []:
-		qty = _entry_qty_for_length(entry)
+		qty = _entry_avail_qty(entry)
 		if qty <= 0:
 			continue
 
@@ -122,14 +125,31 @@ def resolve_sre_dn_length(sre_name, so_detail=None):
 
 	rows = frappe.db.sql(
 		"""
-		select batch_no, qty, delivered_qty, length
+		select batch_no, qty, delivered_qty, length, pieces, section_weight
 		from `tabSerial and Batch Entry`
 		where parent = %s and parenttype = 'Stock Reservation Entry'
+		  and qty > ifnull(delivered_qty, 0)
 		""",
 		sre_name,
 		as_dict=True,
 	)
 	return resolve_weighted_length_from_entries(rows, so_detail)
+
+
+def sum_undelivered_pieces_from_sre_rows(rows, so_detail=None, item_code=None):
+	"""Integer pieces remaining on SRE batch rows (excludes fully delivered batches)."""
+	total = 0
+	for row in rows or []:
+		avail_qty = _entry_avail_qty(row)
+		if avail_qty <= 0:
+			continue
+
+		batch_no = row.get("batch_no") if isinstance(row, dict) else getattr(row, "batch_no", None)
+		length = resolve_entry_length(row, batch_no, so_detail)
+		section_weight = resolve_entry_section_weight(row, item_code, length, batch_no)
+		total += resolve_entry_pieces(row, avail_qty, length, section_weight)
+
+	return int(total)
 
 
 def sync_dn_item_length_from_entries(item, entries, so_detail=None):
@@ -172,17 +192,14 @@ def resolve_entry_section_weight(entry, item_code, length, batch_no=None):
 
 
 def resolve_entry_pieces(entry, avail_qty, length, section_weight):
-	"""Integer pieces for a reservation row from reserved weight (single ceil).
+	"""Integer pieces for undelivered qty on a reservation/bundle row.
 
-	Do not re-ceil already-rounded SO pieces — that adds a spurious +1 PC.
+	Prefer stored integer pieces scaled to undelivered qty; derive from weight
+	only when pieces are missing on the row.
 	"""
 	avail_qty = flt(avail_qty)
 	length = flt(length)
 	section_weight = flt(section_weight)
-
-	# Primary: derive once from this row's reserved weight
-	if avail_qty > 0 and length and section_weight:
-		return int_pieces_from_qty(avail_qty, length, section_weight)
 
 	if isinstance(entry, dict):
 		stored = flt(entry.get("pieces"))
@@ -193,15 +210,17 @@ def resolve_entry_pieces(entry, avail_qty, length, section_weight):
 		total_qty = flt(getattr(entry, "qty", 0))
 		delivered = flt(getattr(entry, "delivered_qty", 0))
 
-	if stored <= 0:
-		return 0
+	if stored > 0 and total_qty > 0 and avail_qty > 0:
+		orig_avail = max(0.0, total_qty - delivered)
+		if orig_avail > 0:
+			# Proportional share of already-integer reservation pieces
+			return max(0, int(round(stored * (avail_qty / orig_avail))))
 
-	orig_avail = total_qty - delivered
-	if orig_avail > 0 and abs(orig_avail - avail_qty) > 0.0001 and avail_qty > 0:
-		# Proportional share of already-integer pieces — round, do not ceil again
-		return max(0, int(round(stored * (avail_qty / orig_avail))))
+	# No stored pieces — derive once from undelivered weight
+	if avail_qty > 0 and length and section_weight:
+		return int_pieces_from_qty(avail_qty, length, section_weight)
 
-	return max(0, int(round(stored)))
+	return max(0, int(round(stored))) if stored > 0 else 0
 
 
 def qty_from_pieces(pieces, length, section_weight):
