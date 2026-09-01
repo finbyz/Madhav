@@ -83,6 +83,27 @@ def before_insert(self, method):
     populate_missing_batch_bundle(self)
     change_qty_serial_and_batch(self)
 
+def before_validate(self, method):
+    """
+    Re-sync each row's warehouse from its Serial and Batch Bundle before
+    core stock validation runs. Something in the standard "Create >
+    Delivery Note" mapper flow (core ERPNext's set_missing_values, which
+    runs between before_insert and validate) resets warehouse back to the
+    Sales Order Item's nominal warehouse, even though before_insert
+    already set it correctly from the SRE's actual reservation warehouse.
+    Core's stock-bundle consistency check runs as part of validate()
+    before our own "validate" hook fires, so this has to happen in
+    before_validate to actually take effect in time.
+    """
+    for row in self.items:
+        if not row.serial_and_batch_bundle:
+            continue
+        bundle_warehouse = frappe.db.get_value(
+            "Serial and Batch Bundle", row.serial_and_batch_bundle, "warehouse"
+        )
+        if bundle_warehouse and row.warehouse != bundle_warehouse:
+            row.warehouse = bundle_warehouse
+
 
 def fix_group_cost_center(self):
     """
@@ -150,28 +171,80 @@ def populate_missing_batch_bundle(self):
             continue
 
         if len(batch_sres) == 1:
-            bundle_name = get_ssb_bundle_for_voucher(batch_sres[0])
+            bundle_name = get_ssb_bundle_for_voucher_from_sre(batch_sres[0])
             if bundle_name:
                 item.serial_and_batch_bundle = bundle_name
+                item.warehouse = batch_sres[0].warehouse
         else:
             # SO item was reserved across more than one SRE — merge their
             # batch entries into a single bundle so this DN row still
             # represents the full reserved quantity.
             item.serial_and_batch_bundle = _build_merged_batch_bundle(item, batch_sres)
+            if item.serial_and_batch_bundle:
+                item.warehouse = batch_sres[0].warehouse
+
+def _backfill_bundle_dimensions(entry, item_code, so_detail, avail_qty):
+    """Resolve missing length / section_weight / pieces on a raw
+    Serial and Batch Entry row using the same resolution helpers as the
+    single-SRE bundle builder (get_ssb_bundle_for_voucher_from_sre), so
+    merged multi-SRE bundles get consistently-computed dimensions
+    instead of whatever happened to already be stored on the source
+    SRE's batch row.
+    """
+    length = resolve_entry_length(entry, entry.get("batch_no"), so_detail)
+    section_weight = resolve_entry_section_weight(
+        entry, item_code, length, entry.get("batch_no")
+    )
+    pieces = resolve_entry_pieces(entry, avail_qty, length, section_weight)
+    entry["length"] = length
+    entry["section_weight"] = section_weight
+    entry["pieces"] = pieces
+    return entry
 
 
 def _build_merged_batch_bundle(item, sre_rows):
-    from erpnext.stock.doctype.stock_reservation_entry.stock_reservation_entry import (
-        get_ssb_bundle_for_voucher,
-    )
+    """Merge batch entries across multiple SREs reserved against the same
+    SO line into a single DN bundle.
 
+    Reads batch rows directly (same query as get_ssb_bundle_for_voucher_from_sre)
+    instead of going through core ERPNext's get_ssb_bundle_for_voucher, and
+    subtracts delivered_qty per entry before merging. The previous version
+    copied each source bundle's full reserved qty regardless of how much
+    had already been delivered against an earlier partial Delivery Note,
+    which over-counted quantity in the multi-batch case.
+    """
     merged_entries = []
+
     for sre in sre_rows:
-        bundle_name = get_ssb_bundle_for_voucher(sre)
-        if not bundle_name:
-            continue
-        src_bundle = frappe.get_doc("Serial and Batch Bundle", bundle_name)
-        merged_entries.extend(e for e in src_bundle.entries if e.batch_no)
+        sb_entries = frappe.db.sql(
+            """
+            SELECT
+                serial_no,
+                batch_no,
+                qty,
+                delivered_qty,
+                pieces,
+                length,
+                section_weight,
+                warehouse
+            FROM `tabSerial and Batch Entry`
+            WHERE parent = %s
+              AND parenttype = 'Stock Reservation Entry'
+              AND qty > IFNULL(delivered_qty, 0)
+            ORDER BY idx
+            """,
+            sre.name,
+            as_dict=True,
+        )
+
+        for row in sb_entries:
+            avail_qty = flt(row.qty) - flt(row.delivered_qty)
+            if avail_qty <= 0:
+                continue
+            entry = dict(row)
+            _backfill_bundle_dimensions(entry, item.item_code, item.so_detail, avail_qty)
+            entry["qty"] = avail_qty
+            merged_entries.append(entry)
 
     if not merged_entries:
         return None
@@ -186,16 +259,17 @@ def _build_merged_batch_bundle(item, sre_rows):
         new_bundle.append(
             "entries",
             {
-                "batch_no": e.batch_no,
-                "qty": -abs(flt(e.qty)),
-                "warehouse": e.warehouse or item.warehouse,
+                "batch_no": e.get("batch_no"),
+                "serial_no": e.get("serial_no"),
+                "qty": -abs(flt(e.get("qty"))),
+                "warehouse": e.get("warehouse") or item.warehouse,
                 "pieces": flt(e.get("pieces")),
                 "length": flt(e.get("length")),
                 "section_weight": flt(e.get("section_weight")),
             },
         )
 
-    new_bundle.total_qty = -sum(abs(flt(e.qty)) for e in merged_entries)
+    new_bundle.total_qty = -sum(abs(flt(e.get("qty"))) for e in merged_entries)
     new_bundle.flags.ignore_validate = True
     new_bundle.flags.ignore_links = True
     new_bundle.insert(ignore_permissions=True)
@@ -208,7 +282,7 @@ def validate(self, method):
             deliver_as_qty = frappe.db.get_value(
                 "Sales Order", row.against_sales_order, "deliver_as_qty"
             )
-            
+               
             if deliver_as_qty and not row.invoice_qty:
                 frappe.throw(f"Invoice Qty is mandatory for row {row.idx}")
             if deliver_as_qty and not row.custom_deliver_as_qty:
@@ -1657,19 +1731,6 @@ def create_stock_reconciliation(self):
 
     # ── Submit SR ───────────────────────────────────────────────────
     sr.submit()
-
-    # ── Sync batch details (ported from "Update Batch details" Server Script) ──
-    for row in sr.items:
-        if row.batch_no:
-            frappe.db.set_value(
-                "Batch",
-                row.batch_no,
-                {
-                    "pieces": row.pieces,
-                    "assorted_length": row.assorted_length,
-                    "average_length": row.average_length,
-                },
-            )
 
     # ── Update SBB & DN AFTER SUBMIT ─────────────────────────────
     for dn_row in self.items:
