@@ -87,6 +87,11 @@ def before_insert(self, method):
 def validate(self, method):
 
     for row in self.items:
+        # ERPNext rebuilds the bundle when both batch_no and
+        # serial_and_batch_bundle are set on the same row.
+        if row.serial_and_batch_bundle and row.batch_no:
+            row.batch_no = None
+
         if row.against_sales_order:
             deliver_as_qty = frappe.db.get_value(
                 "Sales Order", row.against_sales_order, "deliver_as_qty"
@@ -1228,6 +1233,8 @@ def _recreate_stock_reservation_from_snapshot(snapshot):
 			else 1.0
 		)
 
+		# Preserve snapshot length/pieces on restore — these reflect the
+		# reservation state at DN submit/cancel, not a fresh batch pick.
 		for entry in sb_entries:
 			if not entry.get("batch_no") and not entry.get("serial_no"):
 				continue
@@ -1701,6 +1708,11 @@ def make_delivery_note_custom(source_name, target_doc=None, kwargs=None):
             if sre.reservation_based_on == "Serial and Batch":
                 dn_item.serial_and_batch_bundle = get_ssb_bundle_for_voucher_from_sre(sre)
                 if dn_item.serial_and_batch_bundle:
+                    # Do not stamp batch_no when a bundle is present — ERPNext
+                    # treats batch_no + serial_and_batch_bundle as conflicting
+                    # and may rebuild the bundle on submit.
+                    if hasattr(dn_item, "batch_no"):
+                        dn_item.batch_no = None
                     bundle_entries = frappe.get_all(
                         "Serial and Batch Entry",
                         filters={
@@ -1709,11 +1721,6 @@ def make_delivery_note_custom(source_name, target_doc=None, kwargs=None):
                         },
                         fields=["batch_no", "qty", "length"],
                     )
-                    batch_nos = {
-                        e.batch_no for e in bundle_entries if e.get("batch_no")
-                    }
-                    if len(batch_nos) == 1 and hasattr(dn_item, "batch_no"):
-                        dn_item.batch_no = next(iter(batch_nos))
                     sync_dn_item_length_from_entries(
                         dn_item, bundle_entries, dn_item.so_detail
                     )

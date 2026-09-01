@@ -57,8 +57,66 @@ def resolve_entry_length(entry, batch_no=None, so_detail=None):
 	return 0
 
 
+def _entry_qty_for_length(entry):
+	"""Positive qty weight for length aggregation (SRE avail or bundle abs qty)."""
+	if isinstance(entry, dict):
+		qty = flt(entry.get("qty")) - flt(entry.get("delivered_qty", 0))
+		if qty <= 0:
+			qty = abs(flt(entry.get("qty")))
+	else:
+		qty = flt(getattr(entry, "qty", 0)) - flt(getattr(entry, "delivered_qty", 0))
+		if qty <= 0:
+			qty = abs(flt(getattr(entry, "qty", 0)))
+	return qty
+
+
+def resolve_weighted_length_from_entries(entries, so_detail=None):
+	"""Batch-first length for one or more SRE / bundle rows.
+
+	Always resolves each row via ``resolve_entry_length`` (batch
+	``average_length`` → reservation row → SO line).
+
+	- Single batch, or multiple batches with the same resolved length:
+	  returns that length (e.g. 6.50).
+	- Multiple batches with different lengths: returns the qty-weighted
+	  average. That value is display-only on the DN item row; it may not
+	  match any single batch — see Serial/Batch Bundle rows for actual
+	  per-batch lengths.
+	"""
+	total_qty = 0.0
+	weighted = 0.0
+	resolved_lengths = []
+
+	for entry in entries or []:
+		qty = _entry_qty_for_length(entry)
+		if qty <= 0:
+			continue
+
+		batch_no = (
+			entry.get("batch_no")
+			if isinstance(entry, dict)
+			else getattr(entry, "batch_no", None)
+		)
+		length = resolve_entry_length(entry, batch_no, so_detail)
+		if not length:
+			continue
+
+		resolved_lengths.append(length)
+		total_qty += qty
+		weighted += qty * length
+
+	if not total_qty:
+		return 0
+
+	unique = {round(flt(length), 6) for length in resolved_lengths}
+	if len(unique) == 1:
+		return flt(resolved_lengths[0])
+
+	return flt(weighted / total_qty)
+
+
 def resolve_sre_dn_length(sre_name, so_detail=None):
-	"""Qty-weighted batch length for a DN item from SRE bundle rows."""
+	"""Batch-first length for a DN item from SRE bundle rows."""
 	if not sre_name:
 		return 0
 
@@ -71,48 +129,12 @@ def resolve_sre_dn_length(sre_name, so_detail=None):
 		sre_name,
 		as_dict=True,
 	)
-
-	total_qty = 0.0
-	weighted = 0.0
-	for row in rows:
-		avail = flt(row.qty) - flt(row.delivered_qty)
-		if avail <= 0:
-			continue
-		length = resolve_entry_length(row, row.batch_no, so_detail)
-		total_qty += avail
-		weighted += length * avail
-
-	if total_qty > 0:
-		return flt(weighted / total_qty)
-
-	return 0
+	return resolve_weighted_length_from_entries(rows, so_detail)
 
 
 def sync_dn_item_length_from_entries(item, entries, so_detail=None):
-	"""Stamp DN item length_size from bundle/reservation batch rows."""
-	total_qty = 0.0
-	weighted = 0.0
-	for entry in entries:
-		if isinstance(entry, dict):
-			qty = abs(flt(entry.get("qty")))
-			batch_no = entry.get("batch_no")
-			stored_length = flt(entry.get("length"))
-		else:
-			qty = abs(flt(entry.qty))
-			batch_no = getattr(entry, "batch_no", None)
-			stored_length = flt(getattr(entry, "length", 0))
-
-		if not qty:
-			continue
-
-		length = stored_length or resolve_entry_length(entry, batch_no, so_detail)
-		total_qty += qty
-		weighted += qty * length
-
-	if not total_qty:
-		return 0
-
-	result = flt(weighted / total_qty)
+	"""Stamp DN item length_size using batch-first length resolution."""
+	result = resolve_weighted_length_from_entries(entries, so_detail)
 	if result and hasattr(item, "length_size"):
 		item.length_size = result
 	return result
