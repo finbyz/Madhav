@@ -851,15 +851,35 @@ def update_bundle_to_invoice_qty(item, invoice_qty, qty, deliver_as_qty):
         leftover = 0
 
     # ── Apply qty change; KEEP physical pieces from the DN row ──
-    # Deliver-as-Qty only adjusts billed weight to invoice_qty. PC is the
-    # physical bar count the user already confirmed — do not scale or ceil
-    # from weight (that caused 4→15 / 26→87 on submit).
-    from madhav.madhav.utils.stock_piece_utils import preserve_entry_pieces
+    from madhav.madhav.utils.stock_piece_utils import (
+        distribute_integer_pieces,
+        int_pieces_from_qty,
+        preserve_entry_pieces,
+        stored_entry_pieces,
+    )
 
     item_pieces = cint(flt(getattr(item, "pieces", 0)))
-    total_pieces = 0
     n_entries = len(batch_entries)
 
+    if item_pieces > 0 and target_qty > 0:
+        piece_alloc = distribute_integer_pieces(item_pieces, desired)
+    else:
+        piece_alloc = []
+        for i, entry in enumerate(batch_entries):
+            entry_length = resolve_entry_length(
+                entry, entry.batch_no, item.so_detail
+            )
+            entry_section_weight = resolve_entry_section_weight(
+                entry, item.item_code, entry_length, entry.batch_no
+            )
+            pieces = stored_entry_pieces(entry)
+            if pieces <= 0 and desired[i] > 0:
+                pieces = int_pieces_from_qty(
+                    desired[i], entry_length, entry_section_weight
+                )
+            piece_alloc.append(pieces)
+
+    total_pieces = 0
     for i, entry in enumerate(batch_entries):
         entry_length = resolve_entry_length(
             entry, entry.batch_no, item.so_detail
@@ -872,20 +892,11 @@ def update_bundle_to_invoice_qty(item, invoice_qty, qty, deliver_as_qty):
         if entry_section_weight and not flt(entry.section_weight):
             entry.section_weight = entry_section_weight
 
-        if item_pieces > 0 and target_qty > 0:
-            # DN row PC is source of truth — split across bundle batches by weight share
-            if i == n_entries - 1:
-                pieces = max(0, item_pieces - total_pieces)
-            else:
-                pieces = max(
-                    0,
-                    int(round(item_pieces * (desired[i] / target_qty))),
-                )
-        else:
-            ratio = (desired[i] / target_qty) if target_qty else 0
-            pieces = preserve_entry_pieces(entry, 0, ratio)
+        pieces = piece_alloc[i] if i < len(piece_alloc) else 0
+        if desired[i] > 0 and pieces <= 0:
+            # Qty row must not stay at 0 PC when we have a piece total to allocate.
+            pieces = preserve_entry_pieces(entry, item_pieces, desired[i] / target_qty)
             if pieces <= 0:
-                # Last resort only when neither DN nor bundle has PC stamped
                 pieces = int_pieces_from_qty(
                     desired[i], entry_length, entry_section_weight
                 )
@@ -1323,13 +1334,16 @@ def restore_stock_reservations_after_cancel(doc):
 		return
 
 	prepared = _distribute_delivered_across_snapshots(snapshots, doc.name)
+	# Primary FG/WO reservations first; BWRT tolerance last so voucher
+	# headroom is not eaten before the main warehouse reservation restores.
+	prepared = _sort_snapshots_for_restore(prepared)
 
 	errors = []
 	for snapshot in prepared:
 		try:
 			if _snapshot_sre_still_active(snapshot):
 				continue
-			_recreate_stock_reservation_from_snapshot(snapshot)
+			_recreate_stock_reservation_from_snapshot(snapshot, exclude_dn=doc.name)
 		except Exception:
 			frappe.log_error(
 				title="DN Cancel - SRE Restore Error",
@@ -1341,9 +1355,6 @@ def restore_stock_reservations_after_cancel(doc):
 				f"reserved {flt(snapshot.get('reserved_qty'))}"
 			)
 
-	if comment_name:
-		frappe.delete_doc("Comment", comment_name, ignore_permissions=True, force=True)
-
 	if errors:
 		frappe.throw(
 			_(
@@ -1351,6 +1362,20 @@ def restore_stock_reservations_after_cancel(doc):
 			).format(frappe.bold(doc.name), "<br>".join(frappe.bold(e) for e in errors)),
 			title=_("Stock Reservation Restore Failed"),
 		)
+
+	# Only drop the snapshot after a full successful restore (retry-safe).
+	if comment_name:
+		frappe.delete_doc("Comment", comment_name, ignore_permissions=True, force=True)
+
+
+def _sort_snapshots_for_restore(snapshots):
+	"""Restore non-tolerance SREs before Batch Wise Reservation Tool rows."""
+
+	def _key(snap):
+		is_bwrt = 1 if snap.get("from_voucher_type") == "Batch Wise Reservation Tool" else 0
+		return (is_bwrt, snap.get("name") or "")
+
+	return sorted(snapshots or [], key=_key)
 
 
 def _snapshot_sre_still_active(snapshot):
@@ -1421,7 +1446,28 @@ def _get_active_reserved_stock_qty(sales_order, so_detail, warehouse=None):
 	return sum(flt(r.reserved_qty) for r in rows)
 
 
-def _recreate_stock_reservation_from_snapshot(snapshot):
+def _voucher_reservation_headroom(sales_order, so_detail, voucher_qty, exclude_dn=None):
+	"""How much more can be reserved on this SO line (all warehouses).
+
+	Matches ERPNext ``validate_with_allowed_qty`` voucher math:
+	voucher_qty - other delivered - already reserved.
+	"""
+	voucher_qty = flt(voucher_qty)
+	if voucher_qty <= 0 or not so_detail:
+		return 0
+
+	over_reservation_allowance = flt(
+		frappe.db.get_single_value("Stock Settings", "over_reservation_allowance") or 0
+	)
+	max_voucher_qty = voucher_qty * (1 + over_reservation_allowance / 100)
+
+	# Prefer live SO delivered excluding this DN (cancel mid-flight).
+	other_delivered = _delivered_qty_excluding_dn(so_detail, exclude_dn)
+	active_reserved = _get_active_reserved_stock_qty(sales_order, so_detail, warehouse=None)
+	return max(max_voucher_qty - other_delivered - active_reserved, 0)
+
+
+def _recreate_stock_reservation_from_snapshot(snapshot, exclude_dn=None):
 	reserved_qty = flt(snapshot.get("reserved_qty"))
 	if reserved_qty <= 0:
 		return
@@ -1444,13 +1490,18 @@ def _recreate_stock_reservation_from_snapshot(snapshot):
 				flt(soi.qty) * flt(soi.conversion_factor or 1)
 			)
 
-	active_qty = _get_active_reserved_stock_qty(sales_order, so_detail, warehouse)
-	remaining_capacity = max(voucher_qty - active_qty, 0)
-	if remaining_capacity <= 0:
-		return
-
-	if reserved_qty > remaining_capacity:
-		reserved_qty = remaining_capacity
+	# Voucher capacity is SO-line-wide (all warehouses). Filtering by warehouse
+	# let a For-Mill tolerance SRE restore first, then blocked the FG SRE
+	# (e.g. 1.145 + 15 > voucher 15 → Allowed 13.855).
+	from_voucher_type = snapshot.get("from_voucher_type")
+	if from_voucher_type != "Batch Wise Reservation Tool":
+		remaining_capacity = _voucher_reservation_headroom(
+			sales_order, so_detail, voucher_qty, exclude_dn=exclude_dn
+		)
+		if remaining_capacity <= 0:
+			return
+		if reserved_qty > remaining_capacity:
+			reserved_qty = remaining_capacity
 
 	delivered_qty = min(delivered_qty, reserved_qty)
 
@@ -1466,7 +1517,6 @@ def _recreate_stock_reservation_from_snapshot(snapshot):
 	sre.reserved_qty = reserved_qty
 	sre.available_qty = flt(snapshot.get("available_qty") or reserved_qty)
 	sre.available_qty_to_reserve = reserved_qty
-	from_voucher_type = snapshot.get("from_voucher_type")
 	from_voucher_no = snapshot.get("from_voucher_no")
 	from_voucher_detail_no = snapshot.get("from_voucher_detail_no")
 	if from_voucher_type and from_voucher_no:
@@ -1503,6 +1553,10 @@ def _recreate_stock_reservation_from_snapshot(snapshot):
 			if entry_qty <= 0:
 				continue
 			entry_delivered = min(flt(entry.get("delivered_qty")) * scale, entry_qty)
+			# Scale pieces with qty when capacity capped a multi-batch restore.
+			entry_pieces = flt(entry.get("pieces"))
+			if scale != 1.0 and entry_pieces:
+				entry_pieces = max(0, int(round(entry_pieces * scale)))
 			sre.append(
 				"sb_entries",
 				{
@@ -1511,7 +1565,7 @@ def _recreate_stock_reservation_from_snapshot(snapshot):
 					"qty": entry_qty,
 					"delivered_qty": entry_delivered,
 					"warehouse": entry.get("warehouse") or warehouse,
-					"pieces": flt(entry.get("pieces")),
+					"pieces": entry_pieces,
 					"length": flt(entry.get("length")),
 					"section_weight": flt(entry.get("section_weight")),
 				},
