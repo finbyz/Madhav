@@ -62,6 +62,29 @@ def _default_length_window(length_size):
     return length_size - 2, length_size + 2
 
 
+def _get_actual_batch_length_range(item_code, warehouse):
+    """Min/max length across batches that actually have stock for this
+    item/warehouse. Used to auto-widen the default ±2m length window when
+    it misses all real stock (e.g. length_size set to a value far from
+    what's physically in the warehouse)."""
+    result = frappe.db.sql(
+        """
+        SELECT MIN(sbe.length) AS min_len, MAX(sbe.length) AS max_len
+        FROM `tabSerial and Batch Bundle` sbb
+        JOIN `tabSerial and Batch Entry` sbe ON sbe.parent = sbb.name
+        WHERE sbb.item_code = %s
+          AND sbb.warehouse = %s
+          AND sbe.qty > 0
+          AND sbe.length > 0
+        """,
+        (item_code, warehouse),
+        as_dict=True,
+    )
+    if not result or result[0].min_len is None:
+        return None, None
+    return flt(result[0].min_len), flt(result[0].max_len)
+
+
 def _get_eligible_batches_ordered(batch_nos, min_length=None, max_length=None):
     """
     From the given batch_nos list, return only those whose average_length
@@ -555,12 +578,15 @@ def create_stock_reservation_entries_for_so_items(
                 # Length window for batch filter — never store None when length_size exists
                 dialog_min_length = row.get("min_length")
                 dialog_max_length = row.get("max_length")
+                used_default_window = False
                 if dialog_min_length in (None, "", 0) or dialog_max_length in (None, "", 0):
                     default_min, default_max = _default_length_window(so_item.length_size)
                     if dialog_min_length in (None, "", 0):
                         dialog_min_length = default_min
+                        used_default_window = True
                     if dialog_max_length in (None, "", 0):
                         dialog_max_length = default_max
+                        used_default_window = True
 
                 # Store in flags so auto_reserve_serial_and_batch reads it
                 frappe.flags.stock_reservation_item_ranges[so_item.name] = {
@@ -569,13 +595,36 @@ def create_stock_reservation_entries_for_so_items(
                 }
 
                 constraints = _get_batch_constraints(
-                    "Sales Order", so_item.name, so_item.item_code,from_voucher_type
+                    "Sales Order", so_item.name, so_item.item_code, from_voucher_type
                 )
 
                 if has_batch_no:
                     eligible_stock_qty = _get_filtered_available_qty(
                         so_item.item_code, warehouse, constraints
                     )
+
+                    # If the static default window (not one the user typed
+                    # into the dialog) missed every batch, auto-widen it to
+                    # the actual length range of real stock for this
+                    # item/warehouse instead of silently filtering
+                    # everything out.
+                    if eligible_stock_qty <= 0 and used_default_window:
+                        actual_min, actual_max = _get_actual_batch_length_range(
+                            so_item.item_code, warehouse
+                        )
+                        if actual_min is not None:
+                            dialog_min_length = actual_min
+                            dialog_max_length = actual_max
+                            frappe.flags.stock_reservation_item_ranges[so_item.name] = {
+                                "min_length": dialog_min_length,
+                                "max_length": dialog_max_length,
+                            }
+                            constraints = _get_batch_constraints(
+                                "Sales Order", so_item.name, so_item.item_code, from_voucher_type
+                            )
+                            eligible_stock_qty = _get_filtered_available_qty(
+                                so_item.item_code, warehouse, constraints
+                            )
 
                     # Get batch details for debugging
                     debug = _get_batch_debug_details(
@@ -659,7 +708,21 @@ def create_stock_reservation_entries_for_so_items(
                 frappe.flags.stock_reservation_filtered_out = filtered_out_items
 
             if not updated_items_details:
-                return
+                # Every row was filtered out (e.g. no batch matched the
+                # length window) — surface that to the user instead of
+                # silently returning, which the caller was previously
+                # reporting back as a plain "success".
+                if notify and filtered_out_items:
+                    summary_html = _build_stock_reservation_summary(
+                        [], filtered_out_items, []
+                    )
+                    if summary_html:
+                        frappe.msgprint(
+                            summary_html,
+                            title=_("Stock Reservation Summary"),
+                            indicator="orange",
+                        )
+                return {"status": "no_eligible_items", "filtered_out": filtered_out_items}
 
             items_details = updated_items_details
 
@@ -680,7 +743,7 @@ def create_stock_reservation_entries_for_so_items(
                     "Item", so_item.item_code, "has_batch_no"
                 )
                 constraints = _get_batch_constraints(
-                    "Sales Order", so_item.name, so_item.item_code,from_voucher_type
+                    "Sales Order", so_item.name, so_item.item_code, from_voucher_type
                 )
                 if has_batch_no:
                     so_item.qty_to_reserve = _get_filtered_available_qty(
