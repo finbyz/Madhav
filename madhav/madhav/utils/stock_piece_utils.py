@@ -172,6 +172,9 @@ def resolve_entry_section_weight(entry, item_code, length, batch_no=None):
 		qty = flt(getattr(entry, "qty", 0)) - flt(getattr(entry, "delivered_qty", 0))
 		pieces = flt(getattr(entry, "pieces", 0))
 
+	# Outward DN / bundle rows store negative qty — use absolute weight basis.
+	qty = abs(qty) if qty else 0.0
+
 	if section_weight:
 		return section_weight
 
@@ -230,3 +233,22 @@ def qty_from_pieces(pieces, length, section_weight):
 	if not pieces or not length or not section_weight:
 		return 0
 	return (pieces * length * section_weight) / 1000
+
+
+def preserve_entry_pieces(entry, item_pieces=0, qty_ratio=1.0):
+	"""Keep physical PC when only billed weight (invoice qty) changes.
+
+	Deliver-as-Qty submit must never re-ceil pieces from weight — that inflated
+	PC (e.g. 4→15). Prefer row pieces, else a share of the DN item total.
+	"""
+	from frappe.utils import cint
+
+	existing = cint(flt(getattr(entry, "pieces", None) if not isinstance(entry, dict) else entry.get("pieces")))
+	if existing > 0:
+		return existing
+
+	item_pieces = cint(flt(item_pieces))
+	if item_pieces > 0 and qty_ratio > 0:
+		return max(0, int(round(item_pieces * qty_ratio)))
+
+	return 0

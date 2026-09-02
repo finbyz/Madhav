@@ -571,8 +571,15 @@ def update_bundle_to_invoice_qty(item, invoice_qty, qty, deliver_as_qty):
         desired[0] += leftover
         leftover = 0
 
-    # ── Apply per-entry reservation length; integer pieces ──
+    # ── Apply qty change; KEEP physical pieces from the DN row ──
+    # Deliver-as-Qty only adjusts billed weight to invoice_qty. PC is the
+    # physical bar count the user already confirmed — do not scale or ceil
+    # from weight (that caused 4→15 / 26→87 on submit).
+    from madhav.madhav.utils.stock_piece_utils import preserve_entry_pieces
+
+    item_pieces = cint(flt(getattr(item, "pieces", 0)))
     total_pieces = 0
+    n_entries = len(batch_entries)
 
     for i, entry in enumerate(batch_entries):
         entry_length = resolve_entry_length(
@@ -586,13 +593,30 @@ def update_bundle_to_invoice_qty(item, invoice_qty, qty, deliver_as_qty):
         if entry_section_weight and not flt(entry.section_weight):
             entry.section_weight = entry_section_weight
 
-        pieces = int_pieces_from_qty(desired[i], entry_length, entry_section_weight)
+        if item_pieces > 0 and target_qty > 0:
+            # DN row PC is source of truth — split across bundle batches by weight share
+            if i == n_entries - 1:
+                pieces = max(0, item_pieces - total_pieces)
+            else:
+                pieces = max(
+                    0,
+                    int(round(item_pieces * (desired[i] / target_qty))),
+                )
+        else:
+            ratio = (desired[i] / target_qty) if target_qty else 0
+            pieces = preserve_entry_pieces(entry, 0, ratio)
+            if pieces <= 0:
+                # Last resort only when neither DN nor bundle has PC stamped
+                pieces = int_pieces_from_qty(
+                    desired[i], entry_length, entry_section_weight
+                )
+
         entry.qty = -desired[i]
         entry.pieces = pieces
         total_pieces += pieces
 
     if hasattr(item, "pieces"):
-        item.pieces = int(total_pieces)
+        item.pieces = item_pieces if item_pieces > 0 else int(total_pieces)
 
     sync_dn_item_length_from_entries(item, batch_entries, item.so_detail)
 
