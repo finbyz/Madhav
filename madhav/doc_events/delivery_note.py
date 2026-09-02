@@ -9,6 +9,9 @@ from madhav.madhav.utils.stock_piece_utils import (
 	resolve_entry_length,
 	resolve_entry_pieces,
 	resolve_entry_section_weight,
+	resolve_sre_dn_length,
+	sum_undelivered_pieces_from_sre_rows,
+	sync_dn_item_length_from_entries,
 )
 
 def on_submit(doc, method=None):
@@ -375,6 +378,11 @@ def _build_merged_batch_bundle(item, sre_rows, warehouse):
 def validate(self, method):
 
     for row in self.items:
+        # ERPNext rebuilds the bundle when both batch_no and
+        # serial_and_batch_bundle are set on the same row.
+        if row.serial_and_batch_bundle and row.batch_no:
+            row.batch_no = None
+
         if row.against_sales_order:
             deliver_as_qty = frappe.db.get_value(
                 "Sales Order", row.against_sales_order, "deliver_as_qty"
@@ -496,31 +504,39 @@ def get_ssb_bundle_for_voucher_from_sre(sre):
 
 
 def _apply_reserved_dims_to_dn_item(dn_item, so_item, sre):
-	"""Stamp SO/reservation length and integer pieces on the DN row."""
+	"""Stamp batch/reservation length and integer pieces on the DN row."""
 	from madhav.madhav.utils.stock_piece_utils import int_pieces_from_qty
 
 	reserved_stock_qty = flt(sre.reserved_qty) - flt(sre.delivered_qty)
 	so_length = flt(so_item.get("length_size"))
-
-	if so_length:
-		if hasattr(dn_item, "length_size"):
-			dn_item.length_size = so_length
-		if hasattr(dn_item, "length_sizeso"):
-			dn_item.length_sizeso = so_length
-
-	# Prefer pieces already on this SRE's batch rows (per-batch, not full SO)
+	so_detail = so_item.get("name") or getattr(so_item, "name", None)
 	sre_name = sre.name if hasattr(sre, "name") else sre.get("name")
+
+	# SO ordered length is reference only; DN shows actual reserved batch length.
+	if so_length and hasattr(dn_item, "length_sizeso"):
+		dn_item.length_sizeso = so_length
+
+	reserved_length = resolve_sre_dn_length(sre_name, so_detail)
+	if not reserved_length:
+		reserved_length = so_length
+	if reserved_length and hasattr(dn_item, "length_size"):
+		dn_item.length_size = reserved_length
+
+	# Prefer undelivered pieces on SRE batch rows (skip fully delivered batches).
 	sre_pieces = 0
 	if sre_name and frappe.db.has_column("Serial and Batch Entry", "pieces"):
-		sre_pieces = cint(
-			frappe.db.sql(
-				"""
-				select coalesce(sum(pieces), 0)
-				from `tabSerial and Batch Entry`
-				where parent = %s and parenttype = 'Stock Reservation Entry'
-				""",
-				sre_name,
-			)[0][0]
+		sre_rows = frappe.db.sql(
+			"""
+			select batch_no, qty, delivered_qty, pieces, length, section_weight
+			from `tabSerial and Batch Entry`
+			where parent = %s and parenttype = 'Stock Reservation Entry'
+			  and qty > ifnull(delivered_qty, 0)
+			""",
+			sre_name,
+			as_dict=True,
+		)
+		sre_pieces = sum_undelivered_pieces_from_sre_rows(
+			sre_rows, so_detail, so_item.get("item_code")
 		)
 
 	section_weight = flt(so_item.get("section_weight"))
@@ -531,10 +547,10 @@ def _apply_reserved_dims_to_dn_item(dn_item, so_item, sre):
 
 	if sre_pieces > 0:
 		scaled_pieces = sre_pieces
-	elif so_length and section_weight and reserved_stock_qty > 0:
-		# Single ceil from reserved weight — do not ceil(SO pieces × ratio)
+	elif reserved_length and section_weight and reserved_stock_qty > 0:
+		# Single ceil from reserved weight using batch length, not SO ordered length
 		scaled_pieces = int_pieces_from_qty(
-			reserved_stock_qty, so_length, section_weight
+			reserved_stock_qty, reserved_length, section_weight
 		)
 	else:
 		so_pieces = cint(so_item.get("pieces"))
@@ -557,9 +573,9 @@ def _apply_reserved_dims_to_dn_item(dn_item, so_item, sre):
 	if hasattr(dn_item, "section_weight"):
 		if section_weight:
 			dn_item.section_weight = section_weight
-		elif so_length and scaled_pieces and reserved_stock_qty:
+		elif reserved_length and scaled_pieces and reserved_stock_qty:
 			dn_item.section_weight = (reserved_stock_qty * 1000) / (
-				scaled_pieces * so_length
+				scaled_pieces * reserved_length
 			)
 
 
@@ -654,9 +670,21 @@ def change_qty_serial_and_batch(self):
             if entry_section_weight and not flt(entry.section_weight):
                 entry.section_weight = entry_section_weight
 
+            # Prefer pieces already on the reservation/bundle for this row.
+            # Recalculate only when missing — avoids ceil(SO pieces) again (+1 PC).
+            # Scale stored pieces when this bundle row is a partial undelivered share.
             existing_pieces = cint(flt(entry.pieces))
-            if existing_pieces > 0:
-                pieces = existing_pieces
+            row_avail_qty = abs(flt(entry.qty))
+            if hasattr(entry, "delivered_qty"):
+                row_avail_qty = max(0.0, row_avail_qty - flt(entry.delivered_qty))
+            if existing_pieces > 0 and row_avail_qty > 0:
+                if abs(row_avail_qty - desired_qty[i]) > 0.0001 and desired_qty[i] > 0:
+                    pieces = max(
+                        0,
+                        int(round(existing_pieces * (desired_qty[i] / row_avail_qty))),
+                    )
+                else:
+                    pieces = existing_pieces
             else:
                 pieces = int_pieces_from_qty(
                     desired_qty[i], entry_length, entry_section_weight
@@ -720,6 +748,7 @@ def change_qty_serial_and_batch(self):
         item.pieces = int(total_allocated_pieces)
         if last_section_weight:
             item.section_weight = last_section_weight
+        sync_dn_item_length_from_entries(item, batch_entries, item.so_detail)
         bundle.total_qty = -allocated_total_qty
         bundle.flags.ignore_validate = True
         bundle.flags.ignore_links = True
@@ -842,6 +871,8 @@ def update_bundle_to_invoice_qty(item, invoice_qty, qty, deliver_as_qty):
 
     if hasattr(item, "pieces"):
         item.pieces = int(total_pieces)
+
+    sync_dn_item_length_from_entries(item, batch_entries, item.so_detail)
 
     bundle.total_qty = -target_qty
     bundle.flags.ignore_validate = True
@@ -1438,6 +1469,8 @@ def _recreate_stock_reservation_from_snapshot(snapshot):
 			else 1.0
 		)
 
+		# Preserve snapshot length/pieces on restore — these reflect the
+		# reservation state at DN submit/cancel, not a fresh batch pick.
 		for entry in sb_entries:
 			if not entry.get("batch_no") and not entry.get("serial_no"):
 				continue
@@ -1842,6 +1875,10 @@ def make_delivery_note_custom(source_name, target_doc=None, kwargs=None):
             if not so_item:
                 continue
 
+            available_reserved = flt(sre.reserved_qty) - flt(sre.delivered_qty)
+            if available_reserved <= 0:
+                continue
+
             dn_item = get_mapped_doc(
                 "Sales Order Item",
                 so_item.name,
@@ -1858,12 +1895,31 @@ def make_delivery_note_custom(source_name, target_doc=None, kwargs=None):
                 ignore_permissions=True,
             )
 
+            # qty from undelivered reserved stock for this SRE
+            dn_item.qty = available_reserved / flt(dn_item.conversion_factor or 1)
             dn_item.qty = flt(sre.reserved_qty) / flt(dn_item.conversion_factor or 1)
             dn_item.warehouse = sre.warehouse
             dn_item.custom_deliver_as_qty = so.deliver_as_qty
             _apply_reserved_dims_to_dn_item(dn_item, so_item, sre)
             if sre.reservation_based_on == "Serial and Batch":
                 dn_item.serial_and_batch_bundle = get_ssb_bundle_for_voucher_from_sre(sre)
+                if dn_item.serial_and_batch_bundle:
+                    # Do not stamp batch_no when a bundle is present — ERPNext
+                    # treats batch_no + serial_and_batch_bundle as conflicting
+                    # and may rebuild the bundle on submit.
+                    if hasattr(dn_item, "batch_no"):
+                        dn_item.batch_no = None
+                    bundle_entries = frappe.get_all(
+                        "Serial and Batch Entry",
+                        filters={
+                            "parent": dn_item.serial_and_batch_bundle,
+                            "parenttype": "Serial and Batch Bundle",
+                        },
+                        fields=["batch_no", "qty", "length"],
+                    )
+                    sync_dn_item_length_from_entries(
+                        dn_item, bundle_entries, dn_item.so_detail
+                    )
 
             if frappe.get_meta("Delivery Note Item").has_field("custom_sre"):
                 dn_item.custom_sre = sre.name
