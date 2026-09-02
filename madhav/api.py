@@ -82,30 +82,38 @@ def get_employee_checkin_entries(employee, attendance_date):
 
 @frappe.whitelist()
 def create_stock_reservation_entries(source_name, items_details):
-
     import json
     from madhav.madhav.monkey_patch.stock_reservation_entry import (
         create_stock_reservation_entries_for_so_items,
     )
-
     if isinstance(items_details, str):
         items_details = json.loads(items_details)
-
     sales_order = frappe.get_doc("Sales Order", source_name)
 
-    create_stock_reservation_entries_for_so_items(
+    result = create_stock_reservation_entries_for_so_items(
         sales_order=sales_order,
         items_details=items_details,
         notify=True,
     )
 
-    # ✅ ADD THIS
+    # Reflect what actually happened instead of always claiming success —
+    # the inner function returns early with a "no_eligible_items" status
+    # when every row got filtered out (e.g. length-window constraints),
+    # and nothing gets created in that case.
+    if isinstance(result, dict) and result.get("status") == "no_eligible_items":
+        return {
+            "status": "warning",
+            "message": _(
+                "No stock was reserved — no eligible batches found for the given constraints."
+            ),
+        }
+
     return {
         "status": "success",
-        "message": "Stock Reservation Created Successfully"
+        "message": "Stock Reservation Created Successfully",
     }
-    
 
+    
 @frappe.whitelist()
 def get_offday_status(employee, attendance_date,attendance):
     
