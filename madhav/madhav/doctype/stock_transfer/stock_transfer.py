@@ -2,36 +2,161 @@
 # For license information, please see license.txt
 
 import frappe
+from frappe import _
 from frappe.utils import flt
 from frappe.model.document import Document
 
 
-class StockTransfer(Document):
-    
-    def on_cancel(self):
-        for row in self.transfer_item:
+def _cancel_psles_for_voucher(voucher_no):
+	"""Cancel Piece Stock Ledger Entries for a Stock Entry so warehouse pieces roll back."""
+	if not voucher_no:
+		return
+	psles = frappe.get_all(
+		"Piece Stock Ledger Entry",
+		filters={"voucher_no": voucher_no, "docstatus": 1},
+		pluck="name",
+	)
+	for psle_name in psles:
+		psle = frappe.get_doc("Piece Stock Ledger Entry", psle_name)
+		psle.flags.ignore_permissions = True
+		psle.flags.ignore_links = True
+		psle.cancel()
 
-            sre_name = frappe.db.get_value(
-                "Stock Reservation Entry",
-                {
-                    "from_voucher_type": self.doctype,
-                    "from_voucher_no": self.name,
-                    "from_voucher_detail_no": row.name,
-                    "docstatus": 1
-                }
+
+class StockTransfer(Document):
+
+    def on_cancel(self):
+        """Unreserve stock, then reverse Material Transfer back to source warehouse.
+
+        Works for any source → target warehouse pair (not tied to specific WH names).
+
+        Critical: linked ``stock_entry`` must be cancelled. Historically
+        ``db.set_value`` during ``before_submit`` was overwritten on submit save,
+        leaving ``stock_entry`` blank — cancel then skipped the SE and stock
+        stayed in the target warehouse.
+        """
+        errors = []
+
+        # 1) Cancel every active SRE created from this Stock Transfer
+        sre_names = frappe.get_all(
+            "Stock Reservation Entry",
+            filters={
+                "from_voucher_type": self.doctype,
+                "from_voucher_no": self.name,
+                "docstatus": 1,
+            },
+            pluck="name",
+        )
+        for sre_name in sre_names:
+            try:
+                sre = frappe.get_doc("Stock Reservation Entry", sre_name)
+                sre.flags.ignore_permissions = True
+                sre.cancel()
+                # Break circular link so SE/ST cancel is not blocked
+                sre.db_set("from_voucher_no", "", update_modified=False)
+                sre.db_set("from_voucher_detail_no", "", update_modified=False)
+            except Exception:
+                frappe.log_error(
+                    title="Stock Transfer Cancel - SRE Error",
+                    message=f"{self.name} / {sre_name}\n{frappe.get_traceback()}",
+                )
+                errors.append(f"SRE {sre_name}")
+
+        # 2) Resolve linked Material Transfer (field may be blank on older docs)
+        se_name = self._resolve_linked_stock_entry()
+        if se_name:
+            try:
+                se = frappe.get_doc("Stock Entry", se_name)
+                if se.docstatus == 1:
+                    # Cancel piece ledgers before SE so links do not block
+                    _cancel_psles_for_voucher(se_name)
+                    se.flags.ignore_permissions = True
+                    se.flags.ignore_links = True
+                    se.cancel()
+            except Exception:
+                frappe.log_error(
+                    title="Stock Transfer Cancel - Stock Entry Error",
+                    message=f"{self.name} / {se_name}\n{frappe.get_traceback()}",
+                )
+                errors.append(f"Stock Entry {se_name}")
+        elif self.transfer_item:
+            # Submitted transfers always create an SE — missing link means
+            # stock would stay in the target warehouse if we continue.
+            errors.append("linked Stock Entry not found (cannot rollback warehouse qty)")
+
+        if self.stock_entry or se_name:
+            self.db_set("stock_entry", "", update_modified=False)
+
+        if errors:
+            frappe.throw(
+                _(
+                    "Stock Transfer {0} cancel incomplete — stock may still be in "
+                    "the target warehouse. Failed: {1}"
+                ).format(frappe.bold(self.name), ", ".join(errors)),
+                title=_("Cancel Rollback Failed"),
             )
 
-            if sre_name:
-                sre = frappe.get_doc("Stock Reservation Entry", sre_name)
-                sre.cancel()
+    def _resolve_linked_stock_entry(self):
+        """Find Material Transfer for this ST even if stock_entry field is empty.
 
-        if self.stock_entry:
-            se = frappe.get_doc("Stock Entry", self.stock_entry)
+        Matching uses this document's source/target warehouses (any WH names).
+        """
+        if self.stock_entry and frappe.db.exists("Stock Entry", self.stock_entry):
+            return self.stock_entry
 
-            if se.docstatus == 1:
-                se.cancel()
+        # Preferred: reverse link on Stock Entry
+        if frappe.get_meta("Stock Entry").has_field("stock_transfer"):
+            se_name = frappe.db.get_value(
+                "Stock Entry",
+                {"stock_transfer": self.name, "docstatus": ["<", 2]},
+                "name",
+                order_by="docstatus desc, creation desc",
+            )
+            if se_name:
+                return se_name
 
-        self.db_set("stock_entry", "")     
+        # Fallback for legacy docs (blank stock_entry / stock_transfer link):
+        # match Material Transfer by this ST's warehouses + posting date + batch.
+        if not self.transfer_item:
+            return None
+
+        for row in self.transfer_item:
+            batch_no = row.batch
+            if not batch_no:
+                continue
+
+            from_wh = row.source_warehouse or self.source_warehouse
+            to_wh = row.target_warehouse or self.target_warehouse
+            if not from_wh or not to_wh:
+                continue
+
+            rows = frappe.db.sql(
+                """
+                SELECT se.name
+                FROM `tabStock Entry` se
+                INNER JOIN `tabStock Entry Detail` sed ON sed.parent = se.name
+                WHERE se.docstatus = 1
+                  AND se.stock_entry_type = 'Material Transfer'
+                  AND se.from_warehouse = %s
+                  AND se.to_warehouse = %s
+                  AND se.posting_date = %s
+                  AND sed.batch_no = %s
+                  AND sed.item_code = %s
+                ORDER BY se.creation DESC
+                LIMIT 1
+                """,
+                (
+                    from_wh,
+                    to_wh,
+                    self.posting_date,
+                    batch_no,
+                    row.item_code,
+                ),
+            )
+            if rows:
+                return rows[0][0]
+
+        return None
 
     def validate(self):
         self.validate_transfer_item_limits()
@@ -178,6 +303,15 @@ class StockTransfer(Document):
                 })
 
     def on_submit(self):
+        # Re-persist SE link after submit save (guards against field wipe)
+        if self.stock_entry:
+            frappe.db.set_value(
+                "Stock Transfer",
+                self.name,
+                "stock_entry",
+                self.stock_entry,
+                update_modified=False,
+            )
 
         for data in getattr(self, "_fg_reservation_data", []):
             self.create_fg_stock_reservation(
@@ -232,7 +366,8 @@ class StockTransfer(Document):
 
         se = frappe.new_doc("Stock Entry")
         se.stock_entry_type = "Material Transfer"
-        # se.stock_transfer = self.name,
+        if se.meta.has_field("stock_transfer"):
+            se.stock_transfer = self.name
         se.set_posting_time = 1
         se.posting_date = self.posting_date
         se.company = self.company
@@ -263,12 +398,18 @@ class StockTransfer(Document):
         se.insert(ignore_permissions=True)
         se.submit()
 
+        # Set on the in-memory doc so submit save persists the link.
+        # db.set_value alone was wiped when Stock Transfer finished submitting.
+        self.stock_entry = se.name
+        frappe.db.set_value(
+            "Stock Transfer", self.name, "stock_entry", se.name, update_modified=False
+        )
+
         frappe.msgprint(
             f"Stock Entry <b><a href='/app/stock-entry/{se.name}'>{se.name}</a></b> created successfully.",
             alert=True,
         )
 
-        frappe.db.set_value("Stock Transfer", self.name, "stock_entry", se.name)
         return se
     def create_fg_stock_reservation(
         self,

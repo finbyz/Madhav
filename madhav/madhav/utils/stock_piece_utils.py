@@ -172,6 +172,9 @@ def resolve_entry_section_weight(entry, item_code, length, batch_no=None):
 		qty = flt(getattr(entry, "qty", 0)) - flt(getattr(entry, "delivered_qty", 0))
 		pieces = flt(getattr(entry, "pieces", 0))
 
+	# Outward DN / bundle rows store negative qty — use absolute weight basis.
+	qty = abs(qty) if qty else 0.0
+
 	if section_weight:
 		return section_weight
 
@@ -180,13 +183,15 @@ def resolve_entry_section_weight(entry, item_code, length, batch_no=None):
 		if section_weight:
 			return section_weight
 
+	# Derive from actual row weight/pieces/length before Item master default.
+	# Item weight_per_meter can inflate PC when it differs from reserved batch weight.
+	if pieces and length and qty:
+		return (qty * 1000) / (pieces * flt(length))
+
 	if item_code:
 		section_weight = flt(frappe.db.get_value("Item", item_code, "weight_per_meter") or 0)
 		if section_weight:
 			return section_weight
-
-	if pieces and length and qty:
-		return (qty * 1000) / (pieces * flt(length))
 
 	return 0
 
@@ -230,3 +235,66 @@ def qty_from_pieces(pieces, length, section_weight):
 	if not pieces or not length or not section_weight:
 		return 0
 	return (pieces * length * section_weight) / 1000
+
+
+def distribute_integer_pieces(total_pieces, weights):
+	"""Split integer pieces across rows; sum of result always equals total_pieces.
+
+	Uses largest-remainder (Hamilton) on non-negative weights so multi-batch
+	bundles never exceed the DN row PC total or drift due to per-row rounding.
+	"""
+	total_pieces = max(0, int(total_pieces))
+	n = len(weights or [])
+	if not n:
+		return []
+	if total_pieces == 0:
+		return [0] * n
+
+	weight_sum = sum(max(0.0, flt(w)) for w in weights)
+	if weight_sum <= 0:
+		return [0] * n
+
+	raw = [total_pieces * max(0.0, flt(w)) / weight_sum for w in weights]
+	floors = [int(math.floor(r)) for r in raw]
+	allocated = sum(floors)
+	remainder = total_pieces - allocated
+
+	if remainder > 0:
+		# Give +1 to rows with the largest fractional parts first.
+		order = sorted(
+			range(n),
+			key=lambda i: (raw[i] - floors[i], weights[i]),
+			reverse=True,
+		)
+		for i in order[:remainder]:
+			floors[i] += 1
+
+	return floors
+
+
+def stored_entry_pieces(entry):
+	"""Integer pieces already stamped on a bundle/reservation row."""
+	from frappe.utils import cint
+
+	if isinstance(entry, dict):
+		return max(0, cint(flt(entry.get("pieces"))))
+	return max(0, cint(flt(getattr(entry, "pieces", 0))))
+
+
+def preserve_entry_pieces(entry, item_pieces=0, qty_ratio=1.0):
+	"""Keep physical PC when only billed weight (invoice qty) changes.
+
+	Prefer stored row pieces; otherwise allocate a share of the DN item total.
+	For multi-batch rows use ``distribute_integer_pieces`` at the caller.
+	"""
+	from frappe.utils import cint
+
+	existing = stored_entry_pieces(entry)
+	if existing > 0:
+		return existing
+
+	item_pieces = cint(flt(item_pieces))
+	if item_pieces > 0 and qty_ratio > 0:
+		return max(0, int(round(item_pieces * qty_ratio)))
+
+	return 0
