@@ -64,15 +64,36 @@ class StockReservationEntry(_StockReservationEntry):
             max_voucher_qty = self.voucher_qty * (
                 1 + over_reservation_allowance / 100
             )
-    
-            allowed_qty = min(
-                self.available_qty,
-                (
-                    max_voucher_qty
-                    - voucher_delivered_qty
-                    - total_reserved_qty
+
+            # ---------------------------------------------------------
+            # Reservations made against the configured tolerance
+            # warehouse (Stock Settings.batch_reservation_tolerance_warehouse)
+            # are explicit tolerance draws from a shared, SO-wide pool
+            # that is already enforced upstream by the Batch Wise
+            # Reservation Tool (add_to_reservation_batches /
+            # create_fg_stock_reservation / validate_tolerance_row).
+            # A single Sales Order line may legitimately draw more than
+            # its own per-line 20% share from that shared pool, as long
+            # as the SO-wide pool itself is not exceeded - so the generic
+            # per-line max_voucher_qty cap below does not apply here.
+            #
+            # Scoped by from_voucher_type, not by warehouse name, so it
+            # can't be bypassed or misidentified by reserving from that
+            # warehouse via a different flow (e.g. Finish Work Order),
+            # which should still be capped by the normal allowance.
+            # Only Available Qty at the warehouse still limits it.
+            # ---------------------------------------------------------
+            if self.from_voucher_type == "Batch Wise Reservation Tool":
+                allowed_qty = self.available_qty
+            else:
+                allowed_qty = min(
+                    self.available_qty,
+                    (
+                        max_voucher_qty
+                        - voucher_delivered_qty
+                        - total_reserved_qty
+                    )
                 )
-            )
             allowed_qty = flt(allowed_qty, self.precision("reserved_qty"))
             qty_to_be_reserved = flt(qty_to_be_reserved, self.precision("reserved_qty"))
     

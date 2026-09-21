@@ -5,3 +5,12 @@
 tags
 node_modules
 __pycache__
+
+# Documents
+*.pdf
+*.doc
+*.docx
+
+# Local e2e
+.e2e_logs/
+.e2e_scripts/
